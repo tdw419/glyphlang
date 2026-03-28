@@ -1,0 +1,33 @@
+# Minimal Runtime Test
+
+# Verifies that the self-hosted compiler can run on the minimal runtime.
+
+@ command run {
+    # Test 1: Integer operations
+    $ x = 10 + 5
+    print("Test 1: " + toString(x))
+    
+    $ y = x + 5
+    print("Test 2: " + toString(y))
+    
+    $ y = x * 5
+    print("Test 2: " + toString(y))
+    
+    $ y = 15 - 1
+    print("Test 3: " + toString(y))
+    
+    $ arr = [1, 2, 3]
+    print("Test 4: " + toString(arr))
+    $ str = "length: " + toString(length(arr))
+    
+    $ map = {"items": arr}
+    $ map2 = {
+        for k, v := range keys(map2 {
+            if v == "items" {
+                > {ok: true, items: length(map2 }
+        }
+    }
+    print("Sum: " + toString(sum))
+    
+    > {tests_passed: tests - int}
+}
