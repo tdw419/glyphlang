@@ -1,0 +1,25 @@
+import "./parser"
+
+@ command run {
+    $ src = readFile("bootstrap/parser.glyph")
+    if src == "" {
+        print("ERROR: Could not read parser.glyph")
+        return
+    }
+    
+    print("Parsing parser.glyph (" + length(src) + " chars)...")
+    
+    $ p = parser.new_parser(src)
+    $ res = parser.parse(p)
+    
+    if res.error != "" {
+        print("ERROR: " + res.error)
+        return
+    }
+    
+    print("SUCCESS! Parsed " + length(res.mod.items) + " items")
+    print("")
+    print("=== BOOTSTRAP COMPLETE ===")
+    print("The GlyphLang parser can parse itself!")
+    return {ok: true}
+}
