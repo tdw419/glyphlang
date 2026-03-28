@@ -40,6 +40,8 @@ func init() {
 		"endsWith":   builtinEndsWith,
 		"indexOf":    builtinIndexOf,
 		"charAt":     builtinCharAt,
+		"charCodeAt":  builtinCharCodeAt,
+		"charAtCode":  builtinCharCodeAt,
 		"parseInt":   builtinParseInt,
 		"parseFloat": builtinParseFloat,
 		"toString":   builtinToString,
@@ -449,6 +451,34 @@ func builtinCharAt(i *Interpreter, args []Expr, env *Environment) (interface{}, 
 		return nil, fmt.Errorf("charAt() index out of bounds: %d", index)
 	}
 	return string(runes[index]), nil
+}
+
+func builtinCharCodeAt(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	// Get character code at index
+	if len(args) != 2 {
+		return nil, fmt.Errorf("charCodeAt() expects 2 arguments, got %d", len(args))
+	}
+	strArg, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	str, ok := strArg.(string)
+	if !ok {
+		return nil, fmt.Errorf("charCodeAt() expects first argument to be a string, got %T", strArg)
+	}
+	indexArg, err := i.EvaluateExpression(args[1], env)
+	if err != nil {
+		return nil, err
+	}
+	index, ok := indexArg.(int64)
+	if !ok {
+		return nil, fmt.Errorf("charCodeAt() expects second argument to be an integer, got %T", indexArg)
+	}
+	runes := []rune(str)
+	if index < 0 || int(index) >= len(runes) {
+		return nil, fmt.Errorf("charCodeAt() index out of bounds: %d", index)
+	}
+	return int64(runes[index]), nil
 }
 
 func builtinParseInt(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {

@@ -139,6 +139,10 @@ func (tc *TypeChecker) CheckType(value interface{}, expectedType Type) error {
 
 	// For named types, validate against TypeDef if it exists
 	if namedType, ok := expectedType.(NamedType); ok {
+		// "any" type accepts any value
+		if namedType.Name == "any" {
+			return nil
+		}
 		if typeDef, exists := tc.typeDefs[namedType.Name]; exists {
 			if obj, ok := value.(map[string]interface{}); ok {
 				return tc.ValidateObjectAgainstTypeDef(obj, typeDef)
@@ -153,6 +157,14 @@ func (tc *TypeChecker) CheckType(value interface{}, expectedType Type) error {
 func (tc *TypeChecker) TypesCompatible(actual, expected Type) bool {
 	// Nil types are always compatible
 	if actual == nil || expected == nil {
+		return true
+	}
+
+	// "any" type is compatible with anything
+	if named, ok := expected.(NamedType); ok && named.Name == "any" {
+		return true
+	}
+	if named, ok := actual.(NamedType); ok && named.Name == "any" {
 		return true
 	}
 
@@ -184,6 +196,10 @@ func (tc *TypeChecker) TypesCompatible(actual, expected Type) bool {
 			return tc.TypesCompatible(a.InnerType, e.InnerType)
 		case NamedType:
 			e := expected.(NamedType)
+			// "any" type accepts anything
+			if e.Name == "any" {
+				return true
+			}
 			// Runtime objects have name "object", but can match any NamedType
 			// The structure validation happens in CheckType
 			if a.Name == "object" {

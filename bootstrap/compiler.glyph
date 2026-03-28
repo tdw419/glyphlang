@@ -122,6 +122,28 @@ const OP_HALT          = 255
       if lit_type == "bool" { converted = (lit_val == "true") }
       > [1] + encode_int(converted)
     }
+    if kind == "name" {
+      $ name_val = val["value"]
+      $ s = toString(name_val)
+      $ data = [4] + intToBytes4(length(s))
+      $ j = 0
+      while j < length(s) {
+        data = data + [charAtCode(s, j)]
+        j = j + 1
+      }
+      > data
+    }
+    if kind == "const_name" {
+      $ name_val = val["value"]
+      $ s = toString(name_val)
+      $ data = [4] + intToBytes4(length(s))
+      $ j = 0
+      while j < length(s) {
+        data = data + [charAtCode(s, j)]
+        j = j + 1
+      }
+      > data
+    }
   }
 
   if t == "int" {
@@ -187,6 +209,13 @@ const OP_HALT          = 255
 
 ! compile_item(c: Compiler, item: ast.Item) -> str {
   if item.kind == "const" {
+    $ err = compile_expression(c, item.const_value)
+    if err != "" { > err }
+    # Add variable name to constants directly
+    $ c.constants = c.constants + [item.const_name]
+    $ idx = length(c.constants) - 1
+    emit_byte(c, OP_STORE_VAR)
+    emit_bytes4(c, idx)
     > ""
   }
 
