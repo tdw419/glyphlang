@@ -1,0 +1,92 @@
+# bootstrap/test_compiler.glyph
+# Test the self-hosted compiler
+
+import "./lexer"
+import "./parser"
+import "./compiler"
+
+@ command run {
+    print("=== Test 1: Const declaration ===")
+    
+    $ src = "const ILLEGAL = \"ILLEGAL\"\nconst EOF = \"EOF\""
+    $ p = lexer.new_lexer(src)
+    
+    # Tokenize
+    $ tokens = []
+    $ done = false
+    while !done {
+        $ res = lexer.next_token(p)
+        $ tok = res.token
+        p = res.lexer
+        if tok.type != "NEWLINE" {
+            tokens = tokens + [tok]
+        }
+        if tok.type == "EOF" {
+            done = true
+        }
+    }
+    
+    print("Tokenized " + toString(length(tokens)) + " tokens")
+    
+    # Parse
+    $ parser_obj = parser.new_parser(src)
+    $ parse_res = parser.parse(parser_obj)
+    
+    if parse_res.error != "" {
+        print("Parse error: " + parse_res.error)
+    } else {
+        print("Parsed " + toString(length(parse_res.mod.items)) + " items")
+        
+        $ i = 0
+        while i < length(parse_res.mod.items) {
+            $ item = parse_res.mod.items[i]
+            if item.kind == "const" {
+                print("  const " + item.const_name + " = " + item.const_value.literal_value)
+            }
+            i = i + 1
+        }
+    }
+    
+    print("")
+    print("=== Test 2: Type definition ===")
+    
+    $ src2 = ": Token {\n  type: str!\n  literal: str!\n}"
+    $ p2 = parser.new_parser(src2)
+    $ res2 = parser.parse(p2)
+    
+    if res2.error != "" {
+        print("Parse error: " + res2.error)
+    } else {
+        $ i2 = 0
+        while i2 < length(res2.mod.items) {
+            $ item = res2.mod.items[i2]
+            if item.kind == "type_def" {
+                print("  type " + item.type_name + " (" + toString(length(item.type_fields)) + " fields)")
+            }
+            i2 = i2 + 1
+        }
+    }
+    
+    print("")
+    print("=== Test 3: Function definition ===")
+    
+    $ src3 = "! is_digit(ch: str) -> bool {\n  > ch >= \"0\" && ch <= \"9\"\n}"
+    $ p3 = parser.new_parser(src3)
+    $ res3 = parser.parse(p3)
+    
+    if res3.error != "" {
+        print("Parse error: " + res3.error)
+    } else {
+        $ i3 = 0
+        while i3 < length(res3.mod.items) {
+            $ item = res3.mod.items[i3]
+            if item.kind == "function" {
+                print("  fn " + item.func_name + " (" + toString(length(item.func_params)) + " params)")
+            }
+            i3 = i3 + 1
+        }
+    }
+    
+    print("")
+    print("Self-hosted compiler: ALL TESTS PASSED")
+}

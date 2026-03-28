@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"time"
 )
@@ -1599,6 +1600,48 @@ func (vm *VM) registerBuiltins() {
 			return nil, fmt.Errorf("toString() takes exactly 1 argument, got %d", len(args))
 		}
 		return StringValue{Val: valueToString(args[0])}, nil
+	}
+
+	// typeOf(val) - get type of value as string
+	vm.builtins["typeOf"] = func(args []Value) (Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("typeOf() takes exactly 1 argument, got %d", len(args))
+		}
+		return StringValue{Val: args[0].Type()}, nil
+	}
+
+	// writeFile(path, data) - write file to disk
+	vm.builtins["writeFile"] = func(args []Value) (Value, error) {
+		if len(args) != 2 {
+			return nil, fmt.Errorf("writeFile() takes exactly 2 arguments, got %d", len(args))
+		}
+		pathVal := args[0]
+		pathStr, ok := pathVal.(StringValue)
+		if !ok {
+			return nil, fmt.Errorf("writeFile() expects string path, got %T", pathVal)
+		}
+
+		var bytes []byte
+		switch v := args[1].(type) {
+		case StringValue:
+			bytes = []byte(v.Val)
+		case ArrayValue:
+			bytes = make([]byte, len(v.Val))
+			for i, val := range v.Val {
+				if n, ok := val.(IntValue); ok {
+					bytes[i] = byte(n.Val)
+				} else {
+					return nil, fmt.Errorf("writeFile() data array must contain ints, got %T at index %d", val, i)
+				}
+			}
+		default:
+			return nil, fmt.Errorf("writeFile() data must be str or [int], got %T", args[1])
+		}
+
+		if err := os.WriteFile(pathStr.Val, bytes, 0644); err != nil {
+			return nil, err
+		}
+		return NullValue{}, nil
 	}
 }
 

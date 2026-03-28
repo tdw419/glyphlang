@@ -1,0 +1,371 @@
+# bootstrap/compiler.glyph
+# Self-hosted compiler for GlyphLang.
+# Transforms AST into VM bytecode.
+
+import "./ast"
+
+# ─── Compiler State ────────────────────────────────────────────────
+
+: Compiler {
+  constants: [any]!
+  instructions: [int]!
+  symbol_table: any!
+  scopes: [any]!
+  current_scope: int!
+}
+
+: CompileResult {
+  bytecode: [int]!
+  error: str!
+}
+
+# ─── Opcodes ──────────────────────────────────────────────────────
+
+const OP_PUSH          = 1
+const OP_POP           = 2
+const OP_ADD           = 16
+const OP_SUB           = 17
+const OP_MUL           = 18
+const OP_DIV           = 19
+const OP_MOD           = 20
+const OP_EQ            = 32
+const OP_NE            = 33
+const OP_LT            = 34
+const OP_GT            = 35
+const OP_GE            = 36
+const OP_LE            = 37
+const OP_AND           = 38
+const OP_OR            = 39
+const OP_NOT           = 40
+const OP_NEG           = 41
+const OP_LOAD_VAR      = 64
+const OP_STORE_VAR     = 65
+const OP_JUMP          = 80
+const OP_JUMP_IF_FALSE = 81
+const OP_RETURN        = 97
+const OP_CALL          = 98
+const OP_BUILD_OBJECT  = 112
+const OP_GET_FIELD     = 113
+const OP_BUILD_ARRAY   = 128
+const OP_HALT          = 255
+
+# ─── Compiler Construction ────────────────────────────────────────
+
+! new_compiler() -> Compiler {
+  > {
+    constants: [],
+    instructions: [],
+    symbol_table: {},
+    scopes: [{}],
+    current_scope: 0
+  }
+}
+
+# ─── Bytecode header emission ─────────────────────────────────────
+
+! compile(c: Compiler, mod: ast.Module) -> CompileResult {
+  $ i = 0
+  while i < length(mod.items) {
+    $ item = mod.items[i]
+    $ err = compile_item(c, item)
+    if err != "" { > { bytecode: [], error: err } }
+    i = i + 1
+  }
+
+  emit_byte(c, OP_HALT)
+
+  $ header = build_header(c)
+  > { bytecode: header + c.instructions, error: "" }
+}
+
+! build_header(c: Compiler) -> [int] {
+  $ bytes = [1, 0, 0, 0]
+  $ cnt = length(c.constants)
+  bytes = bytes + intToBytes4(cnt)
+
+  $ i = 0
+  while i < cnt {
+    $ val = c.constants[i]
+    bytes = bytes + encode_constant(val)
+    i = i + 1
+  }
+
+  $ inst_cnt = length(c.instructions)
+  bytes = bytes + intToBytes4(inst_cnt)
+
+  > bytes
+}
+
+! encode_constant(val: any) -> [int] {
+  if val == null { > [0] }
+
+  $ t = typeOf(val)
+
+  if t == "str" {
+    $ s = toString(val)
+    $ data = [4] + intToBytes4(length(s))
+    $ j = 0
+    while j < length(s) {
+      data = data + [charAtCode(s, j)]
+      j = j + 1
+    }
+    > data
+  }
+
+  if t == "int" {
+    > [1] + intToBytes8(val)
+  }
+
+  if t == "bool" {
+    if val { > [3, 1] }
+    > [3, 0]
+  }
+
+  > [0]
+}
+
+# ─── Emission Helpers ─────────────────────────────────────────────
+
+! emit_byte(c: Compiler, b: int) {
+  $ c.instructions = c.instructions + [b]
+}
+
+! emit_bytes4(c: Compiler, n: int) {
+  $ c.instructions = c.instructions + intToBytes4(n)
+}
+
+! emit_jump(c: Compiler, op: int) -> int {
+  emit_byte(c, op)
+  $ pos = length(c.instructions)
+  emit_bytes4(c, 0)
+  > pos
+}
+
+! patch_jump(c: Compiler, pos: int) {
+  $ target = length(c.instructions)
+  $ b = intToBytes4(target)
+  $ c.instructions[pos] = b[0]
+  $ c.instructions[pos + 1] = b[1]
+  $ c.instructions[pos + 2] = b[2]
+  $ c.instructions[pos + 3] = b[3]
+}
+
+! add_constant(c: Compiler, val: any) -> int {
+  $ i = 0
+  while i < length(c.constants) {
+    if c.constants[i] == val { > i }
+    i = i + 1
+  }
+  $ c.constants = c.constants + [val]
+  > length(c.constants) - 1
+}
+
+# ─── Item Compilation ─────────────────────────────────────────────
+
+! compile_item(c: Compiler, item: ast.Item) -> str {
+  if item.kind == "const" {
+    $ err = compile_expression(c, item.const_value)
+    if err != "" { > err }
+    $ idx = add_constant(c, item.const_name)
+    emit_byte(c, OP_STORE_VAR)
+    emit_bytes4(c, idx)
+    > ""
+  }
+
+  if item.kind == "function" {
+    > ""
+  }
+
+  if item.kind == "import" { > "" }
+  > ""
+}
+
+# ─── Statement Compilation ────────────────────────────────────────
+
+! compile_statement(c: Compiler, stmt: ast.Statement) -> str {
+  if stmt.kind == "assign" {
+    $ err = compile_expression(c, stmt.value)
+    if err != "" { > err }
+    $ idx = add_constant(c, stmt.target)
+    emit_byte(c, OP_STORE_VAR)
+    emit_bytes4(c, idx)
+    > ""
+  }
+
+  if stmt.kind == "return" {
+    $ err = compile_expression(c, stmt.return_value)
+    if err != "" { > err }
+    emit_byte(c, OP_RETURN)
+    > ""
+  }
+
+  if stmt.kind == "if" {
+    $ err = compile_expression(c, stmt.condition)
+    if err != "" { > err }
+    $ jump_false_pos = emit_jump(c, OP_JUMP_IF_FALSE)
+
+    $ i = 0
+    while i < length(stmt.then_block) {
+      $ serr = compile_statement(c, stmt.then_block[i])
+      if serr != "" { > serr }
+      i = i + 1
+    }
+
+    if length(stmt.else_block) > 0 {
+      $ jump_end_pos = emit_jump(c, OP_JUMP)
+      patch_jump(c, jump_false_pos)
+      $ j = 0
+      while j < length(stmt.else_block) {
+        $ serr2 = compile_statement(c, stmt.else_block[j])
+        if serr2 != "" { > serr2 }
+        j = j + 1
+      }
+      patch_jump(c, jump_end_pos)
+    } else {
+      patch_jump(c, jump_false_pos)
+    }
+    > ""
+  }
+
+  if stmt.kind == "while" {
+    $ start_pos = length(c.instructions)
+    $ err = compile_expression(c, stmt.while_condition)
+    if err != "" { > err }
+    $ jump_false_pos = emit_jump(c, OP_JUMP_IF_FALSE)
+
+    $ i = 0
+    while i < length(stmt.body) {
+      $ serr = compile_statement(c, stmt.body[i])
+      if serr != "" { > serr }
+      i = i + 1
+    }
+
+    $ loop_jump = emit_jump(c, OP_JUMP)
+    $ b = intToBytes4(start_pos)
+    $ c.instructions[loop_jump] = b[0]
+    $ c.instructions[loop_jump + 1] = b[1]
+    $ c.instructions[loop_jump + 2] = b[2]
+    $ c.instructions[loop_jump + 3] = b[3]
+
+    patch_jump(c, jump_false_pos)
+    > ""
+  }
+
+  if stmt.kind == "expression" {
+    $ err = compile_expression(c, stmt.expr)
+    if err != "" { > err }
+    emit_byte(c, OP_POP)
+    > ""
+  }
+
+  > ""
+}
+
+# ─── Expression Compilation ───────────────────────────────────────
+
+! compile_expression(c: Compiler, expr: ast.Expr) -> str {
+  if expr.kind == "literal" {
+    $ val = cast_literal(expr.literal_value, expr.literal_type)
+    $ idx = add_constant(c, val)
+    emit_byte(c, OP_PUSH)
+    emit_bytes4(c, idx)
+    > ""
+  }
+
+  if expr.kind == "variable" {
+    $ idx = add_constant(c, expr.var_name)
+    emit_byte(c, OP_LOAD_VAR)
+    emit_bytes4(c, idx)
+    > ""
+  }
+
+  if expr.kind == "binary" {
+    $ err1 = compile_expression(c, expr.left)
+    if err1 != "" { > err1 }
+    $ err2 = compile_expression(c, expr.right)
+    if err2 != "" { > err2 }
+
+    if expr.op == "+" { emit_byte(c, OP_ADD) }
+    if expr.op == "-" { emit_byte(c, OP_SUB) }
+    if expr.op == "*" { emit_byte(c, OP_MUL) }
+    if expr.op == "/" { emit_byte(c, OP_DIV) }
+    if expr.op == "%" { emit_byte(c, OP_MOD) }
+    if expr.op == "==" { emit_byte(c, OP_EQ) }
+    if expr.op == "!=" { emit_byte(c, OP_NE) }
+    if expr.op == "<" { emit_byte(c, OP_LT) }
+    if expr.op == ">" { emit_byte(c, OP_GT) }
+    if expr.op == "<=" { emit_byte(c, OP_LE) }
+    if expr.op == ">=" { emit_byte(c, OP_GE) }
+    if expr.op == "&&" { emit_byte(c, OP_AND) }
+    if expr.op == "||" { emit_byte(c, OP_OR) }
+    > ""
+  }
+
+  if expr.kind == "unary" {
+    $ err = compile_expression(c, expr.operand)
+    if err != "" { > err }
+    if expr.op == "!" { emit_byte(c, OP_NOT) }
+    if expr.op == "-" { emit_byte(c, OP_NEG) }
+    > ""
+  }
+
+  if expr.kind == "call" {
+    $ i = 0
+    while i < length(expr.args) {
+      $ er = compile_expression(c, expr.args[i])
+      if er != "" { > er }
+      i = i + 1
+    }
+    $ idx = add_constant(c, expr.func_name)
+    emit_byte(c, OP_CALL)
+    emit_bytes4(c, idx)
+    emit_bytes4(c, length(expr.args))
+    > ""
+  }
+
+  if expr.kind == "field" {
+    $ err = compile_expression(c, expr.object)
+    if err != "" { > err }
+    $ idx = add_constant(c, expr.field_name)
+    emit_byte(c, OP_GET_FIELD)
+    emit_bytes4(c, idx)
+    > ""
+  }
+
+  if expr.kind == "object" {
+    $ i = 0
+    while i < length(expr.fields) {
+      $ f = expr.fields[i]
+      $ err = compile_expression(c, f.value)
+      if err != "" { > err }
+      $ kidx = add_constant(c, f.key)
+      emit_byte(c, OP_PUSH)
+      emit_bytes4(c, kidx)
+      i = i + 1
+    }
+    emit_byte(c, OP_BUILD_OBJECT)
+    emit_bytes4(c, length(expr.fields))
+    > ""
+  }
+
+  if expr.kind == "array" {
+    $ i = 0
+    while i < length(expr.elements) {
+      $ err = compile_expression(c, expr.elements[i])
+      if err != "" { > err }
+      i = i + 1
+    }
+    emit_byte(c, OP_BUILD_ARRAY)
+    emit_bytes4(c, length(expr.elements))
+    > ""
+  }
+
+  > "Unsupported expression kind: " + expr.kind
+}
+
+! cast_literal(val: str, t: str) -> any {
+  if t == "int" { > toInt(val) }
+  if t == "bool" { > (val == "true") }
+  if t == "str" { > val }
+  > null
+}

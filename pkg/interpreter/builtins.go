@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,6 +63,13 @@ func init() {
 		"flat":       builtinFlat,
 		"slice":      builtinSlice,
 		"print":      builtinPrint,
+		"typeOf":     builtinTypeOf,
+		"shr":       builtinShr,
+		"band":      builtinBand,
+		"intToBytes4": builtinIntToBytes4,
+		"intToBytes8": builtinIntToBytes8,
+		"writeFile":  builtinWriteFile,
+		"readFile":   builtinReadFile,
 		"text":       builtinText,
 		"html":       builtinHTML,
 		"blob":       builtinBlob,
@@ -1088,6 +1096,192 @@ func builtinPrint(i *Interpreter, args []Expr, env *Environment) (interface{}, e
 	}
 	fmt.Println()
 	return nil, nil
+}
+
+func builtinTypeOf(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("typeOf() expects 1 argument, got %d", len(args))
+	}
+	val, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	if val == nil {
+		return "null", nil
+	}
+	switch v := val.(type) {
+	case int64:
+		return "int", nil
+	case float64:
+		return "float", nil
+	case string:
+		return "str", nil
+	case bool:
+		return "bool", nil
+	case []interface{}:
+		return "array", nil
+	case map[string]interface{}:
+		return "object", nil
+	case *ResultValue:
+		return "result", nil
+	case *Future:
+		return "future", nil
+	default:
+		return fmt.Sprintf("%T", v), nil
+	}
+}
+
+func builtinShr(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("shr() expects 2 arguments (value, bits), got %d", len(args))
+	}
+	val, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	bits, err := i.EvaluateExpression(args[1], env)
+	if err != nil {
+		return nil, err
+	}
+	valInt, ok1 := val.(int64)
+	if !ok1 {
+		return nil, fmt.Errorf("shr() expects first argument to be int, got %T", val)
+	}
+	bitsInt, ok2 := bits.(int64)
+	if !ok2 {
+		return nil, fmt.Errorf("shr() expects second argument to be int, got %T", bits)
+	}
+	return valInt >> uint(bitsInt), nil
+}
+
+func builtinBand(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("band() expects 2 arguments, got %d", len(args))
+	}
+	val, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	mask, err := i.EvaluateExpression(args[1], env)
+	if err != nil {
+		return nil, err
+	}
+	valInt, ok1 := val.(int64)
+	if !ok1 {
+		return nil, fmt.Errorf("band() expects int arguments, got %T", val)
+	}
+	maskInt, ok2 := mask.(int64)
+	if !ok2 {
+		return nil, fmt.Errorf("band() expects int arguments, got %T", mask)
+	}
+	return valInt & maskInt, nil
+}
+
+func builtinIntToBytes4(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("intToBytes4() expects 1 argument, got %d", len(args))
+	}
+	val, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	n, ok := val.(int64)
+	if !ok {
+		return nil, fmt.Errorf("intToBytes4() expects int, got %T", val)
+	}
+	return []interface{}{
+		int64(n & 0xFF),
+		int64((n >> 8) & 0xFF),
+		int64((n >> 16) & 0xFF),
+		int64((n >> 24) & 0xFF),
+	}, nil
+}
+
+func builtinIntToBytes8(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("intToBytes8() expects 1 argument, got %d", len(args))
+	}
+	val, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	n, ok := val.(int64)
+	if !ok {
+		return nil, fmt.Errorf("intToBytes8() expects int, got %T", val)
+	}
+	return []interface{}{
+		int64(n & 0xFF),
+		int64((n >> 8) & 0xFF),
+		int64((n >> 16) & 0xFF),
+		int64((n >> 24) & 0xFF),
+		int64((n >> 32) & 0xFF),
+		int64((n >> 40) & 0xFF),
+		int64((n >> 48) & 0xFF),
+		int64((n >> 56) & 0xFF),
+	}, nil
+}
+
+func builtinWriteFile(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("writeFile() expects 2 arguments (path, data), got %d", len(args))
+	}
+	pathVal, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	path, ok := pathVal.(string)
+	if !ok {
+		return nil, fmt.Errorf("writeFile() expects first argument to be a string path, got %T", pathVal)
+	}
+
+	dataVal, err := i.EvaluateExpression(args[1], env)
+	if err != nil {
+		return nil, err
+	}
+
+	var bytes []byte
+	switch v := dataVal.(type) {
+	case string:
+		bytes = []byte(v)
+	case []interface{}:
+		bytes = make([]byte, len(v))
+		for idx, item := range v {
+			if n, ok := item.(int64); ok {
+				bytes[idx] = byte(n)
+			} else {
+				return nil, fmt.Errorf("writeFile() expects data array to contain integers, got %T at index %d", item, idx)
+			}
+		}
+	default:
+		return nil, fmt.Errorf("writeFile() expects second argument to be a string or array of bytes, got %T", dataVal)
+	}
+
+	if err := os.WriteFile(path, bytes, 0644); err != nil {
+		return nil, fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return nil, nil
+}
+
+func builtinReadFile(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("readFile() expects 1 argument (path), got %d", len(args))
+	}
+	pathVal, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	path, ok := pathVal.(string)
+	if !ok {
+		return nil, fmt.Errorf("readFile() expects argument to be a string path, got %T", pathVal)
+	}
+
+	bytes, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil // Return empty string if file doesn't exist
+	}
+
+	return string(bytes), nil
 }
 
 func builtinText(interp *Interpreter, args []Expr, env *Environment) (interface{}, error) {

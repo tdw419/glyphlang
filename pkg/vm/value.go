@@ -47,7 +47,7 @@ type StringValue struct {
 	Val string
 }
 
-func (v StringValue) Type() string { return "string" }
+func (v StringValue) Type() string { return "str" }
 
 func (v StringValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Val)

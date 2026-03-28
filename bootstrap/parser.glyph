@@ -171,6 +171,7 @@ import "./ast"
   if tok.type == token.COLON { > parse_type_def(p) }
   if tok.type == token.BANG { > parse_function(p) }
   if tok.type == token.AT { > parse_at_item(p) }
+  if tok.type == token.DOLLAR { > parse_var_decl_item(p) }
 
   > { parser: p, item: _item(), error: "Unexpected " + tok.type + " at " + toString(tok.line) + ":" + toString(tok.col) }
 }
@@ -481,13 +482,18 @@ import "./ast"
   if tok.type == token.IDENT {
     if tok.literal == "if" { > parse_if(p) }
     if tok.literal == "while" { > parse_while(p) }
-    if tok.literal == "break" { 
+    if tok.literal == "break" {
       $ adv = advance(p)
       > { parser: adv.parser, stmt: _stmt("break"), error: "" }
     }
     if tok.literal == "continue" {
       $ adv = advance(p)
       > { parser: adv.parser, stmt: _stmt("continue"), error: "" }
+    }
+    # Check for bare reassignment: IDENT = ...
+    $ next = peek_tok(p)
+    if next.type == token.EQUALS {
+      > parse_reassign(p)
     }
   }
 
@@ -531,6 +537,27 @@ import "./ast"
     > { parser: p, stmt: _field_assign_stmt(target, fld_name, vr.expr), error: "" }
   }
   > { parser: p, stmt: _assign_stmt(target, vr.expr), error: "" }
+}
+
+# Parse bare reassignment: x = value (without $)
+! parse_reassign(p: Parser) -> StmtResult {
+  $ name_res = expect(p, token.IDENT)
+  if name_res.error != "" { > { parser: p, stmt: _stmt("illegal"), error: name_res.error } }
+  p = name_res.parser
+  $ target = name_res.tok.literal
+
+  $ eq = expect(p, token.EQUALS)
+  if eq.error != "" { > { parser: p, stmt: _stmt("illegal"), error: eq.error } }
+  p = eq.parser
+
+  $ vr = parse_expression(p)
+  if vr.error != "" { > { parser: p, stmt: _stmt("illegal"), error: vr.error } }
+  p = vr.parser
+
+  $ stmt = _stmt("reassign")
+  $ stmt.target = target
+  $ stmt.value = vr.expr
+  > { parser: p, stmt: stmt, error: "" }
 }
 
 ! parse_return(p: Parser) -> StmtResult {
@@ -869,6 +896,16 @@ import "./ast"
   $ t2 = _type()
   $ t2.kind = "named"
   $ t2.name = name_res.tok.literal
+
+  # Handle qualified names like token.Token
+  if cur_type(p) == token.DOT {
+    $ adv = advance(p)
+    p = adv.parser
+    $ inner_res = expect(p, token.IDENT)
+    if inner_res.error != "" { > { parser: p, type: _type(), error: inner_res.error } }
+    p = inner_res.parser
+    $ t2.name = t2.name + "." + inner_res.tok.literal
+  }
 
   if cur_type(p) == token.QUESTION {
     $ adv = advance(p)
