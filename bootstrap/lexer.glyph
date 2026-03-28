@@ -1,0 +1,344 @@
+# bootstrap/lexer.glyph
+from "./token" import { Token }
+import "./token"
+
+: Lexer {
+  input: str!
+  pos: int!
+  read_pos: int!
+  ch: str!
+  line: int!
+  col: int!
+  last_token_was_value: bool!
+  last_token_literal: str!
+}
+
+: LexerResult {
+  token: Token!
+  lexer: Lexer!
+}
+
+! new_lexer(input: str) -> Lexer {
+  $ l = {
+    input: input,
+    pos: 0,
+    read_pos: 0,
+    ch: "",
+    line: 1,
+    col: 0,
+    last_token_was_value: false,
+    last_token_literal: ""
+  }
+  l = read_char(l)
+  > l
+}
+
+! read_char(l: Lexer) -> Lexer {
+  if l.read_pos >= length(l.input) {
+    $ l.ch = ""
+  } else {
+    $ l.ch = charAt(l.input, l.read_pos)
+  }
+  $ l.pos = l.read_pos
+  $ l.read_pos = l.read_pos + 1
+  $ l.col = l.col + 1
+  > l
+}
+
+! peek_char(l: Lexer) -> str {
+  if l.read_pos >= length(l.input) {
+    > ""
+  }
+  > charAt(l.input, l.read_pos)
+}
+
+! skip_whitespace(l: Lexer) -> Lexer {
+  while l.ch == " " || l.ch == "\t" || l.ch == "\r" {
+    l = read_char(l)
+  }
+  > l
+}
+
+! is_digit(ch: str) -> bool {
+  > ch >= "0" && ch <= "9"
+}
+
+! is_letter(ch: str) -> bool {
+  > (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+}
+
+! next_token(l: Lexer) -> LexerResult {
+  l = skip_whitespace(l)
+  $ tok = { type: "", literal: "", line: l.line, col: l.col }
+
+  if l.ch == "" {
+    $ tok.type = token.EOF
+    $ tok.literal = ""
+  } else if l.ch == "\n" {
+    $ tok.type = token.NEWLINE
+    $ tok.literal = "\n"
+    $ l.line = l.line + 1
+    $ l.col = 0
+    l = read_char(l)
+  } else if l.ch == "@" {
+    $ tok.type = token.AT
+    $ tok.literal = "@"
+    l = read_char(l)
+  } else if l.ch == ":" {
+    $ tok.type = token.COLON
+    $ tok.literal = ":"
+    l = read_char(l)
+  } else if l.ch == "$" {
+    $ tok.type = token.DOLLAR
+    $ tok.literal = "$"
+    l = read_char(l)
+  } else if l.ch == "+" {
+    $ tok.type = token.PLUS
+    $ tok.literal = "+"
+    l = read_char(l)
+  } else if l.ch == "-" {
+    if peek_char(l) == ">" {
+      $ tok.type = token.ARROW
+      $ tok.literal = "->"
+      l = read_char(l)
+      l = read_char(l)
+    } else {
+      $ tok.type = token.MINUS
+      $ tok.literal = "-"
+      l = read_char(l)
+    }
+  } else if l.ch == "*" {
+    $ tok.type = token.STAR
+    $ tok.literal = "*"
+    l = read_char(l)
+  } else if l.ch == "/" {
+    $ tok.type = token.SLASH
+    $ tok.literal = "/"
+    l = read_char(l)
+  } else if l.ch == "%" {
+    $ tok.type = token.PERCENT
+    $ tok.literal = "%"
+    l = read_char(l)
+  } else if l.ch == ">" {
+    if peek_char(l) == "=" {
+      $ tok.type = token.GREATER_EQ
+      $ tok.literal = ">="
+      l = read_char(l)
+      l = read_char(l)
+    } else {
+      $ tok.type = token.GREATER
+      $ tok.literal = ">"
+      l = read_char(l)
+    }
+  } else if l.ch == "<" {
+    if peek_char(l) == "=" {
+      $ tok.type = token.LESS_EQ
+      $ tok.literal = "<="
+      l = read_char(l)
+      l = read_char(l)
+    } else {
+      $ tok.type = token.LESS
+      $ tok.literal = "<"
+      l = read_char(l)
+    }
+  } else if l.ch == "!" {
+    if peek_char(l) == "=" {
+      $ tok.type = token.NOT_EQ
+      $ tok.literal = "!="
+      l = read_char(l)
+      l = read_char(l)
+    } else {
+      $ tok.type = token.BANG
+      $ tok.literal = "!"
+      l = read_char(l)
+    }
+  } else if l.ch == "=" {
+    if peek_char(l) == "=" {
+      $ tok.type = token.EQ_EQ
+      $ tok.literal = "=="
+      l = read_char(l)
+      l = read_char(l)
+    } else if peek_char(l) == ">" {
+      $ tok.type = token.FATARROW
+      $ tok.literal = "=>"
+      l = read_char(l)
+      l = read_char(l)
+    } else {
+      $ tok.type = token.EQUALS
+      $ tok.literal = "="
+      l = read_char(l)
+    }
+  } else if l.ch == "?" {
+    $ tok.type = token.QUESTION
+    $ tok.literal = "?"
+    l = read_char(l)
+  } else if l.ch == "~" {
+    $ tok.type = token.TILDE
+    $ tok.literal = "~"
+    l = read_char(l)
+  } else if l.ch == "&" {
+    if peek_char(l) == "&" {
+      $ tok.type = token.AND
+      $ tok.literal = "&&"
+      l = read_char(l)
+      l = read_char(l)
+    } else {
+      $ tok.type = token.AMPERSAND
+      $ tok.literal = "&"
+      l = read_char(l)
+    }
+  } else if l.ch == "|" {
+    if peek_char(l) == "|" {
+      $ tok.type = token.OR
+      $ tok.literal = "||"
+      l = read_char(l)
+      l = read_char(l)
+    } else {
+      $ tok.type = token.PIPE
+      $ tok.literal = "|"
+      l = read_char(l)
+    }
+  } else if l.ch == "(" {
+    $ tok.type = token.LPAREN
+    $ tok.literal = "("
+    l = read_char(l)
+  } else if l.ch == ")" {
+    $ tok.type = token.RPAREN
+    $ tok.literal = ")"
+    l = read_char(l)
+  } else if l.ch == "{" {
+    $ tok.type = token.LBRACE
+    $ tok.literal = "{"
+    l = read_char(l)
+  } else if l.ch == "}" {
+    $ tok.type = token.RBRACE
+    $ tok.literal = "}"
+    l = read_char(l)
+  } else if l.ch == "[" {
+    $ tok.type = token.LBRACKET
+    $ tok.literal = "["
+    l = read_char(l)
+  } else if l.ch == "]" {
+    $ tok.type = token.RBRACKET
+    $ tok.literal = "]"
+    l = read_char(l)
+  } else if l.ch == "," {
+    $ tok.type = token.COMMA
+    $ tok.literal = ","
+    l = read_char(l)
+  } else if l.ch == "." {
+    $ tok.type = token.DOT
+    $ tok.literal = "."
+    l = read_char(l)
+  } else if l.ch == "#" {
+    l = skip_comment(l)
+    > next_token(l)
+  } else if l.ch == "\"" {
+    $ res = read_string(l)
+    tok = res.token
+    l = res.lexer
+  } else if is_letter(l.ch) {
+    $ res = read_identifier(l)
+    tok = res.token
+    l = res.lexer
+  } else if is_digit(l.ch) {
+    $ res = read_number(l)
+    tok = res.token
+    l = res.lexer
+  } else {
+    $ tok.type = token.ILLEGAL
+    $ tok.literal = l.ch
+    l = read_char(l)
+  }
+
+  $ l.last_token_was_value = is_value_type(tok.type)
+  $ l.last_token_literal = tok.literal
+
+  > {token: tok, lexer: l}
+}
+
+! is_value_type(type: str) -> bool {
+  > type == token.IDENT || type == token.INTEGER || type == token.FLOAT || type == token.STRING || type == token.RPAREN || type == token.RBRACKET || type == token.TRUE || type == token.FALSE
+}
+
+! skip_comment(l: Lexer) -> Lexer {
+  while l.ch != "\n" && l.ch != "" {
+    l = read_char(l)
+  }
+  > l
+}
+
+! read_string(l: Lexer) -> LexerResult {
+  $ line = l.line
+  $ col = l.col
+  l = read_char(l) # skip quote
+  $ start_pos = l.pos
+  while l.ch != "\"" && l.ch != "" {
+    l = read_char(l)
+  }
+  if l.ch == "" {
+    > {token: {type: token.ILLEGAL, literal: "unterminated string", line: line, col: col}, lexer: l}
+  }
+  $ literal = substring(l.input, start_pos, l.pos)
+  l = read_char(l) # skip closing quote
+  > {token: {type: token.STRING, literal: literal, line: line, col: col}, lexer: l}
+}
+
+! read_identifier(l: Lexer) -> LexerResult {
+  $ start_pos = l.pos
+  $ line = l.line
+  $ col = l.col
+  while is_letter(l.ch) || is_digit(l.ch) || l.ch == "_" || l.ch == "/" {
+    l = read_char(l)
+  }
+  $ literal = substring(l.input, start_pos, l.pos)
+  $ type = lookup_ident(literal)
+  > {token: {type: type, literal: literal, line: line, col: col}, lexer: l}
+}
+
+! read_number(l: Lexer) -> LexerResult {
+  $ start_pos = l.pos
+  $ line = l.line
+  $ col = l.col
+  $ is_float = false
+  while is_digit(l.ch) {
+    l = read_char(l)
+  }
+  if l.ch == "." && is_digit(peek_char(l)) {
+    is_float = true
+    l = read_char(l)
+    while is_digit(l.ch) {
+      l = read_char(l)
+    }
+  }
+  $ literal = substring(l.input, start_pos, l.pos)
+  $ type = token.INTEGER
+  if is_float { type = token.FLOAT }
+  > {token: {type: type, literal: literal, line: line, col: col}, lexer: l}
+}
+
+! lookup_ident(ident: str) -> str {
+  if ident == "switch" { > token.SWITCH }
+  if ident == "case" { > token.CASE }
+  if ident == "default" { > token.DEFAULT }
+  if ident == "for" { > token.FOR }
+  if ident == "in" { > token.IN }
+  if ident == "macro" { > token.MACRO }
+  if ident == "match" { > token.MATCH }
+  if ident == "when" { > token.WHEN }
+  if ident == "async" { > token.ASYNC }
+  if ident == "await" { > token.AWAIT }
+  if ident == "import" { > token.IMPORT }
+  if ident == "module" { > token.MODULE }
+  if ident == "try" { > token.TRY }
+  if ident == "true" { > token.TRUE }
+  if ident == "false" { > token.FALSE }
+  if ident == "null" { > token.NULL }
+  if ident == "const" { > token.CONST }
+  if ident == "from" { > token.FROM }
+  if ident == "as" { > token.AS }
+  if ident == "assert" { > token.ASSERT }
+  if ident == "break" { > token.BREAK }
+  if ident == "continue" { > token.CONTINUE }
+  > token.IDENT
+}

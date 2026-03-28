@@ -1,0 +1,131 @@
+# bootstrap/ast.glyph
+# AST nodes for the self-hosted GlyphLang parser.
+# Covers the subset needed to parse token.glyph, lexer.glyph, and itself.
+
+# ─── Module ───────────────────────────────────────────────────────
+
+: Module {
+  items: [Item]!
+}
+
+# ─── Top-Level Items ──────────────────────────────────────────────
+
+: Item {
+  kind: str!
+  # const
+  const_name: str!
+  const_value: Expr?
+  const_type: Type?
+  # type def
+  type_name: str!
+  type_fields: [Field]!
+  # function
+  func_name: str!
+  func_params: [Field]!
+  func_return_type: Type?
+  func_body: [Statement]!
+  # import
+  import_path: str!
+  import_alias: str!
+  import_selective: bool!
+  import_names: [ImportName]!
+  # from import
+  from_path: str!
+  from_names: [ImportName]!
+  # command
+  command_name: str!
+  command_params: [Field]!
+  command_body: [Statement]!
+}
+
+: ImportName {
+  name: str!
+  alias: str!
+}
+
+# ─── Types ────────────────────────────────────────────────────────
+
+: Type {
+  kind: str!
+  # named: "named", name in name field
+  name: str!
+  # array: "array", element type in element_type
+  element_type: Type?
+  # optional: "optional", inner in inner_type
+  inner_type: Type?
+  # union: "union", variants in union_types
+  union_types: [Type]!
+  # function: "function", params + return
+  param_types: [Type]!
+  return_type: Type?
+  # generic: "generic", base + args
+  type_args: [Type]!
+  # primitive names: "int", "str", "bool", "float"
+  required: bool!
+}
+
+: Field {
+  name: str!
+  type_annotation: Type!
+  required: bool!
+  default_value: Expr?
+}
+
+# ─── Statements ───────────────────────────────────────────────────
+
+: Statement {
+  kind: str!
+  # assign: target, value
+  target: str!
+  value: Expr?
+  # field_assign: obj_expr, field, value
+  obj_expr: Expr?
+  field: str!
+  # return
+  return_value: Expr?
+  # if: condition, then_block, else_block
+  condition: Expr?
+  then_block: [Statement]!
+  else_block: [Statement]!
+  # while: condition, body
+  while_condition: Expr?
+  body: [Statement]!
+  # expression
+  expr: Expr?
+  # break, continue (no extra fields)
+}
+
+# ─── Expressions ──────────────────────────────────────────────────
+
+: Expr {
+  kind: str!
+  # literal
+  literal_value: str!
+  literal_type: str!
+  # variable
+  var_name: str!
+  # binary
+  op: str!
+  left: Expr?
+  right: Expr?
+  # unary
+  operand: Expr?
+  # field access
+  object: Expr?
+  field_name: str!
+  # function call
+  func_name: str!
+  args: [Expr]!
+  # object literal
+  fields: [ObjectField]!
+  # array literal
+  elements: [Expr]!
+  # index
+  index_expr: Expr?
+  array_expr: Expr?
+}
+
+: ObjectField {
+  key: str!
+  value: Expr!
+}

@@ -1,0 +1,79 @@
+# bootstrap/token.glyph
+
+# Special tokens
+const ILLEGAL = "ILLEGAL"
+const EOF     = "EOF"
+const NEWLINE = "NEWLINE"
+
+# Symbols
+const AT      = "@"
+const COLON   = ":"
+const DOLLAR  = "$"
+const PLUS    = "+"
+const MINUS   = "-"
+const STAR    = "*"
+const SLASH   = "/"
+const PERCENT = "%"
+const GREATER = ">"
+const GREATER_EQ = "GREATER_EQ"
+const LESS    = "<"
+const LESS_EQ = "LESS_EQ"
+const BANG    = "!"
+const NOT_EQ  = "NOT_EQ"
+const EQ_EQ   = "EQ_EQ"
+const QUESTION = "?"
+const TILDE   = "~"
+const AMPERSAND = "&"
+const AND     = "AND"
+const OR      = "OR"
+const EQUALS  = "="
+
+# Delimiters
+const LPAREN   = "("
+const RPAREN   = ")"
+const LBRACE   = "{"
+const RBRACE   = "}"
+const LBRACKET = "["
+const RBRACKET = "]"
+const COMMA    = ","
+const DOT      = "."
+const ARROW    = "->"
+const PIPE     = "|"
+const FATARROW = "FATARROW"
+
+# Literals
+const IDENT   = "IDENT"
+const STRING  = "STRING"
+const INTEGER = "INTEGER"
+const FLOAT   = "FLOAT"
+const TRUE    = "TRUE"
+const FALSE   = "FALSE"
+const NULL    = "NULL"
+
+# Keywords
+const SWITCH    = "SWITCH"
+const CASE      = "CASE"
+const DEFAULT   = "DEFAULT"
+const FOR       = "FOR"
+const IN        = "IN"
+const MACRO     = "MACRO"
+const MATCH     = "MATCH"
+const WHEN      = "WHEN"
+const ASYNC     = "ASYNC"
+const AWAIT     = "AWAIT"
+const IMPORT    = "IMPORT"
+const FROM      = "FROM"
+const AS        = "AS"
+const MODULE    = "MODULE"
+const CONST     = "CONST"
+const ASSERT    = "ASSERT"
+const BREAK     = "BREAK"
+const CONTINUE  = "CONTINUE"
+const TRY       = "TRY"
+
+: Token {
+  type: str!
+  literal: str!
+  line: int!
+  col: int!
+}

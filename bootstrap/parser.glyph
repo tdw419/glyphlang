@@ -1,0 +1,1079 @@
+# bootstrap/parser.glyph
+# Self-hosted recursive descent parser for GlyphLang.
+# Written in GlyphLang. Tokenizes via bootstrap/lexer, produces AST via bootstrap/ast.
+
+import "./token"
+import "./lexer"
+import "./ast"
+
+# ─── Parser State ─────────────────────────────────────────────────
+
+: Parser {
+  tokens: [token.Token]!
+  pos: int!
+  source: str!
+}
+
+# ─── Named Result Types ───────────────────────────────────────────
+
+: ParseResult {
+  mod: ast.Module!
+  error: str!
+}
+
+: ItemResult {
+  parser: Parser!
+  item: ast.Item!
+  error: str!
+}
+
+: StmtResult {
+  parser: Parser!
+  stmt: ast.Statement!
+  error: str!
+}
+
+: BlockResult {
+  parser: Parser!
+  stmts: [ast.Statement]!
+  error: str!
+}
+
+: ExprResult {
+  parser: Parser!
+  expr: ast.Expr!
+  error: str!
+}
+
+: TypeResult {
+  parser: Parser!
+  type: ast.Type!
+  error: str!
+}
+
+: FieldResult {
+  parser: Parser!
+  field: ast.Field!
+  error: str!
+}
+
+: ExpectRes {
+  parser: Parser!
+  tok: token.Token!
+  error: str!
+}
+
+: AdvanceRes {
+  parser: Parser!
+  tok: token.Token!
+}
+
+# ─── Parser Construction ──────────────────────────────────────────
+
+! new_parser(input: str) -> Parser {
+  $ l = lexer.new_lexer(input)
+  $ toks = []
+  $ done = false
+
+  while !done {
+    $ res = lexer.next_token(l)
+    $ tok = res.token
+    l = res.lexer
+
+    if tok.type != token.NEWLINE {
+      toks = toks + [tok]
+    }
+    if tok.type == token.EOF {
+      done = true
+    }
+  }
+
+  > {
+    tokens: toks,
+    pos: 0,
+    source: input
+  }
+}
+
+# ─── Token Access ─────────────────────────────────────────────────
+
+! cur_type(p: Parser) -> str {
+  $ tok = current(p)
+  > tok.type
+}
+
+! cur_literal(p: Parser) -> str {
+  $ tok = current(p)
+  > tok.literal
+}
+
+! peek_type(p: Parser) -> str {
+  $ tok = peek_tok(p)
+  > tok.type
+}
+
+! current(p: Parser) -> token.Token {
+  if p.pos >= length(p.tokens) {
+    > { type: token.EOF, literal: "", line: 0, col: 0 }
+  }
+  > p.tokens[p.pos]
+}
+
+! peek_tok(p: Parser) -> token.Token {
+  if p.pos + 1 >= length(p.tokens) {
+    > current(p)
+  }
+  > p.tokens[p.pos + 1]
+}
+
+! advance(p: Parser) -> AdvanceRes {
+  $ tok = current(p)
+  $ p.pos = p.pos + 1
+  > { parser: p, tok: tok }
+}
+
+! expect(p: Parser, ttype: str) -> ExpectRes {
+  $ tok = current(p)
+  if tok.type != ttype {
+    > { parser: p, tok: tok, error: "Expected " + ttype + " got " + tok.type + " at " + toString(tok.line) + ":" + toString(tok.col) }
+  }
+  $ res = advance(p)
+  > { parser: res.parser, tok: res.tok, error: "" }
+}
+
+# ─── Top-Level Parse ──────────────────────────────────────────────
+
+! parse(p: Parser) -> ParseResult {
+  $ items = []
+  $ err = ""
+
+  while cur_type(p) != token.EOF && err == "" {
+    $ res = parse_item(p)
+    p = res.parser
+    err = res.error
+    if err == "" {
+      items = items + [res.item]
+    }
+  }
+
+  if err != "" {
+    > { mod: { items: [] }, error: err }
+  }
+  > { mod: { items: items }, error: "" }
+}
+
+! parse_item(p: Parser) -> ItemResult {
+  $ tok = current(p)
+
+  if tok.type == token.IMPORT { > parse_import(p) }
+  if tok.type == token.FROM { > parse_from_import(p) }
+  if tok.type == token.CONST { > parse_const(p) }
+  if tok.type == token.COLON { > parse_type_def(p) }
+  if tok.type == token.BANG { > parse_function(p) }
+  if tok.type == token.AT { > parse_at_item(p) }
+
+  > { parser: p, item: _item(), error: "Unexpected " + tok.type + " at " + toString(tok.line) + ":" + toString(tok.col) }
+}
+
+# ─── Import Parsing ───────────────────────────────────────────────
+
+! parse_import(p: Parser) -> ItemResult {
+  $ res = expect(p, token.IMPORT)
+  if res.error != "" { > { parser: p, item: _item(), error: res.error } }
+  p = res.parser
+
+  $ path_res = expect(p, token.STRING)
+  if path_res.error != "" { > { parser: p, item: _item(), error: path_res.error } }
+  p = path_res.parser
+
+  $ alias = ""
+  if cur_type(p) == token.IDENT && cur_literal(p) == "as" {
+    $ adv = advance(p)
+    p = adv.parser
+    $ al = expect(p, token.IDENT)
+    if al.error != "" { > { parser: p, item: _item(), error: al.error } }
+    p = al.parser
+    alias = al.tok.literal
+  }
+
+  > { parser: p, item: _import_item(path_res.tok.literal, alias), error: "" }
+}
+
+! parse_from_import(p: Parser) -> ItemResult {
+  $ res = expect(p, token.FROM)
+  if res.error != "" { > { parser: p, item: _item(), error: res.error } }
+  p = res.parser
+
+  $ path_res = expect(p, token.STRING)
+  if path_res.error != "" { > { parser: p, item: _item(), error: path_res.error } }
+  p = path_res.parser
+
+  $ imp = expect(p, token.IMPORT)
+  if imp.error != "" { > { parser: p, item: _item(), error: imp.error } }
+  p = imp.parser
+
+  if cur_type(p) != token.LBRACE && cur_type(p) != token.LPAREN {
+    > { parser: p, item: _item(), error: "Expected { or ( after import" }
+  }
+  $ adv = advance(p)
+  p = adv.parser
+
+  $ names = []
+  $ end_tok = token.RBRACE
+  if adv.tok.type == token.LPAREN { end_tok = token.RPAREN }
+
+  while cur_type(p) != end_tok && cur_type(p) != token.EOF {
+    $ nm = expect(p, token.IDENT)
+    if nm.error != "" { > { parser: p, item: _item(), error: nm.error } }
+    p = nm.parser
+    $ n = nm.tok.literal
+    $ a = ""
+    if cur_type(p) == token.IDENT && cur_literal(p) == "as" {
+      $ ad2 = advance(p)
+      p = ad2.parser
+      $ al = expect(p, token.IDENT)
+      if al.error != "" { > { parser: p, item: _item(), error: al.error } }
+      p = al.parser
+      a = al.tok.literal
+    }
+    names = names + [{ name: n, alias: a }]
+    if cur_type(p) == token.COMMA {
+      $ adv4 = advance(p)
+      p = adv4.parser
+    }
+  }
+
+  $ res2 = expect(p, end_tok)
+  if res2.error != "" { > { parser: p, item: _item(), error: res2.error } }
+  p = res2.parser
+
+  > { parser: p, item: _from_import_item(path_res.tok.literal, names), error: "" }
+}
+
+# ─── Const Parsing ───────────────────────────────────────────────
+
+! parse_const(p: Parser) -> ItemResult {
+  $ res = expect(p, token.CONST)
+  if res.error != "" { > { parser: p, item: _item(), error: res.error } }
+  p = res.parser
+
+  $ name_res = expect(p, token.IDENT)
+  if name_res.error != "" { > { parser: p, item: _item(), error: name_res.error } }
+  p = name_res.parser
+
+  $ ctype = null
+  if cur_type(p) == token.COLON {
+    $ tr = parse_type(p)
+    if tr.error != "" { > { parser: p, item: _item(), error: tr.error } }
+    p = tr.parser
+    ctype = tr.type
+  }
+
+  $ eq = expect(p, token.EQUALS)
+  if eq.error != "" { > { parser: p, item: _item(), error: eq.error } }
+  p = eq.parser
+
+  $ val_res = parse_expression(p)
+  if val_res.error != "" { > { parser: p, item: _item(), error: val_res.error } }
+  p = val_res.parser
+
+  > { parser: p, item: _const_item(name_res.tok.literal, val_res.expr, ctype), error: "" }
+}
+
+# ─── Type Definition Parsing ──────────────────────────────────────
+
+! parse_type_def(p: Parser) -> ItemResult {
+  $ res = expect(p, token.COLON)
+  if res.error != "" { > { parser: p, item: _item(), error: res.error } }
+  p = res.parser
+
+  $ name_res = expect(p, token.IDENT)
+  if name_res.error != "" { > { parser: p, item: _item(), error: name_res.error } }
+  p = name_res.parser
+
+  $ br = expect(p, token.LBRACE)
+  if br.error != "" { > { parser: p, item: _item(), error: br.error } }
+  p = br.parser
+
+  $ fields = []
+  while cur_type(p) != token.RBRACE && cur_type(p) != token.EOF {
+    $ fr = parse_field(p)
+    if fr.error != "" { > { parser: p, item: _item(), error: fr.error } }
+    p = fr.parser
+    fields = fields + [fr.field]
+    
+    if cur_type(p) == token.COMMA {
+      $ adv = advance(p)
+      p = adv.parser
+    }
+  }
+
+  $ br2 = expect(p, token.RBRACE)
+  if br2.error != "" { > { parser: p, item: _item(), error: br2.error } }
+  p = br2.parser
+
+  > { parser: p, item: _type_def_item(name_res.tok.literal, fields), error: "" }
+}
+
+! parse_field(p: Parser) -> FieldResult {
+  $ name_res = expect(p, token.IDENT)
+  if name_res.error != "" { > { parser: p, field: _field(), error: name_res.error } }
+  p = name_res.parser
+
+  $ col = expect(p, token.COLON)
+  if col.error != "" { > { parser: p, field: _field(), error: col.error } }
+  p = col.parser
+
+  $ tr = parse_type(p)
+  if tr.error != "" { > { parser: p, field: _field(), error: tr.error } }
+  p = tr.parser
+
+  $ req = false
+  if cur_type(p) == token.BANG {
+    req = true
+    $ adv = advance(p)
+    p = adv.parser
+  }
+
+  $ def_val = null
+  if cur_type(p) == token.EQUALS {
+    $ adv = advance(p)
+    p = adv.parser
+    $ vr = parse_expression(p)
+    if vr.error != "" { > { parser: p, field: _field(), error: vr.error } }
+    p = vr.parser
+    def_val = vr.expr
+  }
+
+  > { parser: p, field: { name: name_res.tok.literal, type_annotation: tr.type, required: req, default_value: def_val }, error: "" }
+}
+
+# ─── Function Parsing ─────────────────────────────────────────────
+
+! parse_function(p: Parser) -> ItemResult {
+  $ res = expect(p, token.BANG)
+  if res.error != "" { > { parser: p, item: _item(), error: res.error } }
+  p = res.parser
+
+  $ name_res = expect(p, token.IDENT)
+  if name_res.error != "" { > { parser: p, item: _item(), error: name_res.error } }
+  p = name_res.parser
+
+  $ lp = expect(p, token.LPAREN)
+  if lp.error != "" { > { parser: p, item: _item(), error: lp.error } }
+  p = lp.parser
+
+  $ params = []
+  while cur_type(p) != token.RPAREN && cur_type(p) != token.EOF {
+    $ fr = parse_field(p)
+    if fr.error != "" { > { parser: p, item: _item(), error: fr.error } }
+    p = fr.parser
+    params = params + [fr.field]
+    if cur_type(p) == token.COMMA {
+      $ adv = advance(p)
+      p = adv.parser
+    }
+  }
+
+  $ rp = expect(p, token.RPAREN)
+  if rp.error != "" { > { parser: p, item: _item(), error: rp.error } }
+  p = rp.parser
+
+  $ ret_type = null
+  if cur_type(p) == token.ARROW {
+    $ adv = advance(p)
+    p = adv.parser
+    $ tr = parse_type(p)
+    if tr.error != "" { > { parser: p, item: _item(), error: tr.error } }
+    p = tr.parser
+    ret_type = tr.type
+  }
+
+  $ br = parse_block(p)
+  if br.error != "" { > { parser: p, item: _item(), error: br.error } }
+  p = br.parser
+
+  > { parser: p, item: _func_item(name_res.tok.literal, params, ret_type, br.stmts), error: "" }
+}
+
+# ─── @ Item Parsing ───────────────────────────────────────────────
+
+! parse_at_item(p: Parser) -> ItemResult {
+  $ res = expect(p, token.AT)
+  if res.error != "" { > { parser: p, item: _item(), error: res.error } }
+  p = res.parser
+
+  $ tok = current(p)
+  if tok.type == token.IDENT && tok.literal == "command" {
+    > parse_command(p)
+  }
+
+  > { parser: p, item: _item(), error: "Unsupported @ item: " + tok.literal }
+}
+
+! parse_command(p: Parser) -> ItemResult {
+  $ adv = advance(p) # consume "command"
+  p = adv.parser
+
+  $ name_res = expect(p, token.IDENT)
+  if name_res.error != "" { > { parser: p, item: _item(), error: name_res.error } }
+  p = name_res.parser
+
+  $ params = []
+  if cur_type(p) == token.LPAREN {
+    $ adv2 = advance(p)
+    p = adv2.parser
+    while cur_type(p) != token.RPAREN && cur_type(p) != token.EOF {
+      $ fr = parse_field(p)
+      if fr.error != "" { > { parser: p, item: _item(), error: fr.error } }
+      p = fr.parser
+      params = params + [fr.field]
+      if cur_type(p) == token.COMMA {
+        $ adv3 = advance(p)
+        p = adv3.parser
+      }
+    }
+    $ rp = expect(p, token.RPAREN)
+    if rp.error != "" { > { parser: p, item: _item(), error: rp.error } }
+    p = rp.parser
+  }
+
+  $ br = parse_block(p)
+  if br.error != "" { > { parser: p, item: _item(), error: br.error } }
+  p = br.parser
+
+  > { parser: p, item: _command_item(name_res.tok.literal, params, br.stmts), error: "" }
+}
+
+# ─── Block Parsing ────────────────────────────────────────────────
+
+! parse_block(p: Parser) -> BlockResult {
+  $ res = expect(p, token.LBRACE)
+  if res.error != "" { > { parser: p, stmts: [], error: res.error } }
+  p = res.parser
+
+  $ stmts = []
+  while cur_type(p) != token.RBRACE && cur_type(p) != token.EOF {
+    $ sr = parse_statement(p)
+    if sr.error != "" { > { parser: p, stmts: [], error: sr.error } }
+    p = sr.parser
+    stmts = stmts + [sr.stmt]
+  }
+
+  $ res2 = expect(p, token.RBRACE)
+  if res2.error != "" { > { parser: p, stmts: [], error: res2.error } }
+  p = res2.parser
+
+  > { parser: p, stmts: stmts, error: "" }
+}
+
+# ─── Statement Parsing ────────────────────────────────────────────
+
+! parse_statement(p: Parser) -> StmtResult {
+  $ tok = current(p)
+
+  if tok.type == token.DOLLAR {
+    > parse_assign(p)
+  }
+  if tok.type == token.GREATER {
+    > parse_return(p)
+  }
+  if tok.type == token.IDENT {
+    if tok.literal == "if" { > parse_if(p) }
+    if tok.literal == "while" { > parse_while(p) }
+    if tok.literal == "break" { 
+      $ adv = advance(p)
+      > { parser: adv.parser, stmt: _stmt("break"), error: "" }
+    }
+    if tok.literal == "continue" {
+      $ adv = advance(p)
+      > { parser: adv.parser, stmt: _stmt("continue"), error: "" }
+    }
+  }
+
+  $ er = parse_expression(p)
+  if er.error != "" { > { parser: p, stmt: _stmt("illegal"), error: er.error } }
+  p = er.parser
+  > { parser: p, stmt: _expr_stmt(er.expr), error: "" }
+}
+
+! parse_assign(p: Parser) -> StmtResult {
+  $ res = expect(p, token.DOLLAR)
+  if res.error != "" { > { parser: p, stmt: _stmt("illegal"), error: res.error } }
+  p = res.parser
+
+  $ name_res = expect(p, token.IDENT)
+  if name_res.error != "" { > { parser: p, stmt: _stmt("illegal"), error: name_res.error } }
+  p = name_res.parser
+  $ target = name_res.tok.literal
+
+  $ is_field = false
+  $ fld_name = ""
+  if cur_type(p) == token.DOT {
+    is_field = true
+    $ adv = advance(p)
+    p = adv.parser
+    $ fr = expect(p, token.IDENT)
+    if fr.error != "" { > { parser: p, stmt: _stmt("illegal"), error: fr.error } }
+    p = fr.parser
+    fld_name = fr.tok.literal
+  }
+
+  $ eq = expect(p, token.EQUALS)
+  if eq.error != "" { > { parser: p, stmt: _stmt("illegal"), error: eq.error } }
+  p = eq.parser
+
+  $ vr = parse_expression(p)
+  if vr.error != "" { > { parser: p, stmt: _stmt("illegal"), error: vr.error } }
+  p = vr.parser
+
+  if is_field {
+    > { parser: p, stmt: _field_assign_stmt(target, fld_name, vr.expr), error: "" }
+  }
+  > { parser: p, stmt: _assign_stmt(target, vr.expr), error: "" }
+}
+
+! parse_return(p: Parser) -> StmtResult {
+  $ res = expect(p, token.GREATER)
+  if res.error != "" { > { parser: p, stmt: _stmt("illegal"), error: res.error } }
+  p = res.parser
+
+  $ vr = parse_expression(p)
+  if vr.error != "" { > { parser: p, stmt: _stmt("illegal"), error: vr.error } }
+  p = vr.parser
+
+  > { parser: p, stmt: _return_stmt(vr.expr), error: "" }
+}
+
+! parse_if(p: Parser) -> StmtResult {
+  $ adv = advance(p) # consume "if"
+  p = adv.parser
+
+  $ cr = parse_expression(p)
+  if cr.error != "" { > { parser: p, stmt: _stmt("illegal"), error: cr.error } }
+  p = cr.parser
+
+  $ th_br = parse_block(p)
+  if th_br.error != "" { > { parser: p, stmt: _stmt("illegal"), error: th_br.error } }
+  p = th_br.parser
+
+  $ el_stmts = []
+  if cur_type(p) == token.IDENT && cur_literal(p) == "else" {
+    $ adv2 = advance(p)
+    p = adv2.parser
+    if cur_type(p) == token.LBRACE {
+      $ el_br = parse_block(p)
+      if el_br.error != "" { > { parser: p, stmt: _stmt("illegal"), error: el_br.error } }
+      p = el_br.parser
+      el_stmts = el_br.stmts
+    } else {
+      $ el_if = parse_if(p)
+      if el_if.error != "" { > { parser: p, stmt: _stmt("illegal"), error: el_if.error } }
+      p = el_if.parser
+      el_stmts = [el_if.stmt]
+    }
+  }
+
+  > { parser: p, stmt: _if_stmt(cr.expr, th_br.stmts, el_stmts), error: "" }
+}
+
+! parse_while(p: Parser) -> StmtResult {
+  $ adv = advance(p) # consume "while"
+  p = adv.parser
+
+  $ cr = parse_expression(p)
+  if cr.error != "" { > { parser: p, stmt: _stmt("illegal"), error: cr.error } }
+  p = cr.parser
+
+  $ br = parse_block(p)
+  if br.error != "" { > { parser: p, stmt: _stmt("illegal"), error: br.error } }
+  p = br.parser
+
+  > { parser: p, stmt: _while_stmt(cr.expr, br.stmts), error: "" }
+}
+
+# ─── Expression Parsing ───────────────────────────────────────────
+
+! parse_expression(p: Parser) -> ExprResult {
+  > parse_boolean_logic(p)
+}
+
+! parse_boolean_logic(p: Parser) -> ExprResult {
+  $ res = parse_comparison(p)
+  if res.error != "" { > res }
+  p = res.parser
+  $ expr = res.expr
+
+  while cur_type(p) == token.AND || cur_type(p) == token.OR || cur_type(p) == token.AMPERSAND || cur_type(p) == token.PIPE {
+    $ op = cur_literal(p)
+    $ adv = advance(p)
+    p = adv.parser
+    $ rr = parse_comparison(p)
+    if rr.error != "" { > { parser: p, expr: _expr(), error: rr.error } }
+    p = rr.parser
+    expr = _bin_expr(op, expr, rr.expr)
+  }
+  > { parser: p, expr: expr, error: "" }
+}
+
+! parse_comparison(p: Parser) -> ExprResult {
+  $ res = parse_additive(p)
+  if res.error != "" { > res }
+  p = res.parser
+  $ expr = res.expr
+
+  $ t = cur_type(p)
+  if t == token.EQ_EQ || t == token.NOT_EQ || t == token.GREATER || t == token.LESS || t == token.GREATER_EQ || t == token.LESS_EQ {
+    $ op = cur_literal(p)
+    $ adv = advance(p)
+    p = adv.parser
+    $ rr = parse_additive(p)
+    if rr.error != "" { > { parser: p, expr: _expr(), error: rr.error } }
+    p = rr.parser
+    expr = _bin_expr(op, expr, rr.expr)
+  }
+  > { parser: p, expr: expr, error: "" }
+}
+
+! parse_additive(p: Parser) -> ExprResult {
+  $ res = parse_multiplicative(p)
+  if res.error != "" { > res }
+  p = res.parser
+  $ expr = res.expr
+
+  while cur_type(p) == token.PLUS || cur_type(p) == token.MINUS {
+    $ op = cur_literal(p)
+    $ adv = advance(p)
+    p = adv.parser
+    $ rr = parse_multiplicative(p)
+    if rr.error != "" { > { parser: p, expr: _expr(), error: rr.error } }
+    p = rr.parser
+    expr = _bin_expr(op, expr, rr.expr)
+  }
+  > { parser: p, expr: expr, error: "" }
+}
+
+! parse_multiplicative(p: Parser) -> ExprResult {
+  $ res = parse_unary(p)
+  if res.error != "" { > res }
+  p = res.parser
+  $ expr = res.expr
+
+  while cur_type(p) == token.STAR || cur_type(p) == token.SLASH || cur_type(p) == token.PERCENT {
+    $ op = cur_literal(p)
+    $ adv = advance(p)
+    p = adv.parser
+    $ rr = parse_unary(p)
+    if rr.error != "" { > { parser: p, expr: _expr(), error: rr.error } }
+    p = rr.parser
+    expr = _bin_expr(op, expr, rr.expr)
+  }
+  > { parser: p, expr: expr, error: "" }
+}
+
+! parse_unary(p: Parser) -> ExprResult {
+  $ t = cur_type(p)
+  if t == token.BANG || t == token.MINUS {
+    $ op = cur_literal(p)
+    $ adv = advance(p)
+    p = adv.parser
+    $ rr = parse_unary(p)
+    if rr.error != "" { > { parser: p, expr: _expr(), error: rr.error } }
+    p = rr.parser
+    > { parser: p, expr: _unary_expr(op, rr.expr), error: "" }
+  }
+  > parse_call_or_member(p)
+}
+
+! parse_call_or_member(p: Parser) -> ExprResult {
+  $ res = parse_primary(p)
+  if res.error != "" { > res }
+  p = res.parser
+  $ expr = res.expr
+
+  $ done = false
+  while !done {
+    $ t = cur_type(p)
+    if t == token.DOT {
+      $ adv = advance(p)
+      p = adv.parser
+      $ fr = expect(p, token.IDENT)
+      if fr.error != "" { > { parser: p, expr: _expr(), error: fr.error } }
+      p = fr.parser
+      expr = _field_expr(expr, fr.tok.literal)
+    } else if t == token.LPAREN {
+      if expr.kind == "variable" {
+        $ fn_name = expr.var_name
+        $ adv = advance(p)
+        p = adv.parser
+        $ args = []
+        while cur_type(p) != token.RPAREN && cur_type(p) != token.EOF {
+          $ ar = parse_expression(p)
+          if ar.error != "" { > { parser: p, expr: _expr(), error: ar.error } }
+          p = ar.parser
+          args = args + [ar.expr]
+          if cur_type(p) == token.COMMA {
+            $ adv2 = advance(p)
+            p = adv2.parser
+          }
+        }
+        $ rp = expect(p, token.RPAREN)
+        if rp.error != "" { > { parser: p, expr: _expr(), error: rp.error } }
+        p = rp.parser
+        expr = _call_expr(fn_name, args)
+      } else {
+        done = true
+      }
+    } else if t == token.LBRACKET {
+      $ adv = advance(p)
+      p = adv.parser
+      $ ir = parse_expression(p)
+      if ir.error != "" { > { parser: p, expr: _expr(), error: ir.error } }
+      p = ir.parser
+      $ rb = expect(p, token.RBRACKET)
+      if rb.error != "" { > { parser: p, expr: _expr(), error: rb.error } }
+      p = rb.parser
+      expr = _index_expr(expr, ir.expr)
+    } else {
+      done = true
+    }
+  }
+  > { parser: p, expr: expr, error: "" }
+}
+
+! parse_primary(p: Parser) -> ExprResult {
+  $ tok = current(p)
+
+  if tok.type == token.INTEGER {
+    $ adv = advance(p)
+    > { parser: adv.parser, expr: _lit_expr(tok.literal, "int"), error: "" }
+  }
+  if tok.type == token.STRING {
+    $ adv = advance(p)
+    > { parser: adv.parser, expr: _lit_expr(tok.literal, "str"), error: "" }
+  }
+  if tok.type == token.TRUE || tok.type == token.FALSE {
+    $ adv = advance(p)
+    > { parser: adv.parser, expr: _lit_expr(tok.literal, "bool"), error: "" }
+  }
+  if tok.type == token.NULL {
+    $ adv = advance(p)
+    > { parser: adv.parser, expr: _lit_expr("", "null"), error: "" }
+  }
+  if tok.type == token.LPAREN {
+    $ adv = advance(p)
+    p = adv.parser
+    $ er = parse_expression(p)
+    if er.error != "" { > er }
+    p = er.parser
+    $ rp = expect(p, token.RPAREN)
+    if rp.error != "" { > { parser: p, expr: _expr(), error: rp.error } }
+    p = rp.parser
+    > { parser: p, expr: er.expr, error: "" }
+  }
+  if tok.type == token.LBRACKET {
+    > parse_array_literal(p)
+  }
+  if tok.type == token.LBRACE {
+    > parse_object_literal(p)
+  }
+  if tok.type == token.IDENT {
+    $ adv = advance(p)
+    > { parser: adv.parser, expr: _var_expr(tok.literal), error: "" }
+  }
+
+  > { parser: p, expr: _expr(), error: "Unexpected " + tok.type + " '" + tok.literal + "' at " + toString(tok.line) + ":" + toString(tok.col) }
+}
+
+! parse_array_literal(p: Parser) -> ExprResult {
+  $ res = expect(p, token.LBRACKET)
+  if res.error != "" { > { parser: p, expr: _expr(), error: res.error } }
+  p = res.parser
+
+  $ elements = []
+  while cur_type(p) != token.RBRACKET && cur_type(p) != token.EOF {
+    $ er = parse_expression(p)
+    if er.error != "" { > { parser: p, expr: _expr(), error: er.error } }
+    p = er.parser
+    elements = elements + [er.expr]
+    if cur_type(p) == token.COMMA {
+      $ adv = advance(p)
+      p = adv.parser
+    }
+  }
+
+  $ rb = expect(p, token.RBRACKET)
+  if rb.error != "" { > { parser: p, expr: _expr(), error: rb.error } }
+  p = rb.parser
+
+  > { parser: p, expr: _arr_expr(elements), error: "" }
+}
+
+! parse_object_literal(p: Parser) -> ExprResult {
+  $ res = expect(p, token.LBRACE)
+  if res.error != "" { > { parser: p, expr: _expr(), error: res.error } }
+  p = res.parser
+
+  $ fields = []
+  while cur_type(p) != token.RBRACE && cur_type(p) != token.EOF {
+    $ ky = expect(p, token.IDENT)
+    if ky.error != "" { > { parser: p, expr: _expr(), error: ky.error } }
+    p = ky.parser
+
+    $ col = expect(p, token.COLON)
+    if col.error != "" { > { parser: p, expr: _expr(), error: col.error } }
+    p = col.parser
+
+    $ vr = parse_expression(p)
+    if vr.error != "" { > { parser: p, expr: _expr(), error: vr.error } }
+    p = vr.parser
+
+    fields = fields + [{ key: ky.tok.literal, value: vr.expr }]
+    if cur_type(p) == token.COMMA {
+      $ adv = advance(p)
+      p = adv.parser
+    }
+  }
+
+  $ br = expect(p, token.RBRACE)
+  if br.error != "" { > { parser: p, expr: _expr(), error: br.error } }
+  p = br.parser
+
+  > { parser: p, expr: _obj_expr(fields), error: "" }
+}
+
+# ─── Type Parsing ────────────────────────────────────────────────
+
+! parse_type(p: Parser) -> TypeResult {
+  $ tok = current(p)
+  
+  if tok.type == token.LBRACKET {
+    $ adv = advance(p)
+    p = adv.parser
+    $ tr = parse_type(p)
+    if tr.error != "" { > { parser: p, type: _type(), error: tr.error } }
+    p = tr.parser
+    $ rb = expect(p, token.RBRACKET)
+    if rb.error != "" { > { parser: p, type: _type(), error: rb.error } }
+    p = rb.parser
+    $ t = _type()
+    $ t.kind = "array"
+    $ t.element_type = tr.type
+    > { parser: p, type: t, error: "" }
+  }
+
+  $ name_res = expect(p, token.IDENT)
+  if name_res.error != "" { > { parser: p, type: _type(), error: name_res.error } }
+  p = name_res.parser
+  
+  $ t2 = _type()
+  $ t2.kind = "named"
+  $ t2.name = name_res.tok.literal
+
+  if cur_type(p) == token.QUESTION {
+    $ adv = advance(p)
+    p = adv.parser
+    $ ot = _type()
+    $ ot.kind = "optional"
+    $ ot.inner_type = t2
+    t2 = ot
+  }
+
+  > { parser: p, type: t2, error: "" }
+}
+
+# ─── Constructor Helpers ──────────────────────────────────────────
+
+! _item() -> ast.Item {
+  > { kind: "illegal", const_name: "", const_value: null, const_type: null,
+      type_name: "", type_fields: [], func_name: "", func_params: [],
+      func_return_type: null, func_body: [], import_path: "", import_alias: "",
+      import_selective: false, import_names: [], from_path: "", from_names: [],
+      command_name: "", command_params: [], command_body: [] }
+}
+
+! _import_item(path: str, alias: str) -> ast.Item {
+  $ it = _item()
+  $ it.kind = "import"
+  $ it.import_path = path
+  $ it.import_alias = alias
+  > it
+}
+
+! _from_import_item(path: str, names: [ast.ImportName]) -> ast.Item {
+  $ it = _item()
+  $ it.kind = "from_import"
+  $ it.from_path = path
+  $ it.from_names = names
+  > it
+}
+
+! _const_item(name: str, val: ast.Expr, ctype: ast.Type?) -> ast.Item {
+  $ it = _item()
+  $ it.kind = "const"
+  $ it.const_name = name
+  $ it.const_value = val
+  $ it.const_type = ctype
+  > it
+}
+
+! _type_def_item(name: str, fields: [ast.Field]) -> ast.Item {
+  $ it = _item()
+  $ it.kind = "type_def"
+  $ it.type_name = name
+  $ it.type_fields = fields
+  > it
+}
+
+! _func_item(name: str, params: [ast.Field], ret: ast.Type?, body: [ast.Statement]) -> ast.Item {
+  $ it = _item()
+  $ it.kind = "function"
+  $ it.func_name = name
+  $ it.func_params = params
+  $ it.func_return_type = ret
+  $ it.func_body = body
+  > it
+}
+
+! _command_item(name: str, params: [ast.Field], body: [ast.Statement]) -> ast.Item {
+  $ it = _item()
+  $ it.kind = "command"
+  $ it.command_name = name
+  $ it.command_params = params
+  $ it.command_body = body
+  > it
+}
+
+! _expr() -> ast.Expr {
+  > { kind: "literal", literal_value: "", literal_type: "null", var_name: "",
+      op: "", left: null, right: null, operand: null,
+      object: null, field_name: "", func_name: "", args: [],
+      fields: [], elements: [], index_expr: null, array_expr: null }
+}
+
+! _lit_expr(val: str, t: str) -> ast.Expr {
+  $ e = _expr()
+  $ e.kind = "literal"
+  $ e.literal_value = val
+  $ e.literal_type = t
+  > e
+}
+
+! _var_expr(name: str) -> ast.Expr {
+  $ e = _expr()
+  $ e.kind = "variable"
+  $ e.var_name = name
+  > e
+}
+
+! _bin_expr(op: str, left: ast.Expr, right: ast.Expr) -> ast.Expr {
+  $ e = _expr()
+  $ e.kind = "binary"
+  $ e.op = op
+  $ e.left = left
+  $ e.right = right
+  > e
+}
+
+! _unary_expr(op: str, operand: ast.Expr) -> ast.Expr {
+  $ e = _expr()
+  $ e.kind = "unary"
+  $ e.op = op
+  $ e.operand = operand
+  > e
+}
+
+! _field_expr(obj: ast.Expr, field: str) -> ast.Expr {
+  $ e = _expr()
+  $ e.kind = "field"
+  $ e.object = obj
+  $ e.field_name = field
+  > e
+}
+
+! _call_expr(name: str, args: [ast.Expr]) -> ast.Expr {
+  $ e = _expr()
+  $ e.kind = "call"
+  $ e.func_name = name
+  $ e.args = args
+  > e
+}
+
+! _obj_expr(fields: [ast.ObjectField]) -> ast.Expr {
+  $ e = _expr()
+  $ e.kind = "object"
+  $ e.fields = fields
+  > e
+}
+
+! _arr_expr(elements: [ast.Expr]) -> ast.Expr {
+  $ e = _expr()
+  $ e.kind = "array"
+  $ e.elements = elements
+  > e
+}
+
+! _index_expr(array: ast.Expr, index: ast.Expr) -> ast.Expr {
+  $ e = _expr()
+  $ e.kind = "index"
+  $ e.array_expr = array
+  $ e.index_expr = index
+  > e
+}
+
+! _type() -> ast.Type {
+  > { kind: "named", name: "", element_type: null, inner_type: null, union_types: [], param_types: [], return_type: null, type_args: [], required: false }
+}
+
+! _field() -> ast.Field {
+  > { name: "", type_annotation: _type(), required: false, default_value: null }
+}
+
+! _stmt(kind: str) -> ast.Statement {
+  > { kind: kind, target: "", value: null, obj_expr: null,
+      field: "", return_value: null, condition: null,
+      then_block: [], else_block: [], while_condition: null, body: [], expr: null }
+}
+
+! _assign_stmt(target: str, val: ast.Expr) -> ast.Statement {
+  $ s = _stmt("assign")
+  $ s.target = target
+  $ s.value = val
+  > s
+}
+
+! _field_assign_stmt(target: str, fld: str, val: ast.Expr) -> ast.Statement {
+  $ s = _stmt("field_assign")
+  $ s.target = target
+  $ s.field = fld
+  $ s.value = val
+  $ s.obj_expr = _var_expr(target)
+  > s
+}
+
+! _return_stmt(val: ast.Expr) -> ast.Statement {
+  $ s = _stmt("return")
+  $ s.return_value = val
+  > s
+}
+
+! _if_stmt(cond: ast.Expr, then: [ast.Statement], els: [ast.Statement]) -> ast.Statement {
+  $ s = _stmt("if")
+  $ s.condition = cond
+  $ s.then_block = then
+  $ s.else_block = els
+  > s
+}
+
+! _while_stmt(cond: ast.Expr, body: [ast.Statement]) -> ast.Statement {
+  $ s = _stmt("while")
+  $ s.while_condition = cond
+  $ s.body = body
+  > s
+}
+
+! _expr_stmt(expr: ast.Expr) -> ast.Statement {
+  $ s = _stmt("expression")
+  $ s.expr = expr
+  > s
+}

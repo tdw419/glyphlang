@@ -1,0 +1,22 @@
+# bootstrap/test_lexer.glyph
+import "./lexer"
+import "./token"
+
+@ command run {
+    $ input = "@ GET /users { > 42 } # This is a comment"
+    $ l = lexer.new_lexer(input)
+    
+    $ i = 0
+    while i < 100 {
+        $ res = lexer.next_token(l)
+        $ tok = res.token
+        $ l = res.lexer
+        
+        print("Token: " + tok.type + " ('" + tok.literal + "') at " + toString(tok.line) + ":" + toString(tok.col))
+        
+        if tok.type == token.EOF {
+            break
+        }
+        $ i = i + 1
+    }
+}
