@@ -3022,6 +3022,9 @@ func (p *Parser) parsePrimary() (ast.Expr, error) {
 	case AWAIT:
 		return p.parseAwaitExpr()
 
+	case TRY:
+		return p.parseTryExpr()
+
 	default:
 		return nil, p.expressionError(
 			fmt.Sprintf("Unexpected token in expression: %s", p.current().Type),
@@ -3083,6 +3086,27 @@ func (p *Parser) parseAwaitExpr() (ast.Expr, error) {
 	}
 
 	return ast.AwaitExpr{Expr: expr}, nil
+}
+
+// parseTryExpr parses a try expression: try expr
+// Used for error propagation - unwraps union types and propagates errors automatically
+func (p *Parser) parseTryExpr() (ast.Expr, error) {
+	// Consume "try" keyword
+	tryTok := p.current()
+	if err := p.expect(TRY); err != nil {
+		return nil, err
+	}
+
+	// Parse the expression to try
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+
+	return ast.TryExpression{
+		Expr: expr,
+		Pos:  ast.Pos{Line: tryTok.Line, Column: tryTok.Column},
+	}, nil
 }
 
 // parseFieldAccess parses field access: obj.field or obj.field.subfield
@@ -3245,7 +3269,7 @@ func (p *Parser) check(t TokenType) bool {
 func (p *Parser) isPathSegmentToken() bool {
 	switch p.current().Type {
 	case IDENT, ASYNC, AWAIT, IMPORT, FROM, AS, MODULE, MATCH, WHEN, MACRO, QUOTE,
-		TRUE, FALSE, NULL, FOR, WHILE, SWITCH, CASE, DEFAULT, IN:
+		TRUE, FALSE, NULL, FOR, WHILE, SWITCH, CASE, DEFAULT, IN, TRY:
 		return true
 	default:
 		return false

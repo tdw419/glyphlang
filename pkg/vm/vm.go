@@ -60,6 +60,7 @@ const (
 	// Async/await opcodes
 	OpAsync Opcode = 0xB0 // Create async future (operand: body length)
 	OpAwait Opcode = 0xB1 // Await a future
+	OpTry   Opcode = 0xB2 // Try expression - unwrap result, propagate error
 
 	OpHalt Opcode = 0xFF
 )
@@ -376,6 +377,8 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 		return vm.execAsync()
 	case OpAwait:
 		return vm.execAwait()
+	case OpTry:
+		return vm.execTry()
 	case OpHalt:
 		vm.halted = true
 		return nil
@@ -1392,6 +1395,29 @@ func (vm *VM) registerBuiltins() {
 		return IntValue{Val: time.Now().Unix()}, nil
 	}
 
+	// Ok(val) - creates a success ResultValue
+	vm.builtins["Ok"] = func(args []Value) (Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("Ok() takes exactly 1 argument, got %d", len(args))
+		}
+		return &ResultValue{Val: args[0], IsErr: false}, nil
+	}
+
+	// Err(msg) - creates an error ResultValue
+	vm.builtins["Err"] = func(args []Value) (Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("Err() takes exactly 1 argument, got %d", len(args))
+		}
+		var msg string
+		switch v := args[0].(type) {
+		case StringValue:
+			msg = v.Val
+		default:
+			msg = fmt.Sprintf("%v", args[0])
+		}
+		return &ResultValue{ErrMsg: msg, IsErr: true}, nil
+	}
+
 	// length() - returns length of array or string
 	vm.builtins["length"] = func(args []Value) (Value, error) {
 		if len(args) != 1 {
@@ -1956,5 +1982,28 @@ func (vm *VM) execAwait() error {
 	}
 
 	vm.Push(result)
+	return nil
+}
+
+// execTry handles the try expression - unwraps ResultValue, propagates errors
+func (vm *VM) execTry() error {
+	val, err := vm.Pop()
+	if err != nil {
+		return err
+	}
+
+	// If the value is a ResultValue, unwrap it or propagate the error
+	if rv, ok := val.(*ResultValue); ok {
+		if rv.IsErr {
+			// Propagate the error with ERROR_VALUE: prefix for server HTTP mapping
+			return fmt.Errorf("ERROR_VALUE:%s", rv.ErrMsg)
+		}
+		// Unwrap the success value
+		vm.Push(rv.Val)
+		return nil
+	}
+
+	// For non-ResultValue types, just pass through
+	vm.Push(val)
 	return nil
 }

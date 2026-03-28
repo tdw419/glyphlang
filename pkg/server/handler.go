@@ -72,6 +72,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Execute the handler
 	if err := handler(ctx); err != nil {
+		// Check for try-propagated errors (ERROR_VALUE:message)
+		if msg, ok := strings.CutPrefix(err.Error(), "ERROR_VALUE:"); ok {
+			statusCode := errorMessageToHTTPStatus(msg)
+			h.handleError(w, r, statusCode, msg, err)
+			return
+		}
 		h.handleError(w, r, http.StatusInternalServerError, "handler error", err)
 		return
 	}
@@ -169,4 +175,26 @@ func (h *Handler) handleError(w http.ResponseWriter, r *http.Request, statusCode
 
 	// Do not expose internal error details to clients
 	json.NewEncoder(w).Encode(response)
+}
+
+// errorMessageToHTTPStatus maps error messages from try-propagated errors to HTTP status codes.
+// Convention: error messages starting with common keywords get mapped to appropriate codes.
+func errorMessageToHTTPStatus(msg string) int {
+	lower := strings.ToLower(msg)
+	switch {
+	case strings.Contains(lower, "not found"):
+		return http.StatusNotFound
+	case strings.Contains(lower, "unauthorized") || strings.Contains(lower, "authentication"):
+		return http.StatusUnauthorized
+	case strings.Contains(lower, "forbidden") || strings.Contains(lower, "permission"):
+		return http.StatusForbidden
+	case strings.Contains(lower, "validation") || strings.Contains(lower, "invalid"):
+		return http.StatusBadRequest
+	case strings.Contains(lower, "conflict") || strings.Contains(lower, "duplicate"):
+		return http.StatusConflict
+	case strings.Contains(lower, "timeout"):
+		return http.StatusGatewayTimeout
+	default:
+		return http.StatusInternalServerError
+	}
 }

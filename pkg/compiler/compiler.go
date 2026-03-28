@@ -768,6 +768,10 @@ func (c *Compiler) compileExpression(expr ast.Expr) error {
 		return c.compileAwaitExpr(e)
 	case ast.AwaitExpr:
 		return c.compileAwaitExpr(&e)
+	case *ast.TryExpression:
+		return c.compileTryExpr(e)
+	case ast.TryExpression:
+		return c.compileTryExpr(&e)
 	default:
 		return fmt.Errorf("unsupported expression type: %T", expr)
 	}
@@ -1468,6 +1472,19 @@ func (c *Compiler) compileAwaitExpr(expr *ast.AwaitExpr) error {
 
 	// Emit await instruction
 	c.emit(vm.OpAwait)
+
+	return nil
+}
+
+// compileTryExpr compiles a try expression for error propagation
+func (c *Compiler) compileTryExpr(expr *ast.TryExpression) error {
+	// Compile the expression being tried
+	if err := c.compileExpression(expr.Expr); err != nil {
+		return err
+	}
+
+	// Emit try instruction
+	c.emit(vm.OpTry)
 
 	return nil
 }

@@ -406,6 +406,8 @@ func (l *Lexer) readIdentifier() Token {
 		tok.Type = BREAK
 	case "continue":
 		tok.Type = CONTINUE
+	case "try":
+		tok.Type = TRY
 	default:
 		tok.Type = IDENT
 	}

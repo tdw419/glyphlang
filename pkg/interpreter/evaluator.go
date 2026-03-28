@@ -88,6 +88,9 @@ func (i *Interpreter) EvaluateExpression(expr Expr, env *Environment) (interface
 	case AwaitExpr:
 		return i.evaluateAwaitExpr(e, env)
 
+	case TryExpression:
+		return i.evaluateTryExpr(e, env)
+
 	case ArrayIndexExpr:
 		val, err := i.evaluateArrayIndexExpr(e, env)
 		if err != nil {
@@ -172,6 +175,29 @@ func (i *Interpreter) evaluateAwaitExpr(expr AwaitExpr, env *Environment) (inter
 
 	// Wait for the Future to complete and return its value
 	return future.Await()
+}
+
+// evaluateTryExpr unwraps a ResultValue or propagates the error.
+// try expr → if Ok, unwrap the value; if Err, return the error immediately.
+func (i *Interpreter) evaluateTryExpr(expr TryExpression, env *Environment) (interface{}, error) {
+	val, err := i.EvaluateExpression(expr.Expr, env)
+	if err != nil {
+		return nil, err
+	}
+
+	if result, ok := val.(*ResultValue); ok {
+		if result.IsErr() {
+			return nil, fmt.Errorf("ERROR_VALUE:%v", result.ErrValue())
+		}
+		unwrapped, err := result.Unwrap()
+		if err != nil {
+			return nil, err
+		}
+		return unwrapped, nil
+	}
+
+	// Non-ResultValue: pass through unchanged
+	return val, nil
 }
 
 // evaluateArrayIndexExpr evaluates array indexing: array[index]

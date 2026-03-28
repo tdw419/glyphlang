@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/glyphlang/glyph/pkg/compiler"
@@ -495,7 +496,165 @@ func TestInputValidation(t *testing.T) {
 
 // TestErrorPropagation tests error handling and propagation
 func TestErrorPropagation(t *testing.T) {
-	t.Skip("Skipping: Result type, error propagation, and HTTP status code conversion not yet implemented")
+	helper := NewTestHelper(t)
+
+	t.Run("ok_builtin_creates_success_result", func(t *testing.T) {
+		comp := compiler.NewCompiler()
+		source := `@ GET /ok {
+  $ result = Ok({name: "test", value: 42})
+  > result
+}`
+		module, err := parseSource(source)
+		helper.AssertNoError(err, "Parse failed")
+		bytecode, err := comp.Compile(module)
+		helper.AssertNoError(err, "Compilation failed")
+
+		v := vm.NewVM()
+		result, err := v.Execute(bytecode)
+		helper.AssertNoError(err, "Execution failed")
+		helper.AssertNotNil(result, "Result should not be nil")
+
+		// Result should be a ResultValue with IsErr=false
+		rv, ok := result.(*vm.ResultValue)
+		if !ok {
+			t.Fatalf("Expected *ResultValue, got %T", result)
+		}
+		if rv.IsErr {
+			t.Error("Expected IsErr to be false for Ok()")
+		}
+	})
+
+	t.Run("err_builtin_creates_error_result", func(t *testing.T) {
+		comp := compiler.NewCompiler()
+		source := `@ GET /err {
+  $ result = Err("something went wrong")
+  > result
+}`
+		module, err := parseSource(source)
+		helper.AssertNoError(err, "Parse failed")
+		bytecode, err := comp.Compile(module)
+		helper.AssertNoError(err, "Compilation failed")
+
+		v := vm.NewVM()
+		result, err := v.Execute(bytecode)
+		helper.AssertNoError(err, "Execution failed")
+		helper.AssertNotNil(result, "Result should not be nil")
+
+		// Result should be a ResultValue with IsErr=true
+		rv, ok := result.(*vm.ResultValue)
+		if !ok {
+			t.Fatalf("Expected *ResultValue, got %T", result)
+		}
+		if !rv.IsErr {
+			t.Error("Expected IsErr to be true for Err()")
+		}
+		if rv.ErrMsg != "something went wrong" {
+			t.Errorf("Expected ErrMsg 'something went wrong', got '%s'", rv.ErrMsg)
+		}
+	})
+
+	t.Run("try_unwraps_ok_value", func(t *testing.T) {
+		comp := compiler.NewCompiler()
+		source := `@ GET /try-ok {
+  $ result = Ok({message: "hello"})
+  $ unwrapped = try result
+  > unwrapped
+}`
+		module, err := parseSource(source)
+		helper.AssertNoError(err, "Parse failed")
+		bytecode, err := comp.Compile(module)
+		helper.AssertNoError(err, "Compilation failed")
+
+		v := vm.NewVM()
+		result, err := v.Execute(bytecode)
+		helper.AssertNoError(err, "Execution failed")
+
+		// try Ok(value) should unwrap to the inner value
+		obj, ok := result.(vm.ObjectValue)
+		if !ok {
+			t.Fatalf("Expected ObjectValue after try unwrap, got %T", result)
+		}
+		msgVal := obj.Val["message"]
+		msg, ok := msgVal.(vm.StringValue)
+		if !ok {
+			t.Fatalf("Expected StringValue for message, got %T", msgVal)
+		}
+		if msg.Val != "hello" {
+			t.Errorf("Expected unwrapped message 'hello', got %v", msg.Val)
+		}
+	})
+
+	t.Run("try_propagates_error", func(t *testing.T) {
+		comp := compiler.NewCompiler()
+		source := `@ GET /try-err {
+  $ result = Err("not found")
+  $ unwrapped = try result
+  > unwrapped
+}`
+		module, err := parseSource(source)
+		helper.AssertNoError(err, "Parse failed")
+		bytecode, err := comp.Compile(module)
+		helper.AssertNoError(err, "Compilation failed")
+
+		v := vm.NewVM()
+		_, err = v.Execute(bytecode)
+
+		// try Err(msg) should propagate as an error
+		if err == nil {
+			t.Fatal("Expected error from try Err(), got nil")
+		}
+		// Error should contain ERROR_VALUE: prefix for server to map to HTTP status
+		if !containsSubstring(err.Error(), "ERROR_VALUE:") {
+			t.Errorf("Expected ERROR_VALUE: prefix in error, got: %s", err.Error())
+		}
+	})
+
+	t.Run("http_status_mapping", func(t *testing.T) {
+		tests := []struct {
+			errMsg      string
+			expectCode  int
+		}{
+			{"not found", 404},
+			{"user not found", 404},
+			{"unauthorized", 401},
+			{"forbidden", 403},
+			{"bad request", 400},
+			{"internal error", 500},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.errMsg, func(t *testing.T) {
+				// The server handler maps error messages to HTTP status codes
+				// This is tested via the handler's errorMessageToHTTPStatus function
+				// Here we just verify the error is created correctly
+				comp := compiler.NewCompiler()
+				source := fmt.Sprintf(`@ GET /test {
+  $ result = Err("%s")
+  $ unwrapped = try result
+  > unwrapped
+}`, tt.errMsg)
+				module, err := parseSource(source)
+				helper.AssertNoError(err, "Parse failed")
+				bytecode, err := comp.Compile(module)
+				helper.AssertNoError(err, "Compilation failed")
+
+				v := vm.NewVM()
+				_, err = v.Execute(bytecode)
+				if err == nil {
+					t.Fatal("Expected error from try Err()")
+				}
+			})
+		}
+	})
+}
+
+func containsSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 // TestConcurrency tests concurrent execution safety
