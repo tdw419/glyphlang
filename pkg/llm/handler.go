@@ -192,28 +192,49 @@ func parseCompletionRequest(request interface{}) (*CompletionRequest, error) {
 		cr.Model = model
 	}
 
-	if messages, ok := reqMap["messages"].([]interface{}); ok {
-		for _, m := range messages {
-			msgMap, ok := m.(map[string]interface{})
-			if !ok {
-				continue
+	if messages, ok := reqMap["messages"]; ok {
+		// Handle both []interface{} (from JSON) and []map[string]interface{} (from code)
+		switch msgs := messages.(type) {
+		case []interface{}:
+			for _, m := range msgs {
+				msgMap, ok := m.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				msg := Message{}
+				if role, ok := msgMap["role"].(string); ok {
+					msg.Role = role
+				}
+				if content, ok := msgMap["content"].(string); ok {
+					msg.Content = content
+				}
+				cr.Messages = append(cr.Messages, msg)
 			}
-			msg := Message{}
-			if role, ok := msgMap["role"].(string); ok {
-				msg.Role = role
+		case []map[string]interface{}:
+			for _, msgMap := range msgs {
+				msg := Message{}
+				if role, ok := msgMap["role"].(string); ok {
+					msg.Role = role
+				}
+				if content, ok := msgMap["content"].(string); ok {
+					msg.Content = content
+				}
+				cr.Messages = append(cr.Messages, msg)
 			}
-			if content, ok := msgMap["content"].(string); ok {
-				msg.Content = content
-			}
-			cr.Messages = append(cr.Messages, msg)
 		}
 	}
 
 	if temp, ok := reqMap["temperature"].(float64); ok {
 		cr.Temperature = temp
 	}
-	if maxTokens, ok := reqMap["max_tokens"].(int64); ok {
-		cr.MaxTokens = int(maxTokens)
+	// max_tokens can be int, int64, or float64 depending on how it was created
+	switch v := reqMap["max_tokens"].(type) {
+	case int:
+		cr.MaxTokens = v
+	case int64:
+		cr.MaxTokens = int(v)
+	case float64:
+		cr.MaxTokens = int(v)
 	}
 
 	return cr, nil
@@ -239,9 +260,17 @@ func parseEmbeddingRequest(request interface{}) (*EmbeddingRequest, error) {
 // OpenAI provider implementations
 
 func (h *Handler) completeOpenAI(req *CompletionRequest) (map[string]interface{}, error) {
+	// Convert messages to proper format for JSON serialization
+	messages := make([]map[string]interface{}, len(req.Messages))
+	for i, m := range req.Messages {
+		messages[i] = map[string]interface{}{
+			"role":    m.Role,
+			"content": m.Content,
+		}
+	}
 	body := map[string]interface{}{
 		"model":    req.Model,
-		"messages": req.Messages,
+		"messages": messages,
 	}
 	if req.Temperature > 0 {
 		body["temperature"] = req.Temperature
@@ -366,8 +395,16 @@ func parseOpenAICompletionResponse(body []byte) (map[string]interface{}, error) 
 		return nil, fmt.Errorf("unexpected message format in choice")
 	}
 
+	content := message["content"]
+	// Handle reasoning models (Qwen3) that put output in reasoning_content
+	if content == nil || content == "" {
+		if rc, ok := message["reasoning_content"].(string); ok && rc != "" {
+			content = rc
+		}
+	}
+
 	result := map[string]interface{}{
-		"content":       message["content"],
+		"content":       content,
 		"model":         resp["model"],
 		"finish_reason": choice["finish_reason"],
 	}

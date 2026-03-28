@@ -375,6 +375,32 @@ Example:
 	testCmd.Flags().StringP("filter", "f", "", "Run only tests matching filter pattern")
 	testCmd.Flags().Bool("fail-fast", false, "Stop on first test failure")
 
+	// AI command - prompt LLM to output GlyphLang and execute it
+	var aiCmd = &cobra.Command{
+		Use:   "ai <prompt>",
+		Short: "Prompt an AI to generate and execute GlyphLang code",
+		Long: `Prompt an LLM to output GlyphLang code, then parse, compile, and execute it.
+
+The AI outputs GlyphLang as its native format — the code flows through the
+GlyphLang parser → compiler → VM pipeline and produces a result.
+
+Supported providers: anthropic, openai, ollama
+
+Examples:
+  glyph ai "Write a function that computes fibonacci of 10"
+  glyph ai "Create a type User with name and age, return an example"
+  glyph ai --provider openai --model gpt-4o "Calculate 2^10"
+  glyph ai --show-code "Sort the array [5,3,1,4,2]"
+  glyph ai --code-only "Hello world" > hello.glyph`,
+		Args: cobra.MinimumNArgs(1),
+		RunE: runAI,
+	}
+	aiCmd.Flags().String("provider", "anthropic", "LLM provider: anthropic, openai, ollama")
+	aiCmd.Flags().String("model", "claude-sonnet-4-20250514", "Model to use")
+	aiCmd.Flags().String("base-url", "", "Custom LLM API base URL (e.g., http://localhost:1234/v1 for LM Studio)")
+	aiCmd.Flags().Bool("show-code", false, "Display the generated GlyphLang code")
+	aiCmd.Flags().Bool("code-only", false, "Only output the generated code (no execution)")
+
 	// Version command
 	var versionCmd = &cobra.Command{
 		Use:   "version",
@@ -408,6 +434,7 @@ Example:
 	rootCmd.AddCommand(codegenCmd)
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(modCmd)
+	rootCmd.AddCommand(aiCmd)
 	rootCmd.AddCommand(versionCmd)
 
 	if err := rootCmd.Execute(); err != nil {
