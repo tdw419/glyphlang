@@ -190,6 +190,16 @@ const OP_HALT          = 255
     > ""
   }
 
+  if item.kind == "var_decl" {
+    # Top-level variable declaration
+    $ err = compile_expression(c, item.var_value)
+    if err != "" { > err }
+    $ idx = add_constant(c, item.var_name)
+    emit_byte(c, OP_STORE_VAR)
+    emit_bytes4(c, idx)
+    > ""
+  }
+
   if item.kind == "function" {
     > ""
   }

@@ -281,6 +281,21 @@ import "./ast"
   > { parser: p, item: _const_item(name_res.tok.literal, val_res.expr, ctype), error: "" }
 }
 
+# ─── Variable Declaration Item (top-level $ x = ...) ──────────────
+
+! parse_var_decl_item(p: Parser) -> ItemResult {
+  $ stmt_res = parse_assign(p)
+  if stmt_res.error != "" {
+    > { parser: p, item: _item(), error: stmt_res.error }
+  }
+  # Wrap the assignment statement as a var_decl item
+  $ it = _item()
+  $ it.kind = "var_decl"
+  $ it.var_name = stmt_res.stmt.target
+  $ it.var_value = stmt_res.stmt.value
+  > { parser: stmt_res.parser, item: it, error: "" }
+}
+
 # ─── Type Definition Parsing ──────────────────────────────────────
 
 ! parse_type_def(p: Parser) -> ItemResult {
@@ -948,6 +963,7 @@ import "./ast"
 
 ! _item() -> ast.Item {
   > { kind: "illegal", const_name: "", const_value: null, const_type: null,
+      var_name: "", var_value: null,
       type_name: "", type_fields: [], func_name: "", func_params: [],
       func_return_type: null, func_body: [], import_path: "", import_alias: "",
       import_selective: false, import_names: [], from_path: "", from_names: [],

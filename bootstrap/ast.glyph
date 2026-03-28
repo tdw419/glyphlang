@@ -16,6 +16,9 @@
   const_name: str!
   const_value: Expr?
   const_type: Type?
+  # var_decl (top-level variable)
+  var_name: str!
+  var_value: Expr?
   # type def
   type_name: str!
   type_fields: [Field]!

@@ -1,0 +1,27 @@
+import "./parser"
+import "./compiler"
+
+@ command run {
+    $ src = "const x = 42"
+    print("Compiling: " + src)
+    
+    $ p = parser.new_parser(src)
+    $ res = parser.parse(p)
+    
+    if res.error != "" {
+        print("Parse error: " + res.error)
+        > {error: res.error}
+    }
+    
+    $ c = compiler.new_compiler()
+    $ cres = compiler.compile(c, res.mod)
+    
+    if cres.error != "" {
+        print("Compile error: " + cres.error)
+        > {error: cres.error}
+    }
+    
+    print("Emitted " + toString(length(cres.bytecode)) + " bytes")
+    
+    > {ok: true, bytes: cres.bytecode}
+}

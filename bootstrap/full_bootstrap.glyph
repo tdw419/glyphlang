@@ -4,22 +4,22 @@ import "./parser"
     $ src = readFile("bootstrap/parser.glyph")
     if src == "" {
         print("ERROR: Could not read parser.glyph")
-        return
+        > {error: "file not found"}
     }
     
-    print("Parsing parser.glyph (" + length(src) + " chars)...")
+    print("Parsing parser.glyph (" + toString(length(src)) + " chars)...")
     
     $ p = parser.new_parser(src)
     $ res = parser.parse(p)
     
     if res.error != "" {
         print("ERROR: " + res.error)
-        return
+        > {error: res.error}
     }
     
-    print("SUCCESS! Parsed " + length(res.mod.items) + " items")
+    print("SUCCESS! Parsed " + toString(length(res.mod.items)) + " items")
     print("")
     print("=== BOOTSTRAP COMPLETE ===")
     print("The GlyphLang parser can parse itself!")
-    return {ok: true}
+    > {ok: true}
 }

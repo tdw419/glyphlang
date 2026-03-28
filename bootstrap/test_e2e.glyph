@@ -1,0 +1,63 @@
+# bootstrap/test_e2e.glyph
+# End-to-end test: parse → compile → show bytecode
+
+import "./parser"
+import "./compiler"
+
+@ command run {
+    print("=== E2E: Parse → Compile → Bytecode ===")
+    print("")
+
+    # Test 1: Simple arithmetic
+    $ src1 = "$ x = 10 + 5"
+    print("Test 1: " + src1)
+
+    $ p1 = parser.new_parser(src1)
+    $ res1 = parser.parse(p1)
+
+    if res1.error != "" {
+        print("Parse error: " + res1.error)
+    } else {
+        print("Parsed " + toString(length(res1.mod.items)) + " items")
+
+        $ c1 = compiler.new_compiler()
+        $ cres1 = compiler.compile(c1, res1.mod)
+
+        if cres1.error != "" {
+            print("Compile error: " + cres1.error)
+        } else {
+            print("Bytecode: " + toString(length(cres1.bytecode)) + " bytes")
+            print("Constants: " + toString(length(c1.constants)))
+            print("Instructions: " + toString(length(c1.instructions)))
+        }
+    }
+
+    print("")
+
+    # Test 2: Variable and print
+    $ src2 = "$ msg = \"Hello\""
+    print("Test 2: " + src2)
+
+    $ p2 = parser.new_parser(src2)
+    $ res2 = parser.parse(p2)
+
+    if res2.error != "" {
+        print("Parse error: " + res2.error)
+    } else {
+        print("Parsed " + toString(length(res2.mod.items)) + " items")
+
+        $ c2 = compiler.new_compiler()
+        $ cres2 = compiler.compile(c2, res2.mod)
+
+        if cres2.error != "" {
+            print("Compile error: " + cres2.error)
+        } else {
+            print("Bytecode: " + toString(length(cres2.bytecode)) + " bytes")
+            print("Constants: " + toString(length(c2.constants)))
+        }
+    }
+
+    print("")
+    print("=== E2E Tests Complete ===")
+    > {ok: true}
+}
