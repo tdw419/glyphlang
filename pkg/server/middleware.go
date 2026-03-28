@@ -1,0 +1,704 @@
+package server
+
+import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
+	"log"
+	"net/http"
+	"runtime/debug"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+// sanitizeLog replaces newlines and carriage returns in user-controlled values
+// to prevent log injection attacks (gosec G706).
+func sanitizeLog(s string) string {
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
+	return s
+}
+
+// LoggingMiddleware logs request details
+func LoggingMiddleware() Middleware {
+	return func(next RouteHandler) RouteHandler {
+		return func(ctx *Context) error {
+			start := time.Now()
+
+			// Log request
+			log.Printf("[REQUEST] %s %s", sanitizeLog(ctx.Request.Method), sanitizeLog(ctx.Request.URL.Path)) // #nosec G706 -- sanitized
+
+			// Call next handler
+			err := next(ctx)
+
+			// Log response
+			duration := time.Since(start)
+			status := ctx.StatusCode
+			if err != nil {
+				status = 500
+			}
+
+			log.Printf("[RESPONSE] %s %s - %d (%v)", // #nosec G706 -- sanitized
+				sanitizeLog(ctx.Request.Method),
+				sanitizeLog(ctx.Request.URL.Path),
+				status,
+				duration,
+			)
+
+			return err
+		}
+	}
+}
+
+// RecoveryMiddleware recovers from panics and returns 500 error
+// It logs full panic details to server logs but returns a generic error to clients
+// to prevent information disclosure
+func RecoveryMiddleware() Middleware {
+	return func(next RouteHandler) RouteHandler {
+		return func(ctx *Context) (err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					method := ctx.Request.Method
+					path := ctx.Request.URL.Path
+					// Log full panic details including stack trace to server logs
+					log.Printf("[PANIC] %s %s: %v\n%s", sanitizeLog(method), sanitizeLog(path), r, debug.Stack()) // #nosec G706 -- sanitized
+					// Return generic error to client - don't expose panic details
+					SendError(ctx, 500, "Internal Server Error")
+					// Return error to indicate a panic was recovered
+					err = &InternalError{
+						BaseError: &BaseError{
+							Code: 500,
+							Type: "InternalError",
+							Msg:  "internal server error",
+						},
+					}
+				}
+			}()
+
+			return next(ctx)
+		}
+	}
+}
+
+// CORSMiddleware adds CORS headers to responses
+// Security: When allowedOrigins contains "*", we set the literal "*" header
+// and explicitly disable credentials to prevent security vulnerabilities
+func CORSMiddleware(allowedOrigins []string) Middleware {
+	// Check if wildcard is configured and log warning
+	hasWildcard := false
+	for _, o := range allowedOrigins {
+		if o == "*" {
+			hasWildcard = true
+			log.Printf("[SECURITY WARNING] CORS configured with wildcard origin '*'. " +
+				"This allows any origin to access the API. Credentials will be disabled.")
+			break
+		}
+	}
+
+	return func(next RouteHandler) RouteHandler {
+		return func(ctx *Context) error {
+			origin := ctx.Request.Header.Get("Origin")
+
+			// Check if origin is allowed
+			allowed := false
+			isWildcardMatch := false
+			for _, allowedOrigin := range allowedOrigins {
+				if allowedOrigin == "*" {
+					allowed = true
+					isWildcardMatch = true
+					break
+				}
+				if allowedOrigin == origin {
+					allowed = true
+					break
+				}
+			}
+
+			if allowed {
+				if isWildcardMatch || hasWildcard {
+					// When using wildcard, set literal "*" and disable credentials
+					// Never reflect the origin when wildcard is configured
+					ctx.ResponseWriter.Header().Set("Access-Control-Allow-Origin", "*")
+					ctx.ResponseWriter.Header().Set("Access-Control-Allow-Credentials", "false")
+				} else if origin != "" {
+					// For specific origins, reflect the origin
+					ctx.ResponseWriter.Header().Set("Access-Control-Allow-Origin", origin)
+				}
+
+				ctx.ResponseWriter.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
+				ctx.ResponseWriter.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+				ctx.ResponseWriter.Header().Set("Access-Control-Max-Age", "86400")
+			}
+
+			// Handle preflight requests
+			if ctx.Request.Method == "OPTIONS" {
+				ctx.StatusCode = 204
+				ctx.ResponseWriter.WriteHeader(204)
+				return nil
+			}
+
+			return next(ctx)
+		}
+	}
+}
+
+// HeaderMiddleware adds custom headers to all responses
+func HeaderMiddleware(headers map[string]string) Middleware {
+	return func(next RouteHandler) RouteHandler {
+		return func(ctx *Context) error {
+			for key, value := range headers {
+				ctx.ResponseWriter.Header().Set(key, value)
+			}
+			return next(ctx)
+		}
+	}
+}
+
+// SecurityHeadersMiddleware adds security headers to all responses
+// These headers help protect against common web vulnerabilities
+func SecurityHeadersMiddleware() Middleware {
+	return func(next RouteHandler) RouteHandler {
+		return func(ctx *Context) error {
+			ctx.ResponseWriter.Header().Set("X-Content-Type-Options", "nosniff")
+			ctx.ResponseWriter.Header().Set("X-Frame-Options", "DENY")
+			ctx.ResponseWriter.Header().Set("X-XSS-Protection", "1; mode=block")
+			ctx.ResponseWriter.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			return next(ctx)
+		}
+	}
+}
+
+// ChainMiddlewares combines multiple middlewares into one
+func ChainMiddlewares(middlewares ...Middleware) Middleware {
+	return func(next RouteHandler) RouteHandler {
+		// Apply middlewares in reverse order
+		handler := next
+		for i := len(middlewares) - 1; i >= 0; i-- {
+			handler = middlewares[i](handler)
+		}
+		return handler
+	}
+}
+
+// AuthMiddleware is a placeholder for authentication middleware
+// In production, this would validate JWT tokens, API keys, or session tokens
+func AuthMiddleware(validateFunc func(*Context) (bool, error)) Middleware {
+	return func(next RouteHandler) RouteHandler {
+		return func(ctx *Context) error {
+			// Extract token from Authorization header
+			token := ctx.Request.Header.Get("Authorization")
+			if token == "" {
+				return SendError(ctx, 401, "unauthorized: missing authorization header")
+			}
+
+			// Validate token using the provided function
+			if validateFunc != nil {
+				valid, err := validateFunc(ctx)
+				if err != nil {
+					log.Printf("[AUTH] Validation error: %v", err)
+					return SendError(ctx, 401, "unauthorized: invalid token")
+				}
+				if !valid {
+					return SendError(ctx, 401, "unauthorized: authentication failed")
+				}
+			}
+
+			return next(ctx)
+		}
+	}
+}
+
+// authFailureTracker tracks failed authentication attempts per IP
+type authFailureTracker struct {
+	failures    int
+	lastFailure time.Time
+	lockedUntil time.Time
+}
+
+// AuthRateLimitConfig configures auth rate limiting behavior
+type AuthRateLimitConfig struct {
+	MaxFailures     int           // Maximum failures before lockout (default: 5)
+	LockoutDuration time.Duration // Initial lockout duration (default: 1 minute)
+	MaxLockout      time.Duration // Maximum lockout duration with exponential backoff (default: 15 minutes)
+	ResetAfter      time.Duration // Reset failure count after this duration of no failures (default: 15 minutes)
+	TrustProxy      bool          // When true, use X-Forwarded-For/X-Real-IP headers for client IP
+}
+
+// DefaultAuthRateLimitConfig returns sensible defaults for auth rate limiting
+func DefaultAuthRateLimitConfig() AuthRateLimitConfig {
+	return AuthRateLimitConfig{
+		MaxFailures:     5,
+		LockoutDuration: 1 * time.Minute,
+		MaxLockout:      15 * time.Minute,
+		ResetAfter:      15 * time.Minute,
+	}
+}
+
+// BasicAuthMiddleware provides simple token-based authentication
+// with rate limiting to prevent brute force attacks
+func BasicAuthMiddleware(validTokens map[string]bool) Middleware {
+	return BasicAuthMiddlewareWithConfig(validTokens, DefaultAuthRateLimitConfig())
+}
+
+// BasicAuthMiddlewareWithConfig provides token-based authentication with custom rate limit config
+func BasicAuthMiddlewareWithConfig(validTokens map[string]bool, config AuthRateLimitConfig) Middleware {
+	// Track failed auth attempts per IP.
+	// maxAuthTrackers caps the map size to prevent unbounded memory growth.
+	const maxAuthTrackers = 10000
+	var mu sync.Mutex
+	failureTrackers := make(map[string]*authFailureTracker)
+
+	// evictStaleTrackers removes entries that have not been updated within
+	// the ResetAfter window. Called under mu.Lock when the map exceeds capacity.
+	evictStaleTrackers := func() {
+		now := time.Now()
+		stale := make([]string, 0)
+		for ip, t := range failureTrackers {
+			if now.Sub(t.lastFailure) > config.ResetAfter {
+				stale = append(stale, ip)
+			}
+		}
+		for _, ip := range stale {
+			delete(failureTrackers, ip)
+		}
+	}
+
+	// Background cleanup: remove stale auth failure entries periodically
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			mu.Lock()
+			now := time.Now()
+			for ip, tracker := range failureTrackers {
+				// Remove entries that have expired past the lockout and reset periods
+				if now.Sub(tracker.lastFailure) > config.ResetAfter && now.After(tracker.lockedUntil) {
+					delete(failureTrackers, ip)
+				}
+			}
+			mu.Unlock()
+		}
+	}()
+
+	return func(next RouteHandler) RouteHandler {
+		return func(ctx *Context) error {
+			clientIP := getClientIP(ctx.Request, config.TrustProxy)
+
+			mu.Lock()
+			// Evict stale entries when map exceeds capacity
+			if len(failureTrackers) > maxAuthTrackers {
+				evictStaleTrackers()
+			}
+
+			tracker, exists := failureTrackers[clientIP]
+			if !exists {
+				tracker = &authFailureTracker{}
+				failureTrackers[clientIP] = tracker
+			}
+
+			now := time.Now()
+
+			// Check if client is locked out
+			if now.Before(tracker.lockedUntil) {
+				mu.Unlock()
+				remaining := tracker.lockedUntil.Sub(now).Round(time.Second)
+				log.Printf("[AUTH] IP %s is locked out for %v due to too many failed attempts", sanitizeLog(clientIP), remaining) // #nosec G706 -- sanitized
+				return SendError(ctx, 429, "too many failed authentication attempts, try again later")
+			}
+
+			// Reset failure count if enough time has passed since last failure
+			if exists && now.Sub(tracker.lastFailure) > config.ResetAfter {
+				tracker.failures = 0
+			}
+			mu.Unlock()
+
+			token := ctx.Request.Header.Get("Authorization")
+			if token == "" {
+				recordAuthFailure(clientIP, failureTrackers, &mu, config)
+				return SendError(ctx, 401, "unauthorized: missing authorization header")
+			}
+
+			// Remove "Bearer " prefix if present
+			if len(token) > 7 && token[:7] == "Bearer " {
+				token = token[7:]
+			}
+
+			// Check if token is valid
+			if validTokens != nil && !validTokens[token] {
+				recordAuthFailure(clientIP, failureTrackers, &mu, config)
+				return SendError(ctx, 401, "unauthorized: invalid token")
+			}
+
+			// Success - reset failure count
+			mu.Lock()
+			tracker.failures = 0
+			mu.Unlock()
+
+			return next(ctx)
+		}
+	}
+}
+
+// recordAuthFailure records a failed authentication attempt and applies lockout if needed
+func recordAuthFailure(clientIP string, trackers map[string]*authFailureTracker, mu *sync.Mutex, config AuthRateLimitConfig) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	tracker := trackers[clientIP]
+	tracker.failures++
+	tracker.lastFailure = time.Now()
+
+	if tracker.failures >= config.MaxFailures {
+		// Apply exponential backoff for lockout duration
+		// Each subsequent lockout doubles the duration up to MaxLockout
+		lockoutMultiplier := 1 << (tracker.failures - config.MaxFailures)
+		lockoutDuration := config.LockoutDuration * time.Duration(lockoutMultiplier)
+		if lockoutDuration > config.MaxLockout {
+			lockoutDuration = config.MaxLockout
+		}
+		tracker.lockedUntil = time.Now().Add(lockoutDuration)
+		log.Printf("[AUTH] IP %s locked out for %v after %d failed attempts", // #nosec G706 -- sanitized
+			sanitizeLog(clientIP), lockoutDuration, tracker.failures)
+	}
+}
+
+// trustedProxies holds the set of trusted proxy IPs using atomic.Value for
+// concurrent read/write safety. The stored value is always map[string]bool.
+var trustedProxies atomic.Value
+
+func init() {
+	trustedProxies.Store(map[string]bool{})
+}
+
+func loadTrustedProxies() map[string]bool {
+	return trustedProxies.Load().(map[string]bool)
+}
+
+// SetTrustedProxies configures the set of trusted proxy IP addresses.
+// Only requests from these addresses will have their X-Forwarded-For
+// and X-Real-IP headers honored for client IP extraction.
+// This function is safe for concurrent use.
+func SetTrustedProxies(proxies []string) {
+	m := make(map[string]bool, len(proxies))
+	for _, p := range proxies {
+		m[p] = true
+	}
+	trustedProxies.Store(m)
+}
+
+// getClientIP extracts the client IP address from an HTTP request.
+// When trustProxy is true, it checks X-Forwarded-For and X-Real-IP headers
+// (for proxy setups). If TrustedProxies is configured, proxy headers are
+// only honored when the request comes from a trusted proxy IP.
+// When trustProxy is false (the default), only RemoteAddr is used,
+// preventing clients from spoofing their IP via headers.
+func getClientIP(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		// If TrustedProxies is configured, only honor proxy headers from trusted IPs
+		tp := loadTrustedProxies()
+		if len(tp) > 0 {
+			remoteIP := r.RemoteAddr
+			// Strip port from RemoteAddr if present
+			if idx := strings.LastIndex(remoteIP, ":"); idx != -1 {
+				remoteIP = remoteIP[:idx]
+			}
+			if !tp[remoteIP] {
+				return r.RemoteAddr
+			}
+		}
+
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			return strings.TrimSpace(parts[0])
+		}
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return xri
+		}
+	}
+
+	return r.RemoteAddr
+}
+
+// RateLimitMiddleware is a placeholder for rate limiting middleware
+// In production, this would use a proper rate limiter (e.g., token bucket, Redis)
+type RateLimiterConfig struct {
+	RequestsPerMinute int
+	BurstSize         int
+	TrustProxy        bool // When true, use X-Forwarded-For/X-Real-IP headers for client IP
+}
+
+// RateLimitMiddleware implements simple in-memory rate limiting
+func RateLimitMiddleware(config RateLimiterConfig) Middleware {
+	type clientLimit struct {
+		tokens       int
+		lastRefill   time.Time
+		requestCount int
+	}
+
+	const maxRateLimitEntries = 10000
+	var mu sync.Mutex
+	limits := make(map[string]*clientLimit)
+
+	// Background cleanup: remove stale entries every 60 seconds
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			mu.Lock()
+			now := time.Now()
+			for ip, limit := range limits {
+				if now.Sub(limit.lastRefill) > 10*time.Minute {
+					delete(limits, ip)
+				}
+			}
+			mu.Unlock()
+		}
+	}()
+
+	return func(next RouteHandler) RouteHandler {
+		return func(ctx *Context) error {
+			clientIP := getClientIP(ctx.Request, config.TrustProxy)
+
+			mu.Lock()
+
+			// Evict stale entries when map exceeds capacity
+			if len(limits) > maxRateLimitEntries {
+				now := time.Now()
+				stale := make([]string, 0)
+				for ip, l := range limits {
+					if now.Sub(l.lastRefill) > 5*time.Minute {
+						stale = append(stale, ip)
+					}
+				}
+				for _, ip := range stale {
+					delete(limits, ip)
+				}
+			}
+
+			// Get or create limit for this client
+			limit, exists := limits[clientIP]
+			if !exists {
+				limit = &clientLimit{
+					tokens:     config.BurstSize,
+					lastRefill: time.Now(),
+				}
+				limits[clientIP] = limit
+			}
+
+			now := time.Now()
+			elapsed := now.Sub(limit.lastRefill)
+			tokensToAdd := int(elapsed.Minutes() * float64(config.RequestsPerMinute))
+
+			if tokensToAdd > 0 {
+				limit.tokens += tokensToAdd
+				if limit.tokens > config.BurstSize {
+					limit.tokens = config.BurstSize
+				}
+				limit.lastRefill = now
+			}
+
+			if limit.tokens <= 0 {
+				mu.Unlock()
+				log.Printf("[RATE_LIMIT] Rate limit exceeded for %s", sanitizeLog(clientIP)) // #nosec G706 -- sanitized
+				return SendError(ctx, 429, "rate limit exceeded")
+			}
+
+			limit.tokens--
+			limit.requestCount++
+			mu.Unlock()
+
+			return next(ctx)
+		}
+	}
+}
+
+// TimeoutMiddleware adds a timeout to request processing
+func TimeoutMiddleware(timeout time.Duration) Middleware {
+	return func(next RouteHandler) RouteHandler {
+		return func(ctx *Context) error {
+			// Wrap the ResponseWriter to prevent concurrent writes
+			tw := &timeoutWriter{
+				ResponseWriter: ctx.ResponseWriter,
+				ctx:            ctx,
+			}
+			ctx.ResponseWriter = tw
+
+			done := make(chan error, 1)
+
+			go func() {
+				err := next(ctx)
+				// Claim the response when handler completes (if not already claimed by timeout)
+				tw.mu.Lock()
+				if !tw.claimed {
+					tw.claimed = true
+				}
+				tw.mu.Unlock()
+				done <- err
+			}()
+
+			timer := time.NewTimer(timeout)
+			defer timer.Stop()
+
+			select {
+			case err := <-done:
+				return err
+			case <-timer.C:
+				// Only send timeout error if handler hasn't started writing
+				if tw.tryClaimResponse() {
+					log.Printf("[TIMEOUT] Request timeout after %v: %s %s", // #nosec G706 -- sanitized
+						timeout, sanitizeLog(ctx.Request.Method), sanitizeLog(ctx.Request.URL.Path))
+					// Set status directly on wrapped writer to avoid race
+					// Don't set ctx.StatusCode to avoid race with handler goroutine
+					tw.mu.Lock()
+					tw.timedOut = true
+					tw.mu.Unlock()
+					tw.ResponseWriter.Header().Set("Content-Type", "application/json")
+					tw.ResponseWriter.WriteHeader(504)
+					tw.ResponseWriter.Write([]byte(`{"error":true,"message":"request timeout","code":504}`))
+					return nil
+				}
+				// Handler already started writing, wait for it to finish
+				return <-done
+			}
+		}
+	}
+}
+
+// timeoutWriter wraps http.ResponseWriter to prevent concurrent writes
+// from both the handler and timeout path
+type timeoutWriter struct {
+	http.ResponseWriter
+	ctx      *Context
+	mu       sync.Mutex
+	claimed  bool
+	timedOut bool
+}
+
+// tryClaimResponse attempts to claim the response. Returns true if this caller
+// won the race and can write the response, false if another caller already claimed it.
+func (tw *timeoutWriter) tryClaimResponse() bool {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	if tw.claimed {
+		return false
+	}
+	tw.claimed = true
+	return true
+}
+
+// WriteHeader implements http.ResponseWriter and claims the response
+func (tw *timeoutWriter) WriteHeader(code int) {
+	tw.mu.Lock()
+	if tw.timedOut {
+		tw.mu.Unlock()
+		return // Ignore writes after timeout
+	}
+	tw.claimed = true
+	tw.mu.Unlock()
+	tw.ResponseWriter.WriteHeader(code)
+}
+
+// Write implements http.ResponseWriter and claims the response
+func (tw *timeoutWriter) Write(b []byte) (int, error) {
+	tw.mu.Lock()
+	if tw.timedOut {
+		tw.mu.Unlock()
+		return len(b), nil // Pretend write succeeded but discard
+	}
+	tw.claimed = true
+	tw.mu.Unlock()
+	return tw.ResponseWriter.Write(b)
+}
+
+// TracingMiddleware creates a middleware that adds OpenTelemetry distributed tracing
+// This middleware integrates with the pkg/tracing package
+// It should be added early in the middleware chain to trace the entire request lifecycle
+//
+// Usage:
+//
+//	import "github.com/glyphlang/glyph/pkg/tracing"
+//
+//	config := tracing.DefaultMiddlewareConfig()
+//	server := NewServer(
+//	    WithMiddleware(TracingMiddleware(config)),
+//	)
+//
+// Note: This requires the tracing package to be initialized first:
+//
+//	tp, err := tracing.InitTracing(tracing.DefaultConfig())
+//	defer tp.Shutdown(context.Background())
+func TracingMiddleware(config interface{}) Middleware {
+	// The actual implementation is in pkg/tracing/integration.go
+	// This is just a placeholder that can be replaced when tracing is properly initialized
+	return func(next RouteHandler) RouteHandler {
+		return func(ctx *Context) error {
+			// If tracing is not initialized, just pass through
+			return next(ctx)
+		}
+	}
+}
+
+// CSRFMiddleware provides Cross-Site Request Forgery protection.
+// It generates a random token and sets it as a cookie. On state-changing requests
+// (POST, PUT, PATCH, DELETE), it validates the token from either the X-CSRF-Token
+// header or the csrf_token form field. This middleware is opt-in.
+func CSRFMiddleware() Middleware {
+	return func(next RouteHandler) RouteHandler {
+		return func(ctx *Context) error {
+			r := ctx.Request
+			w := ctx.ResponseWriter
+
+			// Safe methods: generate/refresh token but don't validate
+			if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+				ensureCSRFCookie(w, r)
+				return next(ctx)
+			}
+
+			// State-changing methods: validate the token
+			cookie, err := r.Cookie("csrf_token")
+			if err != nil || cookie.Value == "" {
+				return SendError(ctx, http.StatusForbidden, "CSRF token missing")
+			}
+
+			// Check X-CSRF-Token header first, then form field
+			token := r.Header.Get("X-CSRF-Token")
+			if token == "" {
+				token = r.FormValue("csrf_token")
+			}
+			if token == "" {
+				return SendError(ctx, http.StatusForbidden, "CSRF token missing from request")
+			}
+
+			if subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(token)) != 1 {
+				return SendError(ctx, http.StatusForbidden, "CSRF token invalid")
+			}
+
+			return next(ctx)
+		}
+	}
+}
+
+// ensureCSRFCookie generates a CSRF token cookie if one is not already present.
+func ensureCSRFCookie(w http.ResponseWriter, r *http.Request) {
+	if _, err := r.Cookie("csrf_token"); err == nil {
+		return // Cookie already exists
+	}
+
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		log.Printf("[CSRF] Failed to generate token: %v", err)
+		return
+	}
+	token := hex.EncodeToString(tokenBytes)
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "csrf_token",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: false, // JS needs to read it to include in requests
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil,
+	})
+}

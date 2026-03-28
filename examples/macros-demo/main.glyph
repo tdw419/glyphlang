@@ -1,0 +1,76 @@
+# GlyphLang Macro Demo
+# Demonstrates macro definitions and CRUD patterns
+
+# Demo endpoint showing macro concepts
+@ GET /demo {
+  > {
+    message: "Macros demo",
+    description: "Compile-time code generation patterns",
+    patterns: ["logging", "validation", "response wrapper", "CRUD"]
+  }
+}
+
+# Example: CRUD pattern for users
+@ GET /users {
+  > db.query("SELECT * FROM users")
+}
+
+@ GET /users/:id {
+  > db.query("SELECT * FROM users WHERE id = ?", id)
+}
+
+@ POST /users {
+  > db.insert("users", input)
+}
+
+@ DELETE /users/:id {
+  > db.query("DELETE FROM users WHERE id = ?", id)
+}
+
+# Example: CRUD pattern for posts
+@ GET /posts {
+  > db.query("SELECT * FROM posts")
+}
+
+@ GET /posts/:id {
+  > db.query("SELECT * FROM posts WHERE id = ?", id)
+}
+
+@ POST /posts {
+  > db.insert("posts", input)
+}
+
+@ DELETE /posts/:id {
+  > db.query("DELETE FROM posts WHERE id = ?", id)
+}
+
+# Endpoint with response wrapper pattern
+@ GET /patterns/response/:data {
+  $ response = {
+    data: data,
+    status: 200,
+    timestamp: now()
+  }
+  > response
+}
+
+# Endpoint with validation pattern
+@ POST /patterns/validated {
+  if input.email == null {
+    > {error: "email is required", status: 400}
+  }
+  if input.message == null {
+    > {error: "message is required", status: 400}
+  }
+  > {success: true, received: input}
+}
+
+# Endpoint demonstrating logging pattern
+@ POST /patterns/log {
+  $ logEntry = {
+    level: "INFO",
+    message: input.message,
+    timestamp: now()
+  }
+  > {logged: true, entry: logEntry}
+}

@@ -1,0 +1,206 @@
+package interpreter
+
+import (
+	"fmt"
+	"reflect"
+)
+
+// providerMethods provides per-provider method whitelists for scoped access control.
+// When a method is called on a provider, this map is checked first. If the provider
+// type is not found here, the global allowedMethods whitelist is used as a fallback.
+var providerMethods = map[string]map[string]bool{
+	"Database": {
+		"Get": true, "Find": true, "Create": true, "Update": true, "Delete": true,
+		"First": true, "All": true, "Where": true, "Count": true, "Save": true,
+		"Insert": true, "Select": true, "Limit": true, "Offset": true, "Order": true,
+		"Filter": true, "Table": true, "CountWhere": true, "NextId": true, "Length": true,
+	},
+	"Redis": {
+		"Get": true, "Set": true, "Del": true, "Exists": true, "Expire": true,
+		"Ttl": true, "Incr": true, "Decr": true, "HGet": true, "HSet": true,
+		"HDel": true, "HGetAll": true, "HExists": true, "LPush": true, "RPush": true,
+		"LPop": true, "RPop": true, "LLen": true, "LRange": true, "SAdd": true,
+		"SRem": true, "SMembers": true, "SIsMember": true, "Publish": true,
+		"Subscribe": true, "Keys": true, "Ping": true, "FlushAll": true,
+	},
+	"MongoDB": {
+		"Collection": true, "FindOne": true, "InsertOne": true, "InsertMany": true,
+		"UpdateOne": true, "UpdateMany": true, "DeleteOne": true, "DeleteMany": true,
+		"CountDocuments": true, "Aggregate": true, "CreateIndex": true, "DropIndex": true,
+	},
+	"LLM": {
+		"Complete": true, "Chat": true, "Stream": true, "Embed": true,
+		"ListModels": true, "TokenCount": true,
+	},
+	"HTTP": {
+		"Get": true, "Post": true, "Put": true, "Patch": true, "Delete": true,
+	},
+}
+
+// IsProviderMethodAllowed checks if a method is allowed for a specific provider type.
+// Falls back to the global allowedMethods whitelist if no provider-specific list exists.
+func IsProviderMethodAllowed(providerType, methodName string) bool {
+	if methods, ok := providerMethods[providerType]; ok {
+		return methods[methodName]
+	}
+	return allowedMethods[methodName]
+}
+
+// RegisterProviderMethods adds a method whitelist for a custom provider type.
+func RegisterProviderMethods(providerType string, methods []string) {
+	m := make(map[string]bool, len(methods))
+	for _, method := range methods {
+		m[method] = true
+	}
+	providerMethods[providerType] = m
+}
+
+// allowedMethods is a whitelist of safe methods that can be called via reflection
+var allowedMethods = map[string]bool{
+	// Database/ORM methods
+	"Get":        true,
+	"Find":       true,
+	"Create":     true,
+	"Update":     true,
+	"Delete":     true,
+	"First":      true,
+	"All":        true,
+	"Where":      true,
+	"Count":      true,
+	"Save":       true,
+	"Insert":     true,
+	"Select":     true,
+	"Limit":      true,
+	"Offset":     true,
+	"Order":      true,
+	"Filter":     true,
+	"Table":      true,
+	"CountWhere": true,
+	"NextId":     true,
+	"Length":     true,
+	// Redis methods
+	"Set":       true,
+	"Del":       true,
+	"Exists":    true,
+	"Expire":    true,
+	"Ttl":       true,
+	"Incr":      true,
+	"Decr":      true,
+	"HGet":      true,
+	"HSet":      true,
+	"HDel":      true,
+	"HGetAll":   true,
+	"HExists":   true,
+	"LPush":     true,
+	"RPush":     true,
+	"LPop":      true,
+	"RPop":      true,
+	"LLen":      true,
+	"LRange":    true,
+	"SAdd":      true,
+	"SRem":      true,
+	"SMembers":  true,
+	"SIsMember": true,
+	"Publish":   true,
+	"Subscribe": true,
+	"Keys":      true,
+	"Ping":      true,
+	"FlushAll":  true,
+	// MongoDB methods - follows same pattern as Database/Redis methods above;
+	// authorization is enforced at route level via auth() directives
+	"Collection":     true,
+	"FindOne":        true,
+	"InsertOne":      true,
+	"InsertMany":     true,
+	"UpdateOne":      true,
+	"UpdateMany":     true,
+	"DeleteOne":      true,
+	"DeleteMany":     true,
+	"CountDocuments": true,
+	"Aggregate":      true,
+	"CreateIndex":    true,
+	"DropIndex":      true,
+	// LLM methods
+	"Complete":   true,
+	"Chat":       true,
+	"Stream":     true,
+	"Embed":      true,
+	"ListModels": true,
+	"TokenCount": true,
+	// Common safe methods
+	"String": true,
+	"Int":    true,
+	"Bool":   true,
+	"Float":  true,
+	"Len":    true,
+	"IsZero": true,
+}
+
+// CallMethod calls a method on an object using reflection
+// Only methods in the allowedMethods whitelist can be called for security
+func CallMethod(obj interface{}, methodName string, args ...interface{}) (interface{}, error) {
+	// Check if the method is in the whitelist
+	if !allowedMethods[methodName] {
+		return nil, fmt.Errorf("method %s is not allowed", methodName)
+	}
+
+	// Get the value and type of the object
+	objValue := reflect.ValueOf(obj)
+	objType := objValue.Type()
+
+	// Find the method
+	method := objValue.MethodByName(methodName)
+	if !method.IsValid() {
+		return nil, fmt.Errorf("method %s not found on type %s", methodName, objType)
+	}
+
+	// Prepare arguments
+	methodArgs := make([]reflect.Value, len(args))
+	for i, arg := range args {
+		methodArgs[i] = reflect.ValueOf(arg)
+	}
+
+	// Call the method
+	results := method.Call(methodArgs)
+
+	// Handle return values
+	if len(results) == 0 {
+		return nil, nil
+	}
+
+	// If the last result is an error, check it
+	lastResult := results[len(results)-1]
+	if lastResult.Type().Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+		if !lastResult.IsNil() {
+			return nil, lastResult.Interface().(error)
+		}
+		// If there are other results, return the first one
+		if len(results) > 1 {
+			return results[0].Interface(), nil
+		}
+		return nil, nil
+	}
+
+	// Return the first result
+	return results[0].Interface(), nil
+}
+
+// HasMethod checks if an object has a method
+func HasMethod(obj interface{}, methodName string) bool {
+	objValue := reflect.ValueOf(obj)
+	method := objValue.MethodByName(methodName)
+	return method.IsValid()
+}
+
+// GetMethodNames returns all method names of an object
+func GetMethodNames(obj interface{}) []string {
+	objValue := reflect.ValueOf(obj)
+	objType := objValue.Type()
+
+	var methods []string
+	for i := 0; i < objType.NumMethod(); i++ {
+		methods = append(methods, objType.Method(i).Name)
+	}
+
+	return methods
+}

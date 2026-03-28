@@ -1,0 +1,35 @@
+# GlyphLang Code Owners
+# These owners will be automatically requested for review on PRs
+
+# Default owners for everything
+* @GlyphLang
+
+# Core compiler and VM
+/pkg/compiler/ @GlyphLang
+/pkg/vm/ @GlyphLang
+/pkg/parser/ @GlyphLang
+
+# Runtime and server
+/pkg/server/ @GlyphLang
+/pkg/interpreter/ @GlyphLang
+
+# Database and infrastructure
+/pkg/database/ @GlyphLang
+/pkg/tracing/ @GlyphLang
+/pkg/metrics/ @GlyphLang
+/pkg/logging/ @GlyphLang
+
+# Security-sensitive areas
+/pkg/security/ @GlyphLang
+/pkg/validation/ @GlyphLang
+
+# CLI and tooling
+/cmd/glyph/ @GlyphLang
+/pkg/lsp/ @GlyphLang
+
+# Documentation
+/docs/ @GlyphLang
+*.md @GlyphLang
+
+# CI/CD and GitHub config
+/.github/ @GlyphLang

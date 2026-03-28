@@ -1,0 +1,71 @@
+# Generics Demo
+# Demonstrates generic type definitions and functions in GlyphLang
+
+# Generic type definition for Result
+: Result<T, E> {
+  value: T?
+  error: E?
+  success: bool!
+}
+
+# Generic type definition for Option
+: Option<T> {
+  value: T?
+  hasValue: bool!
+}
+
+# Generic type definition for Pair
+: Pair<T, U> {
+  first: T!
+  second: U!
+}
+
+# Generic type for API response
+: ApiResponse<T> {
+  data: T?
+  error: string?
+  status: int!
+}
+
+# Generic identity function - returns the same value
+! identity<T>(x: T): T {
+  > x
+}
+
+# Generic first function - returns the first of two values
+! first<T>(a: T, b: T): T {
+  > a
+}
+
+# Generic pair function - creates a pair object
+! makePair<T, U>(a: T, b: U): object {
+  > {first: a, second: b}
+}
+
+# Route demonstrating generic usage
+@ GET /generics/demo {
+  $ pair = {first: "hello", second: 42}
+  > {
+    message: "Generics demo",
+    example: pair,
+    types: ["Result<T,E>", "Option<T>", "Pair<T,U>", "ApiResponse<T>"]
+  }
+}
+
+# Route showing Result-like pattern
+@ GET /generics/result/:value {
+  $ result = {
+    value: value,
+    error: null,
+    success: true
+  }
+  > result
+}
+
+# Route showing Option-like pattern
+@ GET /generics/option/:hasValue {
+  if hasValue == "true" {
+    > {value: "some data", hasValue: true}
+  }
+  > {value: null, hasValue: false}
+}

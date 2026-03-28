@@ -1,0 +1,92 @@
+# Async/Await Demo
+# Demonstrates asynchronous programming with Futures in GlyphLang
+
+# Basic async/await - simple computation in async block
+@ GET /async-simple {
+  $ future = async {
+    $ x = 10
+    $ y = 20
+    > x + y
+  }
+  $ result = await future
+  > {message: "Async result", value: result}
+}
+
+# Parallel execution - multiple async operations running concurrently
+@ GET /async-parallel {
+  # Start three async operations at once
+  $ f1 = async { > 100 }
+  $ f2 = async { > 200 }
+  $ f3 = async { > 300 }
+
+  # Await all results
+  $ r1 = await f1
+  $ r2 = await f2
+  $ r3 = await f3
+
+  > {
+    total: r1 + r2 + r3,
+    values: [r1, r2, r3]
+  }
+}
+
+# Async returning objects
+@ GET /async-object {
+  $ future = async {
+    > {
+      id: 1,
+      name: "Async User",
+      email: "async@example.com"
+    }
+  }
+  $ user = await future
+  > user
+}
+
+# Sequential async operations
+@ GET /async-sequential {
+  $ step1 = async {
+    $ base = 10
+    > base * 2
+  }
+  $ first = await step1
+
+  $ step2 = async {
+    > first + 5
+  }
+  $ second = await step2
+
+  > {
+    step1: first,
+    step2: second,
+    message: "Sequential async completed"
+  }
+}
+
+# Async with conditional logic
+@ GET /async-conditional/:value {
+  $ future = async {
+    if value > 50 {
+      > {status: "high", value: value}
+    } else {
+      > {status: "low", value: value}
+    }
+  }
+  > await future
+}
+
+# Multiple awaits on same future (futures can be awaited multiple times)
+@ GET /async-reuse {
+  $ future = async {
+    > 42
+  }
+
+  $ first = await future
+  $ second = await future
+
+  > {
+    first: first,
+    second: second,
+    same: first == second
+  }
+}

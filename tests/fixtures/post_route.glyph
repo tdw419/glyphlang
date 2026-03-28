@@ -1,0 +1,15 @@
+# POST route with input
+: CreateUserInput {
+  name: str!
+  email: str!
+}
+
+@ POST /api/users {
+  < input: CreateUserInput
+  > {
+    id: 123,
+    name: input.name,
+    email: input.email,
+    created: true
+  }
+}

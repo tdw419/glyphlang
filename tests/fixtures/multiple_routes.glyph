@@ -1,0 +1,12 @@
+# Multiple routes
+@ GET /health {
+  > {status: "ok", timestamp: 1234567890}
+}
+
+@ GET /version {
+  > {version: "0.1.0"}
+}
+
+@ GET /info/:id {
+  > {id: id, info: "Details about " + id}
+}
