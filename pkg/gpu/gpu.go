@@ -720,19 +720,7 @@ func stateToResult(state *VMState) Result {
 	return r
 }
 
-// executeGPU runs bytecode on actual WebGPU hardware.
-// This is a placeholder for when wgpu-native bindings are integrated.
-func (d *Dispatcher) executeGPU(bytecode []byte, config *Config) ([]Result, error) {
-	// TODO: Integrate wgpu-native bindings
-	// 1. Create GPU device and command encoder
-	// 2. Create storage buffers for config, bytecode, vm_states, stacks, vars
-	// 3. Upload bytecode and config
-	// 4. Create compute pipeline from vm.wgsl
-	// 5. Dispatch ceil(numVMs / 64) workgroups
-	// 6. Read back vm_states buffer
-	// 7. Convert VMState results to Result slice
-	return d.executeCPU(bytecode, config)
-}
+// executeGPU is implemented in wgpu_stub.go (default) or wgpu_native.go (gpu tag)
 
 // ErrorString returns a human-readable error description.
 func ErrorString(code uint32) string {
