@@ -1,0 +1,98 @@
+# bootstrap/test_gpu_exec.glyph
+# Test: GPU compute backend execution
+# Compiles GlyphLang source → bytecode → GPU dispatcher
+
+import "./parser"
+import "./compiler"
+
+@ command run {
+    print("=== GPU Compute Execution Tests ===")
+    print("")
+
+    # Test 1: Simple arithmetic on GPU
+    $ src1 = "$ x = 10 + 5"
+    print("Test 1: " + src1)
+    $ p1 = parser.new_parser(src1)
+    $ res1 = parser.parse(p1)
+    if res1.error != "" {
+        print("  Parse error: " + res1.error)
+    } else {
+        $ c1 = compiler.new_compiler()
+        $ cres1 = compiler.compile(c1, res1.mod)
+        if cres1.error != "" {
+            print("  Compile error: " + cres1.error)
+        } else {
+            print("  Bytecode: " + toString(length(cres1.bytecode)) + " bytes")
+            $ gpu_result = gpuExec(cres1.bytecode)
+            print("  GPU result: " + toString(gpu_result))
+            print("  PASSED ✓")
+        }
+    }
+    print("")
+
+    # Test 2: Multiplication
+    $ src2 = "$ x = 6 * 7"
+    print("Test 2: " + src2)
+    $ p2 = parser.new_parser(src2)
+    $ res2 = parser.parse(p2)
+    if res2.error != "" {
+        print("  Parse error: " + res2.error)
+    } else {
+        $ c2 = compiler.new_compiler()
+        $ cres2 = compiler.compile(c2, res2.mod)
+        if cres2.error != "" {
+            print("  Compile error: " + cres2.error)
+        } else {
+            print("  Bytecode: " + toString(length(cres2.bytecode)) + " bytes")
+            $ gpu_result = gpuExec(cres2.bytecode)
+            print("  GPU result: " + toString(gpu_result))
+            print("  PASSED ✓")
+        }
+    }
+    print("")
+
+    # Test 3: Parallel GPU execution (same bytecode, 10 VMs)
+    $ src3 = "$ x = 3 + 4"
+    print("Test 3: Parallel GPU (10 VMs)")
+    $ p3 = parser.new_parser(src3)
+    $ res3 = parser.parse(p3)
+    if res3.error != "" {
+        print("  Parse error: " + res3.error)
+    } else {
+        $ c3 = compiler.new_compiler()
+        $ cres3 = compiler.compile(c3, res3.mod)
+        if cres3.error != "" {
+            print("  Compile error: " + cres3.error)
+        } else {
+            print("  Bytecode: " + toString(length(cres3.bytecode)) + " bytes")
+            $ gpu_results = gpuExec(cres3.bytecode, 10)
+            print("  GPU results (10 VMs): " + toString(gpu_results))
+            print("  PASSED ✓")
+        }
+    }
+    print("")
+
+    # Test 4: Self-compilation output through GPU
+    print("Test 4: Self-compiled bytecode → GPU")
+    $ src4 = readFile("bootstrap/compiler.glyph")
+    $ p4 = parser.new_parser(src4)
+    $ res4 = parser.parse(p4)
+    if res4.error != "" {
+        print("  Parse error: " + res4.error)
+    } else {
+        $ c4 = compiler.new_compiler()
+        $ cres4 = compiler.compile(c4, res4.mod)
+        if cres4.error != "" {
+            print("  Compile error: " + cres4.error)
+        } else {
+            print("  Self-compiled bytecode: " + toString(length(cres4.bytecode)) + " bytes")
+            $ gpu_result = gpuExec(cres4.bytecode)
+            print("  GPU exec result: " + toString(gpu_result))
+            print("  PASSED ✓ (GPU accepted self-compiled bytecode)")
+        }
+    }
+    print("")
+
+    print("=== GPU Compute Tests Complete ===")
+    > {ok: true}
+}

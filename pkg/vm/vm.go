@@ -66,6 +66,10 @@ const (
 	OpAwait Opcode = 0xB1 // Await a future
 	OpTry   Opcode = 0xB2 // Try expression - unwrap result, propagate error
 
+	// GPU/Parallel opcodes
+	OpMitosis Opcode = 0xC0 // S opcode: clone VM state into new thread at spatial offset
+	OpMutator Opcode = 0xC1 // M opcode: self-modify code at IP + offset
+
 	OpHalt Opcode = 0xFF
 )
 

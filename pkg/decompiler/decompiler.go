@@ -372,6 +372,8 @@ func opcodeToString(op vm.Opcode) string {
 		vm.OpWsGetClients:    "WS_GET_CLIENTS",
 		vm.OpWsGetConnCount:  "WS_GET_CONN_COUNT",
 		vm.OpWsGetUptime:     "WS_GET_UPTIME",
+		vm.OpMitosis:         "MITOSIS",
+		vm.OpMutator:         "MUTATOR",
 		vm.OpHalt:            "HALT",
 	}
 

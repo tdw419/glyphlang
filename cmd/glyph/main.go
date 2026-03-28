@@ -435,6 +435,21 @@ Examples:
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(modCmd)
 	rootCmd.AddCommand(aiCmd)
+
+	// GPU compute execution
+	var gpuCmd = &cobra.Command{
+		Use:   "gpu <bytecode-file>",
+		Short: "Execute bytecode on GPU compute backend",
+		Long: `Execute compiled GlyphLang bytecode (.glyphc) on the GPU compute backend.
+Runs one or more parallel VM instances via WebGPU compute shaders.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: runGPU,
+	}
+	gpuCmd.Flags().Int("vms", 1, "Number of parallel VM instances")
+	gpuCmd.Flags().Bool("shader", false, "Print the WGSL compute shader source")
+	gpuCmd.Flags().Bool("spatial", false, "Show Hilbert curve spatial grid visualization")
+	rootCmd.AddCommand(gpuCmd)
+
 	rootCmd.AddCommand(versionCmd)
 
 	if err := rootCmd.Execute(); err != nil {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	. "github.com/glyphlang/glyph/pkg/ast"
+	gpuPkg "github.com/glyphlang/glyph/pkg/gpu"
 	vmPkg "github.com/glyphlang/glyph/pkg/vm"
 	"github.com/google/uuid"
 )
@@ -79,6 +80,7 @@ func init() {
 		"blob":       builtinBlob,
 		"redirect":   builtinRedirect,
 		"vmExec":     builtinVMExec,
+		"gpuExec":    builtinGPUExec,
 	}
 }
 
@@ -1533,6 +1535,82 @@ func builtinVMExec(interp *Interpreter, args []Expr, env *Environment) (interfac
 	}
 
 	return vmValueToInterface(result), nil
+}
+
+// builtinGPUExec executes bytecode on the GPU compute backend.
+// Takes an array of ints (bytecode bytes) and optional VM count.
+// Returns the result(s) from GPU execution.
+func builtinGPUExec(interp *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) < 1 || len(args) > 2 {
+		return nil, fmt.Errorf("gpuExec() expects 1-2 arguments (bytecode array, [numVMs]), got %d", len(args))
+	}
+	val, err := interp.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+
+	arr, ok := val.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("gpuExec() expects an array of integers, got %T", val)
+	}
+
+	bytecodeBytes := make([]byte, len(arr))
+	for idx, item := range arr {
+		n, ok := item.(int64)
+		if !ok {
+			return nil, fmt.Errorf("gpuExec() expects integers in bytecode array, got %T at index %d", item, idx)
+		}
+		bytecodeBytes[idx] = byte(n)
+	}
+
+	numVMs := 1
+	if len(args) == 2 {
+		nVal, err := interp.EvaluateExpression(args[1], env)
+		if err != nil {
+			return nil, err
+		}
+		if n, ok := nVal.(int64); ok {
+			numVMs = int(n)
+		}
+	}
+
+	dispatcher := gpuPkg.NewDispatcher()
+	results, err := dispatcher.Execute(bytecodeBytes, numVMs)
+	if err != nil {
+		return nil, fmt.Errorf("GPU execution failed: %w", err)
+	}
+
+	if numVMs == 1 {
+		r := results[0]
+		if r.Error != nil {
+			return nil, fmt.Errorf("GPU VM error: %w", r.Error)
+		}
+		return gpuResultToInterface(r), nil
+	}
+
+	// Multiple VMs: return array of results
+	out := make([]interface{}, len(results))
+	for i, r := range results {
+		if r.Error != nil {
+			out[i] = map[string]interface{}{"error": r.Error.Error(), "steps": int64(r.Steps)}
+		} else {
+			out[i] = gpuResultToInterface(r)
+		}
+	}
+	return out, nil
+}
+
+func gpuResultToInterface(r gpuPkg.Result) interface{} {
+	switch r.Tag {
+	case gpuPkg.TagInt:
+		return r.IntVal
+	case gpuPkg.TagFloat:
+		return r.FloatVal
+	case gpuPkg.TagBool:
+		return r.BoolVal
+	default:
+		return nil
+	}
 }
 
 // vmValueToInterface converts a VM value to a Go interface{} for the interpreter.
