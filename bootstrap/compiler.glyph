@@ -112,8 +112,20 @@ const OP_HALT          = 255
     > data
   }
 
+  if t == "map" {
+    $ kind = val["kind"]
+    if kind == "literal" {
+      $ lit_type = val["type"]
+      $ lit_val = val["value"]
+      $ converted = lit_val
+      if lit_type == "int" { converted = toInt(lit_val) }
+      if lit_type == "bool" { converted = (lit_val == "true") }
+      > [1] + encode_int(converted)
+    }
+  }
+
   if t == "int" {
-    > [1] + intToBytes8(val)
+    > [1] + encode_int(val)
   }
 
   if t == "bool" {
@@ -122,6 +134,19 @@ const OP_HALT          = 255
   }
 
   > [0]
+}
+
+! encode_int(n: int) -> [int] {
+  > [
+    n - (n / 256) * 256,
+    (n / 256) - (n / 65536) * 256,
+    (n / 65536) - (n / 16777216) * 256,
+    (n / 16777216) - (n / 4294967296) * 256,
+    (n / 4294967296) - (n / 1099511627776) * 256,
+    (n / 1099511627776) - (n / 281474976710656) * 256,
+    (n / 281474976710656) - (n / 72057594037927936) * 256,
+    n / 72057594037927936
+  ]
 }
 
 # ─── Emission Helpers ─────────────────────────────────────────────
@@ -160,15 +185,8 @@ const OP_HALT          = 255
   > length(c.constants) - 1
 }
 
-# ─── Item Compilation ─────────────────────────────────────────────
-
 ! compile_item(c: Compiler, item: ast.Item) -> str {
   if item.kind == "const" {
-    $ err = compile_expression(c, item.const_value)
-    if err != "" { > err }
-    $ idx = add_constant(c, item.const_name)
-    emit_byte(c, OP_STORE_VAR)
-    emit_bytes4(c, idx)
     > ""
   }
 
@@ -265,8 +283,10 @@ const OP_HALT          = 255
 
 ! compile_expression(c: Compiler, expr: ast.Expr) -> str {
   if expr.kind == "literal" {
-    $ val = cast_literal(expr.literal_value, expr.literal_type)
-    $ idx = add_constant(c, val)
+    $ val = expr.literal_value
+    $ boxed = {kind: "literal", type: expr.literal_type, value: val}
+    $ c.constants = c.constants + [boxed]
+    $ idx = length(c.constants) - 1
     emit_byte(c, OP_PUSH)
     emit_bytes4(c, idx)
     > ""
@@ -364,8 +384,11 @@ const OP_HALT          = 255
 }
 
 ! cast_literal(val: str, t: str) -> any {
-  if t == "int" { > toInt(val) }
-  if t == "bool" { > (val == "true") }
-  if t == "str" { > val }
-  > null
+  if t == "int" {
+    > {kind: "int", value: toInt(val)}
+  }
+  if t == "bool" { > {kind: "bool", value: (val == "true")} }
+  if t == "str" { > {kind: "str", value: val} }
+  if t == "null" { > null }
+  > {kind: "unknown", value: val}
 }

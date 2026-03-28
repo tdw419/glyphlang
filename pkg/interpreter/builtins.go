@@ -70,6 +70,7 @@ func init() {
 		"intToBytes8": builtinIntToBytes8,
 		"writeFile":  builtinWriteFile,
 		"readFile":   builtinReadFile,
+		"toInt":      builtinToInt,
 		"text":       builtinText,
 		"html":       builtinHTML,
 		"blob":       builtinBlob,
@@ -1282,6 +1283,39 @@ func builtinReadFile(i *Interpreter, args []Expr, env *Environment) (interface{}
 	}
 
 	return string(bytes), nil
+}
+
+func builtinToInt(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("toInt() expects 1 argument, got %d", len(args))
+	}
+	val, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+
+	switch v := val.(type) {
+	case int64:
+		return v, nil
+	case int:
+		return int64(v), nil
+	case float64:
+		return int64(v), nil
+	case string:
+		var result int64
+		_, err := fmt.Sscanf(v, "%d", &result)
+		if err != nil {
+			return int64(0), nil
+		}
+		return result, nil
+	case bool:
+		if v {
+			return int64(1), nil
+		}
+		return int64(0), nil
+	default:
+		return int64(0), nil
+	}
 }
 
 func builtinText(interp *Interpreter, args []Expr, env *Environment) (interface{}, error) {

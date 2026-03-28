@@ -1,0 +1,55 @@
+import "./lexer"
+import "./parser"
+import "./compiler"
+
+@ command run {
+    print("=== BOOTSTRAP TESTS ===")
+    print("")
+
+    $ test1 = test_const()
+    if test1 {
+        print("Test 1 (Const): PASSED")
+    }
+
+    $ test2 = test_type()
+    if test2 {
+        print("Test 2 (Type): PASSED")
+    }
+
+    print("")
+    print("=== ALL TESTS PASSED ===")
+    > {ok: true}
+}
+
+! test_const() -> bool {
+    $ src = "const x = 42"
+    $ p = parser.new_parser(src)
+    $ res = parser.parse(p)
+    if res.error != "" {
+        print("const error: " + res.error)
+        return false
+    }
+    $ item = res.mod.items[0]
+    if item.kind != "const" {
+        return false
+    }
+    if item.const_name != "x" {
+        return false
+    }
+    return true
+}
+
+! test_type() -> bool {
+    $ src = ": Token { type: str! }"
+    $ p = parser.new_parser(src)
+    $ res = parser.parse(p)
+    if res.error != "" {
+        print("type error: " + res.error)
+        return false
+    }
+    $ item = res.mod.items[0]
+    if item.kind != "type_def" {
+        return false
+    }
+    return true
+}

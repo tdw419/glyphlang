@@ -513,6 +513,7 @@ import "./ast"
   p = name_res.parser
   $ target = name_res.tok.literal
 
+  # Check for field access: obj.field
   $ is_field = false
   $ fld_name = ""
   if cur_type(p) == token.DOT {
@@ -525,6 +526,22 @@ import "./ast"
     fld_name = fr.tok.literal
   }
 
+  # Check for array index: arr[idx] or arr.field[idx]
+  $ is_index = false
+  $ index_expr = null
+  if cur_type(p) == token.LBRACKET {
+    is_index = true
+    $ adv = advance(p)
+    p = adv.parser
+    $ ir = parse_expression(p)
+    if ir.error != "" { > { parser: p, stmt: _stmt("illegal"), error: ir.error } }
+    p = ir.parser
+    $ rb = expect(p, token.RBRACKET)
+    if rb.error != "" { > { parser: p, stmt: _stmt("illegal"), error: rb.error } }
+    p = rb.parser
+    index_expr = ir.expr
+  }
+
   $ eq = expect(p, token.EQUALS)
   if eq.error != "" { > { parser: p, stmt: _stmt("illegal"), error: eq.error } }
   p = eq.parser
@@ -533,6 +550,14 @@ import "./ast"
   if vr.error != "" { > { parser: p, stmt: _stmt("illegal"), error: vr.error } }
   p = vr.parser
 
+  if is_index {
+    $ stmt = _stmt("index_assign")
+    $ stmt.target = target
+    $ stmt.field = fld_name
+    $ stmt.index = index_expr
+    $ stmt.value = vr.expr
+    > { parser: p, stmt: stmt, error: "" }
+  }
   if is_field {
     > { parser: p, stmt: _field_assign_stmt(target, fld_name, vr.expr), error: "" }
   }
