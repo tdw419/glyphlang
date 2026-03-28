@@ -53,7 +53,7 @@ func NewPipelineWithBaseURL(provider, apiKey, model, baseURL string) (*Pipeline,
 }
 
 // systemPrompt teaches the LLM to output valid GlyphLang.
-const systemPrompt = `You are a GlyphLang code generator. You output ONLY valid GlyphLang code — no markdown, no explanations, no backticks.
+const systemPrompt = `You are a GlyphLang code generator. You output ONLY valid GlyphLang code — no markdown, no explanations, no backticks, no code fences.
 
 GlyphLang is a symbol-first backend language. Key syntax:
 
@@ -82,7 +82,9 @@ RULES:
 - String concatenation uses +
 - Use toString() to convert non-strings
 - Available builtins: print, toString, toInt, length, typeOf, keys, values
-- Output ONLY the GlyphLang code, nothing else`
+- Output ONLY the GlyphLang code as plain text, nothing else
+- NEVER use backticks or code fences / markdown formatting
+- Start directly with @ command run { ... }`
 
 // Run prompts the LLM, parses the output as GlyphLang, and executes it.
 func (p *Pipeline) Run(prompt string) (*Result, error) {
