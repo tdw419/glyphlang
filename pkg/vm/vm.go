@@ -39,10 +39,13 @@ const (
 	OpIterNext    Opcode = 0x54
 	OpIterHasNext Opcode = 0x55
 	OpGetIndex    Opcode = 0x56
+	OpSetIndex    Opcode = 0x57 // Set array/map element: arr[idx] = val
 	OpReturn      Opcode = 0x61
 	OpCall        Opcode = 0x62
 	OpBuildObject Opcode = 0x70
 	OpGetField    Opcode = 0x71
+	OpSetField    Opcode = 0x72 // Set object field: obj.field = val
+	OpDefFunc     Opcode = 0x73 // Define a function: name_idx, param_count, body_length, [param_name_idxs...], body...
 	OpBuildArray  Opcode = 0x80
 	OpHttpReturn  Opcode = 0x90
 
@@ -92,6 +95,12 @@ type WebSocketHandler interface {
 	GetUptime() int64 // uptime in seconds
 }
 
+// CallFrame saves the state when entering a function call.
+type CallFrame struct {
+	returnPC int               // Program counter to return to
+	locals   map[string]Value  // Caller's local variables
+}
+
 // VM represents the virtual machine
 type VM struct {
 	stack      []Value
@@ -99,7 +108,9 @@ type VM struct {
 	globals    map[string]Value
 	constants  []Value
 	builtins   map[string]BuiltinFunc
-	iterators  map[int]*Iterator // track iterators by ID
+	functions  map[string]FunctionValue // User-defined functions
+	callStack  []CallFrame             // Call frame stack
+	iterators  map[int]*Iterator       // track iterators by ID
 	nextIterID int
 	pc         int // program counter
 	code       []byte
@@ -120,6 +131,8 @@ func NewVM() *VM {
 		globals:    make(map[string]Value),
 		constants:  make([]Value, 0),
 		builtins:   make(map[string]BuiltinFunc),
+		functions:  make(map[string]FunctionValue),
+		callStack:  make([]CallFrame, 0, 16),
 		iterators:  make(map[int]*Iterator),
 		nextIterID: 0,
 		pc:         0,
@@ -341,15 +354,20 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 		return vm.execIterHasNext()
 	case OpGetIndex:
 		return vm.execGetIndex()
+	case OpSetIndex:
+		return vm.execSetIndex()
 	case OpReturn:
-		vm.halted = true
-		return nil
+		return vm.execReturn()
 	case OpCall:
 		return vm.execCall()
 	case OpBuildObject:
 		return vm.execBuildObject()
 	case OpGetField:
 		return vm.execGetField()
+	case OpSetField:
+		return vm.execSetField()
+	case OpDefFunc:
+		return vm.execDefFunc()
 	case OpBuildArray:
 		return vm.execBuildArray()
 	case OpHttpReturn:
@@ -1240,6 +1258,153 @@ func (vm *VM) execGetField() error {
 	return nil
 }
 
+// execSetField sets a field on an object.
+// Stack: [obj, key, value] → pops value, key, obj; mutates obj; pushes obj back.
+func (vm *VM) execSetField() error {
+	val, err := vm.Pop()
+	if err != nil {
+		return err
+	}
+	key, err := vm.Pop()
+	if err != nil {
+		return err
+	}
+	obj, err := vm.Pop()
+	if err != nil {
+		return err
+	}
+
+	keyStr, ok := key.(StringValue)
+	if !ok {
+		return fmt.Errorf("type error: field name must be a string, got %s", key.Type())
+	}
+
+	objVal, ok := obj.(ObjectValue)
+	if !ok {
+		return fmt.Errorf("type error: can only set field on object, got %s", obj.Type())
+	}
+
+	objVal.Val[keyStr.Val] = val
+	vm.Push(objVal)
+	return nil
+}
+
+// execSetIndex sets an element in an array or map.
+// Stack: [arr, index, value] → pops value, index, arr; mutates arr; pushes arr back.
+func (vm *VM) execSetIndex() error {
+	val, err := vm.Pop()
+	if err != nil {
+		return err
+	}
+	index, err := vm.Pop()
+	if err != nil {
+		return err
+	}
+	container, err := vm.Pop()
+	if err != nil {
+		return err
+	}
+
+	switch c := container.(type) {
+	case ArrayValue:
+		indexInt, ok := index.(IntValue)
+		if !ok {
+			return fmt.Errorf("type error: array index must be an integer, got %s", index.Type())
+		}
+		if indexInt.Val < 0 || indexInt.Val >= int64(len(c.Val)) {
+			return fmt.Errorf("index out of bounds: %d (length %d)", indexInt.Val, len(c.Val))
+		}
+		c.Val[indexInt.Val] = val
+		vm.Push(c)
+	case ObjectValue:
+		keyStr, ok := index.(StringValue)
+		if !ok {
+			return fmt.Errorf("type error: object key must be a string, got %s", index.Type())
+		}
+		c.Val[keyStr.Val] = val
+		vm.Push(c)
+	default:
+		return fmt.Errorf("type error: can only set index on array or object, got %s", container.Type())
+	}
+
+	return nil
+}
+
+// execDefFunc defines a user function.
+// Format: OP_DEF_FUNC, name_idx(4), param_count(4), body_length(4), [param_name_idx(4)]..., body...
+func (vm *VM) execDefFunc() error {
+	nameIdx, err := vm.readOperand()
+	if err != nil {
+		return err
+	}
+	if int(nameIdx) >= len(vm.constants) {
+		return fmt.Errorf("function name constant out of bounds: %d", nameIdx)
+	}
+	nameVal, ok := vm.constants[nameIdx].(StringValue)
+	if !ok {
+		return fmt.Errorf("function name must be a string")
+	}
+
+	paramCount, err := vm.readOperand()
+	if err != nil {
+		return err
+	}
+
+	bodyLength, err := vm.readOperand()
+	if err != nil {
+		return err
+	}
+
+	// Read parameter names
+	paramNames := make([]string, paramCount)
+	for i := uint32(0); i < paramCount; i++ {
+		pidx, err := vm.readOperand()
+		if err != nil {
+			return err
+		}
+		if int(pidx) >= len(vm.constants) {
+			return fmt.Errorf("param name constant out of bounds: %d", pidx)
+		}
+		pval, ok := vm.constants[pidx].(StringValue)
+		if !ok {
+			return fmt.Errorf("param name must be a string")
+		}
+		paramNames[i] = pval.Val
+	}
+
+	// Register the function (body starts at current PC)
+	vm.functions[nameVal.Val] = FunctionValue{
+		Name:       nameVal.Val,
+		ParamNames: paramNames,
+		CodeOffset: vm.pc,
+		CodeLength: int(bodyLength),
+	}
+
+	// Skip over the function body
+	vm.pc += int(bodyLength)
+
+	return nil
+}
+
+// execReturn returns from a function call or halts if at top level.
+func (vm *VM) execReturn() error {
+	if len(vm.callStack) == 0 {
+		// Top-level return → halt
+		vm.halted = true
+		return nil
+	}
+
+	// Pop call frame
+	frame := vm.callStack[len(vm.callStack)-1]
+	vm.callStack = vm.callStack[:len(vm.callStack)-1]
+
+	// Restore caller state
+	vm.pc = frame.returnPC
+	vm.locals = frame.locals
+
+	return nil
+}
+
 // execCall performs a function call
 func (vm *VM) execCall() error {
 	operand, err := vm.readOperand()
@@ -1278,6 +1443,29 @@ func (vm *VM) execCall() error {
 			return fmt.Errorf("built-in function %s failed: %w", fnName.Val, err)
 		}
 		vm.Push(result)
+		return nil
+	}
+
+	// Look up user-defined function
+	if fn, exists := vm.functions[fnName.Val]; exists {
+		if len(args) != len(fn.ParamNames) {
+			return fmt.Errorf("function %s expects %d arguments, got %d", fnName.Val, len(fn.ParamNames), len(args))
+		}
+
+		// Save current frame
+		vm.callStack = append(vm.callStack, CallFrame{
+			returnPC: vm.pc,
+			locals:   vm.locals,
+		})
+
+		// Set up new locals with parameters
+		vm.locals = make(map[string]Value)
+		for i, paramName := range fn.ParamNames {
+			vm.locals[paramName] = args[i]
+		}
+
+		// Jump to function body
+		vm.pc = fn.CodeOffset
 		return nil
 	}
 

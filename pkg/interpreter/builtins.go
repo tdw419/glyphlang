@@ -11,6 +11,7 @@ import (
 	"time"
 
 	. "github.com/glyphlang/glyph/pkg/ast"
+	vmPkg "github.com/glyphlang/glyph/pkg/vm"
 	"github.com/google/uuid"
 )
 
@@ -77,6 +78,7 @@ func init() {
 		"html":       builtinHTML,
 		"blob":       builtinBlob,
 		"redirect":   builtinRedirect,
+		"vmExec":     builtinVMExec,
 	}
 }
 
@@ -1497,4 +1499,71 @@ func builtinRedirect(interp *Interpreter, args []Expr, env *Environment) (interf
 	}
 
 	return &RedirectResponse{URL: urlStr, StatusCode: statusCode}, nil
+}
+
+// builtinVMExec executes bytecode through the Go VM.
+// Takes an array of ints (bytecode bytes) and returns the VM result.
+func builtinVMExec(interp *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("vmExec() expects 1 argument (bytecode array), got %d", len(args))
+	}
+	val, err := interp.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+
+	arr, ok := val.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("vmExec() expects an array of integers, got %T", val)
+	}
+
+	bytes := make([]byte, len(arr))
+	for idx, item := range arr {
+		n, ok := item.(int64)
+		if !ok {
+			return nil, fmt.Errorf("vmExec() expects integers in bytecode array, got %T at index %d", item, idx)
+		}
+		bytes[idx] = byte(n)
+	}
+
+	vmInstance := vmPkg.NewVM()
+	result, err := vmInstance.Execute(bytes)
+	if err != nil {
+		return nil, fmt.Errorf("VM execution failed: %w", err)
+	}
+
+	return vmValueToInterface(result), nil
+}
+
+// vmValueToInterface converts a VM value to a Go interface{} for the interpreter.
+func vmValueToInterface(val vmPkg.Value) interface{} {
+	if val == nil {
+		return nil
+	}
+	switch v := val.(type) {
+	case vmPkg.IntValue:
+		return v.Val
+	case vmPkg.FloatValue:
+		return v.Val
+	case vmPkg.BoolValue:
+		return v.Val
+	case vmPkg.StringValue:
+		return v.Val
+	case vmPkg.NullValue:
+		return nil
+	case vmPkg.ArrayValue:
+		result := make([]interface{}, len(v.Val))
+		for i, elem := range v.Val {
+			result[i] = vmValueToInterface(elem)
+		}
+		return result
+	case vmPkg.ObjectValue:
+		result := make(map[string]interface{})
+		for k, elem := range v.Val {
+			result[k] = vmValueToInterface(elem)
+		}
+		return result
+	default:
+		return fmt.Sprintf("%v", val)
+	}
 }

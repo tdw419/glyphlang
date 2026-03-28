@@ -187,7 +187,13 @@ func CallMethod(obj interface{}, methodName string, args ...interface{}) (interf
 
 // HasMethod checks if an object has a method
 func HasMethod(obj interface{}, methodName string) bool {
+	if obj == nil {
+		return false
+	}
 	objValue := reflect.ValueOf(obj)
+	if !objValue.IsValid() {
+		return false
+	}
 	method := objValue.MethodByName(methodName)
 	return method.IsValid()
 }

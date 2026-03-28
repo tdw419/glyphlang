@@ -86,6 +86,24 @@ func (v ObjectValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Val)
 }
 
+// FunctionValue represents a compiled function
+type FunctionValue struct {
+	Name       string   // Function name
+	ParamNames []string // Parameter names in order
+	CodeOffset int      // Start offset in the bytecode
+	CodeLength int      // Length of the function body bytecode
+}
+
+func (v FunctionValue) Type() string { return "function" }
+
+func (v FunctionValue) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]interface{}{
+		"type":   "function",
+		"name":   v.Name,
+		"params": v.ParamNames,
+	})
+}
+
 // FutureValue represents an async future
 type FutureValue struct {
 	Result Value
