@@ -104,30 +104,9 @@ func runGPU(cmd *cobra.Command, args []string) error {
 }
 
 func countConstants(bytecode []byte) int {
-	offset := 4
-	count := 0
-	for offset < len(bytecode) {
-		ctype := bytecode[offset]
-		if ctype > 0x04 {
-			break
-		}
-		offset++
-		count++
-		switch ctype {
-		case 0x00: // null
-		case 0x01: // int
-			offset += 8
-		case 0x02: // float
-			offset += 8
-		case 0x03: // bool
-			offset++
-		case 0x04: // string
-			if offset+4 > len(bytecode) {
-				return count
-			}
-			strLen := int(binary.BigEndian.Uint32(bytecode[offset:]))
-			offset += 4 + strLen
-		}
+	if len(bytecode) < 12 {
+		return 0
 	}
-	return count
+	// Format: GLYP(4) + version(4) + constCount(4 LE)
+	return int(binary.LittleEndian.Uint32(bytecode[8:12]))
 }

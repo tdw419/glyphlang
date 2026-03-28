@@ -7,10 +7,21 @@ import (
 )
 
 // buildBytecode creates a minimal GLYP bytecode with given constants and instructions.
+// Format: "GLYP" + version(4 LE) + constCount(4 LE) + constants... + instrCount(4 LE) + code...
 func buildBytecode(constants []interface{}, code []byte) []byte {
 	buf := []byte("GLYP")
 
-	// Encode constants
+	// Version: 1 (little-endian)
+	ver := make([]byte, 4)
+	binary.LittleEndian.PutUint32(ver, 1)
+	buf = append(buf, ver...)
+
+	// Constant count (little-endian)
+	cc := make([]byte, 4)
+	binary.LittleEndian.PutUint32(cc, uint32(len(constants)))
+	buf = append(buf, cc...)
+
+	// Encode constants (little-endian to match bootstrap intToBytes4)
 	for _, c := range constants {
 		switch v := c.(type) {
 		case nil:
@@ -18,17 +29,17 @@ func buildBytecode(constants []interface{}, code []byte) []byte {
 		case int:
 			buf = append(buf, 0x01)
 			b := make([]byte, 8)
-			binary.BigEndian.PutUint64(b, uint64(v))
+			binary.LittleEndian.PutUint64(b, uint64(v))
 			buf = append(buf, b...)
 		case int64:
 			buf = append(buf, 0x01)
 			b := make([]byte, 8)
-			binary.BigEndian.PutUint64(b, uint64(v))
+			binary.LittleEndian.PutUint64(b, uint64(v))
 			buf = append(buf, b...)
 		case float64:
 			buf = append(buf, 0x02)
 			b := make([]byte, 8)
-			binary.BigEndian.PutUint64(b, math.Float64bits(v))
+			binary.LittleEndian.PutUint64(b, math.Float64bits(v))
 			buf = append(buf, b...)
 		case bool:
 			buf = append(buf, 0x03)
@@ -40,49 +51,54 @@ func buildBytecode(constants []interface{}, code []byte) []byte {
 		case string:
 			buf = append(buf, 0x04)
 			b := make([]byte, 4)
-			binary.BigEndian.PutUint32(b, uint32(len(v)))
+			binary.LittleEndian.PutUint32(b, uint32(len(v)))
 			buf = append(buf, b...)
 			buf = append(buf, []byte(v)...)
 		}
 	}
 
+	// Instruction count (little-endian)
+	ic := make([]byte, 4)
+	binary.LittleEndian.PutUint32(ic, uint32(len(code)))
+	buf = append(buf, ic...)
+
 	buf = append(buf, code...)
 	return buf
 }
 
-// emit helpers
+// emit helpers — all operands are little-endian to match Go VM
 func pushConst(idx uint32) []byte {
 	b := []byte{0x01} // OP_PUSH
 	operand := make([]byte, 4)
-	binary.BigEndian.PutUint32(operand, idx)
+	binary.LittleEndian.PutUint32(operand, idx)
 	return append(b, operand...)
 }
 
 func storeVar(idx uint32) []byte {
 	b := []byte{0x41} // OP_STORE_VAR
 	operand := make([]byte, 4)
-	binary.BigEndian.PutUint32(operand, idx)
+	binary.LittleEndian.PutUint32(operand, idx)
 	return append(b, operand...)
 }
 
 func loadVar(idx uint32) []byte {
 	b := []byte{0x40} // OP_LOAD_VAR
 	operand := make([]byte, 4)
-	binary.BigEndian.PutUint32(operand, idx)
+	binary.LittleEndian.PutUint32(operand, idx)
 	return append(b, operand...)
 }
 
 func jump(target uint32) []byte {
 	b := []byte{0x50} // OP_JUMP
 	operand := make([]byte, 4)
-	binary.BigEndian.PutUint32(operand, target)
+	binary.LittleEndian.PutUint32(operand, target)
 	return append(b, operand...)
 }
 
 func jumpIfFalse(target uint32) []byte {
 	b := []byte{0x51}
 	operand := make([]byte, 4)
-	binary.BigEndian.PutUint32(operand, target)
+	binary.LittleEndian.PutUint32(operand, target)
 	return append(b, operand...)
 }
 

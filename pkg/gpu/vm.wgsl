@@ -109,13 +109,13 @@ fn read_byte(offset: u32) -> u32 {
     return (word >> (byte_idx * 8u)) & 0xFFu;
 }
 
-// Helper: read 4 bytes as big-endian u32 from bytecode
+// Helper: read 4 bytes as little-endian u32 from bytecode
 fn read_u32(offset: u32) -> u32 {
     let b0 = read_byte(offset);
     let b1 = read_byte(offset + 1u);
     let b2 = read_byte(offset + 2u);
     let b3 = read_byte(offset + 3u);
-    return (b0 << 24u) | (b1 << 16u) | (b2 << 8u) | b3;
+    return b0 | (b1 << 8u) | (b2 << 16u) | (b3 << 24u);
 }
 
 // Helper: push value onto VM stack

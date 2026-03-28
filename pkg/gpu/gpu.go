@@ -148,73 +148,76 @@ func ParseBytecodeLayoutPublic(bytecode []byte) (*Config, error) {
 }
 
 // parseBytecodeLayout reads the GLYP bytecode format to determine offsets.
-// Format: "GLYP" + constants_section + code_section
+// Format: "GLYP" + version(4 LE) + constCount(4 LE) + constants... + instrCount(4 LE) + code...
 func parseBytecodeLayout(bytecode []byte) (*Config, error) {
-	if len(bytecode) < 8 {
-		return nil, fmt.Errorf("bytecode too short")
+	if len(bytecode) < 16 {
+		return nil, fmt.Errorf("bytecode too short: need at least 16 bytes, got %d", len(bytecode))
 	}
 
 	offset := 4 // skip GLYP magic
 
-	// Count constants and find where code starts
-	numConstants := uint32(0)
+	// Read version (4 bytes, little-endian)
+	// version := binary.LittleEndian.Uint32(bytecode[offset:])
+	offset += 4
+
+	// Read constant count (4 bytes, little-endian)
+	constCount := binary.LittleEndian.Uint32(bytecode[offset:])
+	offset += 4
+
 	constStart := uint32(offset)
 
-	for offset < len(bytecode) {
+	// Skip over constants
+	for i := uint32(0); i < constCount; i++ {
 		if offset >= len(bytecode) {
-			break
+			return nil, fmt.Errorf("truncated constant pool at index %d", i)
 		}
 		ctype := bytecode[offset]
-
-		// Check if this looks like an opcode rather than a constant type
-		// Constants types are 0x00-0x04, opcodes start at 0x01
-		// We detect code start by checking if we hit a valid opcode sequence
-		if ctype > 0x04 {
-			break
-		}
-
 		offset++
 		switch ctype {
-		case 0x00: // null
-			// no data
+		case 0x00: // null — no data
 		case 0x01: // int64
 			if offset+8 > len(bytecode) {
-				return nil, fmt.Errorf("truncated int constant at offset %d", offset)
+				return nil, fmt.Errorf("truncated int constant at index %d", i)
 			}
 			offset += 8
 		case 0x02: // float64
 			if offset+8 > len(bytecode) {
-				return nil, fmt.Errorf("truncated float constant at offset %d", offset)
+				return nil, fmt.Errorf("truncated float constant at index %d", i)
 			}
 			offset += 8
 		case 0x03: // bool
 			if offset+1 > len(bytecode) {
-				return nil, fmt.Errorf("truncated bool constant at offset %d", offset)
+				return nil, fmt.Errorf("truncated bool constant at index %d", i)
 			}
 			offset++
 		case 0x04: // string
 			if offset+4 > len(bytecode) {
-				return nil, fmt.Errorf("truncated string length at offset %d", offset)
+				return nil, fmt.Errorf("truncated string length at index %d", i)
 			}
-			strLen := int(binary.BigEndian.Uint32(bytecode[offset:]))
+			strLen := int(binary.LittleEndian.Uint32(bytecode[offset:]))
 			offset += 4
 			if offset+strLen > len(bytecode) {
-				return nil, fmt.Errorf("truncated string data at offset %d", offset)
+				return nil, fmt.Errorf("truncated string data at index %d", i)
 			}
 			offset += strLen
 		default:
-			// Not a constant type — this is where code starts
-			offset-- // back up; this byte is an opcode
+			return nil, fmt.Errorf("unknown constant type 0x%02x at index %d", ctype, i)
 		}
-		numConstants++
 	}
+
+	// Read instruction count (4 bytes, little-endian)
+	if offset+4 > len(bytecode) {
+		return nil, fmt.Errorf("missing instruction count")
+	}
+	// instrCount := binary.LittleEndian.Uint32(bytecode[offset:])
+	offset += 4
 
 	codeStart := uint32(offset)
 	codeLen := uint32(len(bytecode)) - codeStart
 
 	return &Config{
 		BytecodeLen:     codeLen,
-		NumConstants:    numConstants,
+		NumConstants:    constCount,
 		ConstantsOffset: constStart,
 		CodeOffset:      codeStart,
 	}, nil
@@ -265,7 +268,7 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int) Result 
 				state.Halted = 1
 				break
 			}
-			constIdx := binary.BigEndian.Uint32(bytecode[base+pc+1:])
+			constIdx := binary.LittleEndian.Uint32(bytecode[base+pc+1:])
 			nextPC = uint32(pc + 5)
 			val := loadConstant(bytecode, config, constIdx)
 			if state.SP >= MaxStack {
@@ -519,7 +522,7 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int) Result 
 				state.Halted = 1
 				break
 			}
-			varIdx := binary.BigEndian.Uint32(bytecode[base+pc+1:])
+			varIdx := binary.LittleEndian.Uint32(bytecode[base+pc+1:])
 			nextPC = uint32(pc + 5)
 			vidx := varIdx % MaxVars
 			val := vars[vidx]
@@ -536,7 +539,7 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int) Result 
 				state.Halted = 1
 				break
 			}
-			varIdx := binary.BigEndian.Uint32(bytecode[base+pc+1:])
+			varIdx := binary.LittleEndian.Uint32(bytecode[base+pc+1:])
 			nextPC = uint32(pc + 5)
 			if state.SP == 0 {
 				state.Error = ErrStackUnderflow
@@ -551,7 +554,7 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int) Result 
 				state.Halted = 1
 				break
 			}
-			target := binary.BigEndian.Uint32(bytecode[base+pc+1:])
+			target := binary.LittleEndian.Uint32(bytecode[base+pc+1:])
 			nextPC = target
 
 		case 0x51: // OP_JUMP_IF_FALSE
@@ -559,7 +562,7 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int) Result 
 				state.Halted = 1
 				break
 			}
-			target := binary.BigEndian.Uint32(bytecode[base+pc+1:])
+			target := binary.LittleEndian.Uint32(bytecode[base+pc+1:])
 			nextPC = uint32(pc + 5)
 			if state.SP == 0 {
 				state.Error = ErrStackUnderflow
@@ -576,7 +579,7 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int) Result 
 				state.Halted = 1
 				break
 			}
-			target := binary.BigEndian.Uint32(bytecode[base+pc+1:])
+			target := binary.LittleEndian.Uint32(bytecode[base+pc+1:])
 			nextPC = uint32(pc + 5)
 			if state.SP == 0 {
 				state.Error = ErrStackUnderflow
@@ -642,7 +645,7 @@ func loadConstant(bytecode []byte, config *Config, idx uint32) GpuValue {
 			if offset+4 > len(bytecode) {
 				return GpuValue{TagNull, 0}
 			}
-			strLen := int(binary.BigEndian.Uint32(bytecode[offset:]))
+			strLen := int(binary.LittleEndian.Uint32(bytecode[offset:]))
 			offset += 4 + strLen
 		default:
 			return GpuValue{TagNull, 0}
@@ -663,13 +666,13 @@ func loadConstant(bytecode []byte, config *Config, idx uint32) GpuValue {
 		if offset+8 > len(bytecode) {
 			return GpuValue{TagNull, 0}
 		}
-		val := int64(binary.BigEndian.Uint64(bytecode[offset:]))
+		val := int64(binary.LittleEndian.Uint64(bytecode[offset:]))
 		return GpuValue{TagInt, int32(val)}
 	case 0x02: // float64
 		if offset+8 > len(bytecode) {
 			return GpuValue{TagNull, 0}
 		}
-		bits := binary.BigEndian.Uint64(bytecode[offset:])
+		bits := binary.LittleEndian.Uint64(bytecode[offset:])
 		f := math.Float64frombits(bits)
 		return GpuValue{TagFloat, int32(math.Float32bits(float32(f)))}
 	case 0x03: // bool

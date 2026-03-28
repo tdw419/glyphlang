@@ -241,7 +241,7 @@ func (m *MitosisVM) runMitosisThread(
 				state.Halted = 1
 				break
 			}
-			constIdx := beUint32(bytecode[base+pc+1:])
+			constIdx := leUint32(bytecode[base+pc+1:])
 			nextPC = uint32(pc + 5)
 			val := loadConstant(bytecode, config, constIdx)
 			if state.SP >= MaxStack {
@@ -318,7 +318,7 @@ func (m *MitosisVM) runMitosisThread(
 				state.Halted = 1
 				break
 			}
-			varIdx := beUint32(bytecode[base+pc+1:])
+			varIdx := leUint32(bytecode[base+pc+1:])
 			nextPC = uint32(pc + 5)
 			stack[state.SP] = vars[varIdx%MaxVars]
 			state.SP++
@@ -328,7 +328,7 @@ func (m *MitosisVM) runMitosisThread(
 				state.Halted = 1
 				break
 			}
-			varIdx := beUint32(bytecode[base+pc+1:])
+			varIdx := leUint32(bytecode[base+pc+1:])
 			nextPC = uint32(pc + 5)
 			state.SP--
 			vars[varIdx%MaxVars] = stack[state.SP]
@@ -338,14 +338,14 @@ func (m *MitosisVM) runMitosisThread(
 				state.Halted = 1
 				break
 			}
-			nextPC = beUint32(bytecode[base+pc+1:])
+			nextPC = leUint32(bytecode[base+pc+1:])
 
 		case 0x51: // OP_JUMP_IF_FALSE
 			if base+pc+5 > len(bytecode) || state.SP == 0 {
 				state.Halted = 1
 				break
 			}
-			target := beUint32(bytecode[base+pc+1:])
+			target := leUint32(bytecode[base+pc+1:])
 			nextPC = uint32(pc + 5)
 			state.SP--
 			if stack[state.SP].Data == 0 {
@@ -388,6 +388,6 @@ func (m *MitosisVM) runMitosisThread(
 	}
 }
 
-func beUint32(b []byte) uint32 {
-	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
+func leUint32(b []byte) uint32 {
+	return uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
 }
