@@ -407,6 +407,7 @@ Example:
 	rootCmd.AddCommand(clientCmd)
 	rootCmd.AddCommand(codegenCmd)
 	rootCmd.AddCommand(testCmd)
+	rootCmd.AddCommand(modCmd)
 	rootCmd.AddCommand(versionCmd)
 
 	if err := rootCmd.Execute(); err != nil {
