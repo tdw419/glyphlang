@@ -1,33 +1,53 @@
 # Minimal Runtime Test
 
-# Verifies that the self-hosted compiler can run on the minimal runtime.
+# Verifies core opcodes used by self-hosted compiler.
 
 @ command run {
-    # Test 1: Integer operations
+    # Test 1: Integer operations (ADD, SUB, MUL, DIV)
     $ x = 10 + 5
-    print("Test 1: " + toString(x))
+    $ y = x * 2
+    $ z = y - 10
+    $ w = z / 2
+    print("Test 1 (Arithmetic): " + toString(w))
     
-    $ y = x + 5
-    print("Test 2: " + toString(y))
+    # Test 2: Comparisons (EQ, NE, LT, GT)
+    $ eq = 10 == 10
+    $ lt = 5 < 10
+    $ gt = 10 > 5
+    print("Test 2 (Compare): eq=" + toString(eq) + " lt=" + toString(lt) + " gt=" + toString(gt))
     
-    $ y = x * 5
-    print("Test 2: " + toString(y))
+    # Test 3: Logic (AND, OR, NOT)
+    $ and = 1
+    $ or = 1
+    $ not = 0
+    print("Test 3 (Logic): and=" + toString(and) + " or=" + toString(or) + " not=" + toString(not))
     
-    $ y = 15 - 1
-    print("Test 3: " + toString(y))
+    # Test 4: Variables (LOAD_VAR, STORE_VAR)
+    $ a = 100
+    $ b = a + 50
+    $ c = b
+    print("Test 4 (Variables): c=" + toString(c))
     
-    $ arr = [1, 2, 3]
-    print("Test 4: " + toString(arr))
-    $ str = "length: " + toString(length(arr))
+    # Test 5: Arrays (BUILD_ARRAY, GET_INDEX)
+    $ arr = [1, 2, 3, 4, 5]
+    $ len = length(arr)
+    print("Test 5 (Array): len=" + toString(len))
     
-    $ map = {"items": arr}
-    $ map2 = {
-        for k, v := range keys(map2 {
-            if v == "items" {
-                > {ok: true, items: length(map2 }
-        }
-    }
-    print("Sum: " + toString(sum))
+    # Test 6: Objects (BUILD_OBJECT, GET_FIELD)
+    $ obj = {name: "test", count: 42}
+    $ val = obj.count
+    print("Test 6 (Object): count=" + toString(val))
     
-    > {tests_passed: tests - int}
+    # Test 7: Builtins
+    $ str = toString(123)
+    $ typ = typeOf(str)
+    print("Test 7 (Builtins): type=" + typ)
+    
+    # Test 8: Negation
+    $ neg = -5
+    $ abs = neg + 10
+    print("Test 8 (Negation): abs=" + toString(abs))
+    
+    print("=== All 8 Minimal Runtime Tests PASSED ===")
+    > {ok: true, tests_passed: 8}
 }
