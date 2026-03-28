@@ -61,6 +61,7 @@ func init() {
 		"reverse":    builtinReverse,
 		"flat":       builtinFlat,
 		"slice":      builtinSlice,
+		"print":      builtinPrint,
 		"text":       builtinText,
 		"html":       builtinHTML,
 		"blob":       builtinBlob,
@@ -1075,6 +1076,18 @@ func builtinSlice(i *Interpreter, args []Expr, env *Environment) (interface{}, e
 	result := make([]interface{}, end-start)
 	copy(result, arr[start:end])
 	return result, nil
+}
+
+func builtinPrint(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	for _, arg := range args {
+		val, err := i.EvaluateExpression(arg, env)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Printf("%v ", val)
+	}
+	fmt.Println()
+	return nil, nil
 }
 
 func builtinText(interp *Interpreter, args []Expr, env *Environment) (interface{}, error) {

@@ -571,6 +571,13 @@ func (i *Interpreter) evaluateLt(left, right interface{}) (interface{}, error) {
 		}
 	}
 
+	// String comparison
+	if leftStr, ok := left.(string); ok {
+		if rightStr, ok := right.(string); ok {
+			return leftStr < rightStr, nil
+		}
+	}
+
 	return nil, fmt.Errorf("cannot compare %T and %T", left, right)
 }
 
@@ -590,6 +597,13 @@ func (i *Interpreter) evaluateLe(left, right interface{}) (interface{}, error) {
 	if leftFloat, ok := coercedLeft.(float64); ok {
 		if rightFloat, ok := coercedRight.(float64); ok {
 			return leftFloat <= rightFloat, nil
+		}
+	}
+
+	// String comparison
+	if leftStr, ok := left.(string); ok {
+		if rightStr, ok := right.(string); ok {
+			return leftStr <= rightStr, nil
 		}
 	}
 
@@ -615,6 +629,13 @@ func (i *Interpreter) evaluateGt(left, right interface{}) (interface{}, error) {
 		}
 	}
 
+	// String comparison
+	if leftStr, ok := left.(string); ok {
+		if rightStr, ok := right.(string); ok {
+			return leftStr > rightStr, nil
+		}
+	}
+
 	return nil, fmt.Errorf("cannot compare %T and %T", left, right)
 }
 
@@ -634,6 +655,13 @@ func (i *Interpreter) evaluateGe(left, right interface{}) (interface{}, error) {
 	if leftFloat, ok := coercedLeft.(float64); ok {
 		if rightFloat, ok := coercedRight.(float64); ok {
 			return leftFloat >= rightFloat, nil
+		}
+	}
+
+	// String comparison
+	if leftStr, ok := left.(string); ok {
+		if rightStr, ok := right.(string); ok {
+			return leftStr >= rightStr, nil
 		}
 	}
 
@@ -677,6 +705,10 @@ func (i *Interpreter) evaluateFieldAccess(expr FieldAccessExpr, env *Environment
 	// Handle map field access
 	if objMap, ok := obj.(map[string]interface{}); ok {
 		if val, exists := objMap[expr.Field]; exists {
+			// If it's a ConstDecl, evaluate it now
+			if constDecl, ok := val.(*ConstDecl); ok {
+				return i.EvaluateExpression(constDecl.Value, i.globalEnv)
+			}
 			return val, nil
 		}
 		// Missing fields return null, allowing optional field access (e.g., input.user_id)

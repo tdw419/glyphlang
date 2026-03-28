@@ -148,8 +148,7 @@ func (i *Interpreter) executeAssign(stmt AssignStatement, env *Environment) (int
 		return i.executeFieldAssign(parts[0], parts[1], stmt.Value, env)
 	}
 
-	// Check for redeclaration in current scope (issue #70)
-	// Variables declared with $ cannot be redeclared in the same scope
+	// Check for redeclaration in current scope (prevent errors like: $ x = 1; $ x = 2)
 	if env.HasLocal(stmt.Target) {
 		return nil, fmt.Errorf("cannot redeclare variable '%s' in the same scope", stmt.Target)
 	}
@@ -159,15 +158,11 @@ func (i *Interpreter) executeAssign(stmt AssignStatement, env *Environment) (int
 		return nil, err
 	}
 
-	// If variable exists in any scope (including parent), update it
-	// Otherwise, define a new variable in current scope
-	if env.Has(stmt.Target) {
-		env.Set(stmt.Target, value)
-	} else {
-		env.Define(stmt.Target, value)
-	}
+	// Variables declared with $ always define in the current scope (shadowing if necessary)
+	env.Define(stmt.Target, value)
 	return value, nil
 }
+
 
 // executeFieldAssign handles dot-notation field assignment like obj.field = value
 func (i *Interpreter) executeFieldAssign(objName, fieldPath string, valueExpr Expr, env *Environment) (interface{}, error) {

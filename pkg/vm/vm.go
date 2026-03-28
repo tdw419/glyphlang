@@ -1580,6 +1580,26 @@ func (vm *VM) registerBuiltins() {
 		}
 		return StringValue{Val: string(runes[start.Val:end.Val])}, nil
 	}
+
+	// print(val...) - print values to stdout
+	vm.builtins["print"] = func(args []Value) (Value, error) {
+		for i, arg := range args {
+			fmt.Printf("%v", valueToInterface(arg))
+			if i < len(args)-1 {
+				fmt.Print(" ")
+			}
+		}
+		fmt.Println()
+		return NullValue{}, nil
+	}
+
+	// toString(val) - convert value to string
+	vm.builtins["toString"] = func(args []Value) (Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("toString() takes exactly 1 argument, got %d", len(args))
+		}
+		return StringValue{Val: valueToString(args[0])}, nil
+	}
 }
 
 // valueToString converts a Value to a string representation

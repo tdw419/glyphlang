@@ -459,7 +459,8 @@ func runExec(cmd *cobra.Command, args []string) error {
 
 	// Create interpreter and load module
 	interp := newConfiguredInterpreter()
-	if err := interp.LoadModule(*module); err != nil {
+	baseDir := filepath.Dir(filePath)
+	if err := interp.LoadModuleWithPath(*module, baseDir); err != nil {
 		return fmt.Errorf("failed to load module: %w", err)
 	}
 
