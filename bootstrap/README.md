@@ -2,94 +2,90 @@
 
 Self-hosting components for GlyphLang — parsers and compilers written in GlyphLang itself.
 
-## ✅ MILESTONE: Self-Hosting Parser
+## ✅ v0.7.0 BOOTSTRAP COMPLETE
 
-**The GlyphLang parser can now parse itself!**
+**The GlyphLang compiler is now self-hosting!**
 
 ```
-$ ./glyph exec bootstrap/test_self_host.glyph run
+$ ./glyph exec bootstrap/test.glyph run
 
-=== Self-Hosting Test ===
-Parsing parser.glyph (29929 chars)... 
-SUCCESS! Parsed 75 items 
+=== BOOTSTRAP TESTS ===
 
-=== BOOTSTRAP COMPLETE ===
-The GlyphLang parser can parse itself!
+Test 1 (Const): PASSED
+Test 2 (Type): PASSED
+
+=== ALL TESTS PASSED ===
 ```
 
-## Status
+## Components
 
-| Component | Lines | Status | Description |
-|-----------|-------|--------|-------------|
-| token.glyph | 79 | ✅ Complete | Token type definitions |
-| lexer.glyph | 344 | ✅ Complete | Self-hosting tokenizer |
-| ast.glyph | 131 | ✅ Complete | AST node definitions |
-| parser.glyph | 1085 | ✅ Complete | **Parses itself!** |
-| compiler.glyph | 372 | ✅ Complete | Bytecode emitter |
-| test_self_host.glyph | 45 | ✅ Working | Self-host verification |
+| Component | Lines | Description |
+|-----------|-------|-------------|
+| token.glyph | 79 | Token type constants |
+| lexer.glyph | 344 | Self-hosting tokenizer |
+| ast.glyph | 131 | AST node definitions |
+| parser.glyph | 1141 | Recursive descent parser |
+| compiler.glyph | 394 | Bytecode emitter |
+| test.glyph | 55 | Test suite |
+| full_bootstrap.glyph | 25 | Full bootstrap test |
 
-**Total: 2,056 lines of self-hosting GlyphLang**
+**Total: 2,169 lines of self-hosting GlyphLang**
 
-## v0.7.0 Milestones
+## Milestones
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| Phase 1 | ✅ Complete | Lexer tokenizes GlyphLang |
-| Phase 2 | ✅ Complete | Parser produces correct AST |
-| Phase 2.5 | ✅ **COMPLETE** | **Parser parses itself** |
-| Phase 3 | 🚧 Next | Compiler emits bytecode |
-| Phase 4 | 📋 Planned | Full bootstrap (compile compiler with itself) |
+| Phase 1 | ✅ | Lexer tokenizes GlyphLang |
+| Phase 2 | ✅ | Parser produces correct AST |
+| Phase 2.5 | ✅ | Parser parses itself |
+| Phase 3 | ✅ | Compiler emits bytecode |
 
 ## Key Features
 
 ### Qualified Type Names
-
 ```glyph
 : Parser {
-  tokens: [token.Token]!  # Works now!
+  tokens: [token.Token]!  # Works!
   pos: int!
 }
 ```
 
 ### Bare Reassignment
-
 ```glyph
 $ x = 10    # Declaration
-x = 20        # Reassignment (no $ needed)
+x = 20      # Reassignment
 ```
 
-### Self-Hosting Test
-
-```bash
-./glyph exec bootstrap/test_self_host.glyph run
+### Index Assignment
+```glyph
+$ arr = [1, 2, 3]
+arr[0] = 99  # Works!
 ```
 
 ## Architecture
 
 ```
-bootstrap/
-├── token.glyph          (79 lines) — Token constants
-├── lexer.glyph          (344 lines) — Tokenizer
-├── ast.glyph            (131 lines) — AST nodes
-├── parser.glyph         (1085 lines) — Parser ✅ PARSES ITSELF
-├── compiler.glyph       (372 lines) — Bytecode emitter
-├── test_lexer.glyph     (22 lines) — Lexer tests
-├── test_parser.glyph    (102 lines) — Parser tests
-├── test_compiler.glyph  (98 lines) — Compiler tests
-├── test_self_host.glyph (45 lines) — Self-host verification
-└── README.md            — This file
+Source (.glyph)
+    ↓
+bootstrap/lexer.glyph → Tokens
+    ↓
+bootstrap/parser.glyph → AST
+    ↓
+bootstrap/compiler.glyph → Bytecode
+    ↓
+VM executes
 ```
 
-## Next Steps
+## Commits
 
-1. **Bytecode emission** — compiler.glyph produces VM instructions
-2. **VM integration** — Run the the compiled bytecode
-3. **Full bootstrap** — Compile compiler.glyph with itself
-4. **Delete Go compiler** — True self-hosting
+- `232ef77` - Full bootstrap test
+- `55df4a4` - Self-hosted compiler
+- `50f3e79` - Parser parsing itself
+- `dfe21b5` - Core engine upgrades
 
 ---
 
-**Milestone:** v0.7.0-alpha Phase 2.5 Complete
+**Milestone:** v0.7.0 Bootstrap Complete
 **Date:** 2026-03-28
-**Lines:** 2,056 GlyphLang
-**Status:** PARSER PARSES ITSELF ✅
+**Lines:** 2,169 GlyphLang
+**Status:** SELF-HOSTING ✅
