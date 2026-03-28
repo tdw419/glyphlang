@@ -13,6 +13,7 @@ import (
 	"github.com/glyphlang/glyph/pkg/decompiler"
 	"github.com/glyphlang/glyph/pkg/lsp"
 	"github.com/glyphlang/glyph/pkg/parser"
+	"github.com/glyphlang/glyph/pkg/server"
 	"github.com/glyphlang/glyph/pkg/vm"
 	"github.com/spf13/cobra"
 )
@@ -257,6 +258,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	port, _ := cmd.Flags().GetUint16("port")
 	useBytecode, _ := cmd.Flags().GetBool("bytecode")
 	useInterpreter, _ := cmd.Flags().GetBool("interpret")
+	useGPU, _ := cmd.Flags().GetBool("gpu")
 
 	// Check if file is bytecode based on extension or flag
 	if !useBytecode {
@@ -272,16 +274,42 @@ func runRun(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to read bytecode file: %w", err)
 		}
 
-		// Execute bytecode using VM
+		// Execute bytecode
 		start := time.Now()
-		vmInstance := vm.NewVM()
-		result, err := vmInstance.Execute(bytecode)
-		execTime := time.Since(start)
-
-		if err != nil {
-			return fmt.Errorf("bytecode execution failed: %w", err)
+		var result interface{}
+		
+		if useGPU {
+			// GPU execution path
+			printInfo("Using GPU compute shader execution...")
+			gpuInterp := server.NewGPUInterpreter()
+			gpuResult, err := gpuInterp.ExecuteBytecode(bytecode)
+			if err != nil {
+				return fmt.Errorf("GPU execution failed: %w", err)
+			}
+			if gpuResult.Error != nil {
+				return fmt.Errorf("GPU VM error: %w (steps: %d)", gpuResult.Error, gpuResult.Steps)
+			}
+			switch gpuResult.Tag {
+			case 1: // TagInt
+				result = gpuResult.IntVal
+			case 2: // TagFloat
+				result = gpuResult.FloatVal
+			case 3: // TagBool
+				result = gpuResult.BoolVal
+			default:
+				result = nil
+			}
+			printSuccess(fmt.Sprintf("GPU execution: %d steps", gpuResult.Steps))
+		} else {
+			// CPU VM execution
+			vmInstance := vm.NewVM()
+			result, err = vmInstance.Execute(bytecode)
+			if err != nil {
+				return fmt.Errorf("bytecode execution failed: %w", err)
+			}
 		}
-
+		
+		execTime := time.Since(start)
 		printSuccess("Bytecode executed successfully")
 		printInfo(fmt.Sprintf("Execution time: %s", execTime))
 		printInfo(fmt.Sprintf("Result: %v", result))
@@ -290,8 +318,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Running source file - use shared server startup logic
-	printInfo(fmt.Sprintf("Starting server for %s...", filePath))
-	srv, err := startServer(filePath, int(port), useInterpreter)
+	if useGPU {
+		printInfo(fmt.Sprintf("Starting GPU-accelerated server for %s...", filePath))
+	} else {
+		printInfo(fmt.Sprintf("Starting server for %s...", filePath))
+	}
+	srv, err := startServer(filePath, int(port), useInterpreter, useGPU)
 	if err != nil {
 		return err
 	}

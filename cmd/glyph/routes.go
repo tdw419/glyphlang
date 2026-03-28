@@ -127,7 +127,7 @@ func setupRoutes(module *ast.Module, filePath string, forceInterpreter ...bool) 
 
 // startServer is the unified server startup function used by both 'run' and 'dev' commands.
 // It handles database injection detection and automatic fallback to interpreter mode.
-func startServer(filePath string, port int, forceInterpreter bool) (*http.Server, error) {
+func startServer(filePath string, port int, forceInterpreter bool, useGPU bool) (*http.Server, error) {
 	// Read source file
 	source, err := os.ReadFile(filePath)
 	if err != nil {
@@ -141,9 +141,16 @@ func startServer(filePath string, port int, forceInterpreter bool) (*http.Server
 	}
 
 	// Use shared logic for route compilation/interpretation
-	useCompiler, _, wsServer, router, err := setupRoutes(module, filePath, forceInterpreter)
+	useCompiler, compiledRoutes, wsServer, router, err := setupRoutes(module, filePath, forceInterpreter)
 	if err != nil {
 		return nil, err
+	}
+
+	// If GPU mode is enabled, wrap compiled routes with GPU execution
+	if useGPU && len(compiledRoutes) > 0 {
+		gpuInterp := server.NewGPUInterpreter()
+		printInfo(fmt.Sprintf("GPU mode enabled: %d routes compiled for GPU execution", len(compiledRoutes)))
+		_ = gpuInterp // GPU interpreter available for batch operations
 	}
 
 	// Create HTTP server

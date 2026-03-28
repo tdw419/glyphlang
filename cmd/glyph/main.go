@@ -65,6 +65,7 @@ to rapidly build high-performance, secure backend applications.`,
 	runCmd.Flags().Uint16P("port", "p", uint16(config.DefaultPort), "Port to listen on")
 	runCmd.Flags().Bool("bytecode", false, "Execute bytecode (.glyphc) file")
 	runCmd.Flags().Bool("interpret", false, "Use tree-walking interpreter instead of compiler (fallback mode)")
+	runCmd.Flags().Bool("gpu", false, "Execute routes on GPU compute shaders (parallel execution)")
 
 	// Dev command
 	var devCmd = &cobra.Command{
