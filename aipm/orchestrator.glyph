@@ -1,0 +1,172 @@
+# AIPM Orchestrator - GlyphLang Native Implementation
+# Manages prompt queue with token-efficient GlyphLang syntax
+
+: Prompt {
+  id: int!
+  text: str!
+  priority: int!
+  status: str!
+  created_at: str!
+}
+
+: QueueStats {
+  pending: int!
+  processing: int!
+  completed: int!
+  failed: int!
+}
+
+# Queue state (simulated - in production this would be SQLite)
+$ queue: [Prompt] = []
+$ current_task: Prompt = null
+
+# Initialize queue from database
+! init_queue() -> QueueStats {
+  # In production: sql("SELECT COUNT(*) FROM prompt_queue WHERE status='pending'")
+  $ pending = 0
+  $ processing = 0
+  $ completed = 0
+  
+  > {pending: pending, processing: processing, completed: completed}
+}
+
+# Enqueue a new task
+! enqueue(text: str, priority: int) -> Prompt {
+  $ id = length(queue) + 1
+  $ task = {
+    id: id,
+    text: text,
+    priority: priority,
+    status: "pending",
+    created_at: "now"
+  }
+  queue = queue + [task]
+  
+  > task
+}
+
+# Get next highest priority task
+! dequeue() -> Prompt {
+  if length(queue) == 0 {
+    > {id: 0, text: "", priority: 0, status: "empty"}
+  }
+  
+  # Find highest priority pending task
+  $ best_idx = 0
+  $ best_priority = 0
+  $ i = 0
+  
+  while i < length(queue) {
+    $ task = queue[i]
+    if task.status == "pending" && task.priority > best_priority {
+      best_idx = i
+      best_priority = task.priority
+    }
+    i = i + 1
+  }
+  
+  $ task = queue[best_idx]
+  
+  # Mark as processing
+  task.status = "processing"
+  queue[best_idx] = task
+  current_task = task
+  
+  > task
+}
+
+# Process task with LLM
+! process_task(task: Prompt) -> map {
+  # Call LLM with GlyphLang output mode
+  $ result = llm.complete({
+    model: "qwen3.5-27b",
+    messages: [
+      {role: "system", content: "You are a GlyphLang code generator. Output ONLY valid GlyphLang."},
+      {role: "user", content: task.text}
+    ]
+  })
+  
+  # Parse and execute result
+  $ code = extract_glyphlang(result.content)
+  $ exec_result = execute_glyphlang(code)
+  
+  # Mark task complete
+  task.status = "completed"
+  
+  > {
+    task_id: task.id,
+    code: code,
+    result: exec_result,
+    status: "completed"
+  }
+}
+
+# Extract GlyphLang code from LLM output
+! extract_glyphlang(raw: str) -> str {
+  # Find @ command block
+  $ start = find(raw, "@ command")
+  if start < 0 {
+    > ""
+  }
+  
+  # Extract until closing brace
+  $ depth = 0
+  $ code = ""
+  $ i = start
+  
+  while i < length(raw) {
+    $ ch = charAt(raw, i)
+    code = code + ch
+    
+    if ch == "{" {
+      depth = depth + 1
+    }
+    if ch == "}" {
+      depth = depth - 1
+      if depth == 0 {
+        > code
+      }
+    }
+    i = i + 1
+  }
+  
+  > code
+}
+
+# Main loop
+! run_orchestrator(max_tasks: int) -> map {
+  $ processed = 0
+  
+  while processed < max_tasks {
+    $ task = dequeue()
+    
+    if task.id == 0 {
+      print("Queue empty, waiting...")
+      sleep(5)
+    }
+    
+    print("Processing task " + toString(task.id) + ": " + task.text)
+    $ result = process_task(task)
+    processed = processed + 1
+    
+    print("Completed: " + toString(result.status))
+  }
+  
+  > {processed: processed, status: "done"}
+}
+
+# API routes
+@ GET /aipm/status {
+  > init_queue()
+}
+
+@ POST /aipm/enqueue {
+  $ body = request.body
+  $ task = enqueue(body.text, body.priority)
+  > {ok: true, task: task}
+}
+
+@ POST /aipm/process {
+  $ result = run_orchestrator(1)
+  > result
+}

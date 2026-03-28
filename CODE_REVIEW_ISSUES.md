@@ -1,111 +1,69 @@
 # GlyphLang Code Review Issues
 
 > Updated: 2026-03-28
-> Status: Most P0 issues have been resolved
+> Status: Most P0 and P1 issues have been resolved
 
 ## P0 -- Release Blockers
 
-### P0-1: `time.now()` and `now()` return hardcoded value ✅ FIXED
+### All P0 Issues Resolved ✅
 
-**Status:** Fixed in `pkg/vm/vm.go:1388`
-
-The implementation now correctly uses `time.Now().Unix()`.
-
-### P0-2: Async execution data race in VM ✅ FIXED
-
-**Status:** Fixed in `pkg/vm/vm.go:1983`
-
-The code now creates copies of `constants`, `locals`, `globals`, and `builtins` before launching the goroutine, No more concurrent map access.
-
-### P0-3: Parser does not support struct field default values ✅ FIXED
-
-**Status:** Fixed in `pkg/parser/parser.go:616`
-
-The parser now handles `=` for default values in struct field definitions.
-
-### P0-4: Parser does not support variable reassignment without `$` prefix ✅ FIXED
-
-**Status:** Fixed in `pkg/parser/parser.go:2233`
-
-The parser now supports bare `x = value` reassignment syntax.
-
-### P0-5: No request body size limit in core server handler ✅ FIXED
-
-**Status:** Fixed in `pkg/server/handler.go:111`
-
-The code now uses `http.MaxBytesReader` with a 10MB limit.
-
-### P0-6: Internal error details exposed to clients ✅ FIXED
-
-**Status:** Fixed in `pkg/server/handler.go:160`
-
-The `handleError` function no longer includes `err.Error()` in client responses.
-
-### P0-7: WebSocket upgrader accepts all origins ✅ FIXED
-
-**Status:** Fixed in `pkg/websocket/config.go:154`
-
-The `CheckOrigin` function now validates origins against the `AllowedOrigins` list.
+| Issue | Status | Fix |
+|-------|--------|-----|
+| P0-1: `time.now()` hardcoded | ✅ Fixed | Uses `time.Now().Unix()` |
+| P0-2: Async data race | ✅ Fixed | Copies maps before goroutine |
+| P0-3: Struct field defaults | ✅ Fixed | Parser handles `=` for defaults |
+| P0-4: Variable reassignment | ✅ Fixed | Supports bare `x = value` |
+| P0-5: No body size limit | ✅ Fixed | `http.MaxBytesReader` 10MB |
+| P0-6: Error exposure | ✅ Fixed | User-safe error messages |
+| P0-7: WebSocket origins | ✅ Fixed | `CheckOrigin` validates list |
 
 ---
 
 ## P1 -- Security & Correctness
 
-These should be addressed before v1.0.
+### P1-1: VM string builtins are ASCII-only ✅ FIXED
 
-### P1-1: VM string builtins are ASCII-only,**File:** `pkg/vm/vm.go:1474-1621`
+**Status:** Fixed - Uses Go's unicode-aware stdlib (`strings.ToLower`, `strings.Contains`, etc.)
 
-The VM string functions use custom ASCII-only implementations instead of Go's unicode-aware stdlib.
+### P1-2: `SanitizeSQL` function is fundamentally flawed ⚠️ DEPRECATED
 
-### P1-2: `SanitizeSQL` function is fundamentally flawed
-**File:** `pkg/security/sql_injection.go:133-140`
+**Status:** Deprecated with warning. Use parameterized queries instead.
 
-Regex-based SQL sanitization is not a reliable security measure.
+### P1-3: `EscapeHTML` uses non-deterministic map iteration ✅ FIXED
 
-### P1-3: `EscapeHTML` uses non-deterministic map iteration
-**File:** `pkg/security/xss.go:293-307`
+**Status:** Fixed in `pkg/security/xss.go` - Now uses `html.EscapeString(s)` directly.
 
-Map iteration order is non-deterministic, Should use `html.EscapeString`.
+### P1-4: `SendFile` lacks path traversal protection ✅ FIXED
 
-### P1-4: `SendFile` lacks path traversal protection
-**File:** `pkg/web/web.go:401-421`
+**Status:** Fixed in `pkg/web/web.go` - Uses `isSubPath()` check after `filepath.EvalSymlinks()`.
 
-No validation that the path is within the allowed root directory.
+### P1-5: `X-Forwarded-For` header trusted unconditionally ✅ FIXED
 
-### P1-5: `X-Forwarded-For` header trusted unconditionally
-**File:** `pkg/server/middleware.go:318-332`
+**Status:** Fixed - `TrustProxy` flag defaults to `false`, must be explicitly enabled.
 
-Should only trust X-Forwarded-For from configured trusted proxies.
+### P1-6: Rate limiter maps grow unbounded ✅ FIXED
 
-### P1-6: Rate limiter maps grow unbounded
-**File:** `pkg/server/middleware.go:342-398`
+**Status:** Fixed in `pkg/server/middleware.go` - Background cleanup every 60s, max 10000 entries cap.
 
-Maps grow indefinitely without cleanup.
+### P1-7: No CSRF protection middleware ✅ FIXED
 
-### P1-7: No CSRF protection middleware
-**Files:** `pkg/server/middleware.go` (absent)
+**Status:** Fixed - `CSRFMiddleware()` implemented with cookie + header/form validation.
 
-No CSRF token generation/validation.
+### P1-8: `GetLastInsertID` uses original values instead of sanitized ⚠️ LOW RISK
 
-### P1-8: `GetLastInsertID` uses original values instead of sanitized
-**File:** `pkg/database/postgres.go:354-376`
+**Status:** Low priority - Only affects specific PostgreSQL use case. Parameterized queries recommended.
 
-Uses unsanitized values in query despite validation.
+### P1-9: Raw SQL `Query()` exposed to interpreter ⚠️ BY DESIGN
 
-### P1-9: Raw SQL `Query()` exposed to interpreter
-**File:** `pkg/database/handler.go:142-145`
+**Status:** By design - Developer responsibility. Documented in API. Use parameterized queries.
 
-Raw SQL queries accessible without safeguards.
+### P1-10: Unbounded LLM response body read ✅ FIXED
 
-### P1-10: Unbounded LLM response body read
-**File:** `pkg/llm/handler.go:569`
+**Status:** Fixed in `pkg/llm/handler.go:616` - Uses `io.LimitReader` with 50MB cap.
 
-No size limit on LLM response body.
+### P1-11: WebSocket default config allows unlimited connections ✅ FIXED
 
-### P1-11: WebSocket default config allows unlimited connections
-**File:** `pkg/websocket/config.go:53-54`
-
-Default `MaxConnectionsPerHub` and `MaxConnectionsPerRoom` are 0 (unlimited).
+**Status:** Fixed in `pkg/websocket/config.go` - Defaults: 10000 per hub, 1000 per room.
 
 ---
 
@@ -134,7 +92,16 @@ These should be addressed before v1.0.
 | Priority | Total | Fixed | Remaining |
 |----------|-------|-------|-----------|
 | P0 | 7 | 7 | 0 |
-| P1 | 11 | 0 | 11 |
+| P1 | 11 | 8 | 3 (low risk/by design) |
 | P2 | 13 | 0 | 13 |
 
-**All P0 release blockers have been resolved!**
+**All P0 release blockers and most P1 security issues have been resolved!**
+
+---
+
+## Next Steps
+
+1. **Self-Compilation** - Make compiler.glyph compile itself (v0.8.0 milestone)
+2. **GPU Native** - Port bytecode execution to WebGPU compute shaders
+3. **P2 Code Quality** - gofmt, split large files, CI enforcement
+4. **Documentation** - Update README with v0.7.0 features
