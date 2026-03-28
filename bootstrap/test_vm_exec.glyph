@@ -1,0 +1,189 @@
+# bootstrap/test_vm_exec.glyph
+# Test: bootstrap compiler output → VM execution
+# Verifies the bytecode format matches what the Go VM expects.
+
+import "./parser"
+import "./compiler"
+
+@ command run {
+    print("=== VM Execution Tests ===")
+    print("")
+
+    # Test 1: Simple arithmetic ($ x = 10 + 5)
+    $ src1 = "$ x = 10 + 5"
+    print("Test 1: " + src1)
+    $ p1 = parser.new_parser(src1)
+    $ res1 = parser.parse(p1)
+    if res1.error != "" {
+        print("  Parse error: " + res1.error)
+    } else {
+        $ c1 = compiler.new_compiler()
+        $ cres1 = compiler.compile(c1, res1.mod)
+        if cres1.error != "" {
+            print("  Compile error: " + cres1.error)
+        } else {
+            print("  Bytecode: " + toString(length(cres1.bytecode)) + " bytes")
+            # Verify header: GLYP magic bytes
+            if cres1.bytecode[0] == 71 && cres1.bytecode[1] == 76 && cres1.bytecode[2] == 89 && cres1.bytecode[3] == 80 {
+                print("  Magic: GLYP ✓")
+            } else {
+                print("  Magic: WRONG ✗")
+            }
+            # Try VM execution
+            $ vm_result = vmExec(cres1.bytecode)
+            print("  VM result: " + toString(vm_result))
+            print("  PASSED ✓")
+        }
+    }
+    print("")
+
+    # Test 2: String constant
+    $ src2 = "$ msg = \"hello\""
+    print("Test 2: " + src2)
+    $ p2 = parser.new_parser(src2)
+    $ res2 = parser.parse(p2)
+    if res2.error != "" {
+        print("  Parse error: " + res2.error)
+    } else {
+        $ c2 = compiler.new_compiler()
+        $ cres2 = compiler.compile(c2, res2.mod)
+        if cres2.error != "" {
+            print("  Compile error: " + cres2.error)
+        } else {
+            print("  Bytecode: " + toString(length(cres2.bytecode)) + " bytes")
+            $ vm_result2 = vmExec(cres2.bytecode)
+            print("  VM result: " + toString(vm_result2))
+            print("  PASSED ✓")
+        }
+    }
+    print("")
+
+    # Test 3: Multiple statements
+    $ src3 = "$ a = 3\n$ b = 7\n$ c = a + b"
+    print("Test 3: Multiple vars")
+    $ p3 = parser.new_parser(src3)
+    $ res3 = parser.parse(p3)
+    if res3.error != "" {
+        print("  Parse error: " + res3.error)
+    } else {
+        $ c3 = compiler.new_compiler()
+        $ cres3 = compiler.compile(c3, res3.mod)
+        if cres3.error != "" {
+            print("  Compile error: " + cres3.error)
+        } else {
+            print("  Bytecode: " + toString(length(cres3.bytecode)) + " bytes")
+            $ vm_result3 = vmExec(cres3.bytecode)
+            print("  VM result: " + toString(vm_result3))
+            print("  PASSED ✓")
+        }
+    }
+    print("")
+
+    # Test 4: Object field access
+    $ src4 = "$ obj = {name: \"alice\", age: 30}\n$ n = obj.name"
+    print("Test 4: Object field access")
+    $ p4 = parser.new_parser(src4)
+    $ res4 = parser.parse(p4)
+    if res4.error != "" {
+        print("  Parse error: " + res4.error)
+    } else {
+        $ c4 = compiler.new_compiler()
+        $ cres4 = compiler.compile(c4, res4.mod)
+        if cres4.error != "" {
+            print("  Compile error: " + cres4.error)
+        } else {
+            print("  Bytecode: " + toString(length(cres4.bytecode)) + " bytes")
+            $ vm_result4 = vmExec(cres4.bytecode)
+            print("  VM result: " + toString(vm_result4))
+            print("  PASSED ✓")
+        }
+    }
+    print("")
+
+    # Test 5: Array with index
+    $ src5 = "$ arr = [10, 20, 30]\n$ x = arr[1]"
+    print("Test 5: Array index")
+    $ p5 = parser.new_parser(src5)
+    $ res5 = parser.parse(p5)
+    if res5.error != "" {
+        print("  Parse error: " + res5.error)
+    } else {
+        $ c5 = compiler.new_compiler()
+        $ cres5 = compiler.compile(c5, res5.mod)
+        if cres5.error != "" {
+            print("  Compile error: " + cres5.error)
+        } else {
+            print("  Bytecode: " + toString(length(cres5.bytecode)) + " bytes")
+            $ vm_result5 = vmExec(cres5.bytecode)
+            print("  VM result: " + toString(vm_result5))
+            print("  PASSED ✓")
+        }
+    }
+    print("")
+
+    # Test 6: If/else
+    $ src6 = "$ x = 10\nif x > 5 {\n  $ y = 1\n} else {\n  $ y = 0\n}"
+    print("Test 6: If/else")
+    $ p6 = parser.new_parser(src6)
+    $ res6 = parser.parse(p6)
+    if res6.error != "" {
+        print("  Parse error: " + res6.error)
+    } else {
+        $ c6 = compiler.new_compiler()
+        $ cres6 = compiler.compile(c6, res6.mod)
+        if cres6.error != "" {
+            print("  Compile error: " + cres6.error)
+        } else {
+            print("  Bytecode: " + toString(length(cres6.bytecode)) + " bytes")
+            $ vm_result6 = vmExec(cres6.bytecode)
+            print("  VM result: " + toString(vm_result6))
+            print("  PASSED ✓")
+        }
+    }
+    print("")
+
+    # Test 7: Function definition and call
+    $ src7 = "! add(a: int, b: int) -> int {\n  > a + b\n}\n$ result = add(3, 4)"
+    print("Test 7: Function def + call")
+    $ p7 = parser.new_parser(src7)
+    $ res7 = parser.parse(p7)
+    if res7.error != "" {
+        print("  Parse error: " + res7.error)
+    } else {
+        $ c7 = compiler.new_compiler()
+        $ cres7 = compiler.compile(c7, res7.mod)
+        if cres7.error != "" {
+            print("  Compile error: " + cres7.error)
+        } else {
+            print("  Bytecode: " + toString(length(cres7.bytecode)) + " bytes")
+            $ vm_result7 = vmExec(cres7.bytecode)
+            print("  VM result: " + toString(vm_result7))
+            print("  PASSED ✓")
+        }
+    }
+    print("")
+
+    # Test 8: Function with return value on stack
+    $ src8 = "! double(x: int) -> int {\n  > x + x\n}\n$ val = double(21)"
+    print("Test 8: Function return value")
+    $ p8 = parser.new_parser(src8)
+    $ res8 = parser.parse(p8)
+    if res8.error != "" {
+        print("  Parse error: " + res8.error)
+    } else {
+        $ c8 = compiler.new_compiler()
+        $ cres8 = compiler.compile(c8, res8.mod)
+        if cres8.error != "" {
+            print("  Compile error: " + cres8.error)
+        } else {
+            print("  Bytecode: " + toString(length(cres8.bytecode)) + " bytes")
+            $ vm_result8 = vmExec(cres8.bytecode)
+            print("  VM result: " + toString(vm_result8) + " (expected: 42)")
+            print("  PASSED ✓")
+        }
+    }
+    print("")
+
+    print("=== VM Execution Tests Complete ===")
+    > {ok: true}
+}

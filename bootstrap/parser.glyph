@@ -569,7 +569,7 @@ import "./ast"
     $ stmt = _stmt("index_assign")
     $ stmt.target = target
     $ stmt.field = fld_name
-    $ stmt.index = index_expr
+    $ stmt.index_expr = index_expr
     $ stmt.value = vr.expr
     > { parser: p, stmt: stmt, error: "" }
   }
@@ -1108,7 +1108,7 @@ import "./ast"
 }
 
 ! _stmt(kind: str) -> ast.Statement {
-  > { kind: kind, target: "", value: null, obj_expr: null,
+  > { kind: kind, target: "", value: null, obj_expr: null, index_expr: null,
       field: "", return_value: null, condition: null,
       then_block: [], else_block: [], while_condition: null, body: [], expr: null }
 }

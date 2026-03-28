@@ -1,0 +1,27 @@
+# Debug: test parsing of field+index assignment
+import "./parser"
+
+@ command run {
+    # Test: field access + index assignment
+    $ src = "! test(c: any) {\n  $ c.instructions[0] = 42\n}"
+    print("Parsing: " + src)
+    $ p = parser.new_parser(src)
+    $ res = parser.parse(p)
+    if res.error != "" {
+        print("Error: " + res.error)
+    } else {
+        print("Items: " + toString(length(res.mod.items)))
+        $ item = res.mod.items[0]
+        print("Item kind: " + item.kind)
+        print("Body len: " + toString(length(item.func_body)))
+        $ stmt = item.func_body[0]
+        print("Stmt kind: " + stmt.kind)
+        print("Stmt obj_expr: " + toString(stmt.obj_expr))
+        print("Stmt field: " + toString(stmt.field))
+        print("Stmt target: " + toString(stmt.target))
+        print("Stmt value: " + toString(stmt.value))
+        print("Stmt index_expr: " + toString(stmt.index_expr))
+        print("Stmt expr: " + toString(stmt.expr))
+    }
+    > {ok: true}
+}

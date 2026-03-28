@@ -42,10 +42,14 @@ const OP_LOAD_VAR      = 64
 const OP_STORE_VAR     = 65
 const OP_JUMP          = 80
 const OP_JUMP_IF_FALSE = 81
+const OP_GET_INDEX     = 86
+const OP_SET_INDEX     = 87
 const OP_RETURN        = 97
 const OP_CALL          = 98
 const OP_BUILD_OBJECT  = 112
 const OP_GET_FIELD     = 113
+const OP_SET_FIELD     = 114
+const OP_DEF_FUNC      = 115
 const OP_BUILD_ARRAY   = 128
 const OP_HALT          = 255
 
@@ -112,15 +116,38 @@ const OP_HALT          = 255
     > data
   }
 
-  if t == "map" {
+  if t == "object" {
     $ kind = val["kind"]
     if kind == "literal" {
       $ lit_type = val["type"]
       $ lit_val = val["value"]
-      $ converted = lit_val
-      if lit_type == "int" { converted = toInt(lit_val) }
-      if lit_type == "bool" { converted = (lit_val == "true") }
-      > [1] + encode_int(converted)
+      if lit_type == "int" {
+        > [1] + encode_int(toInt(lit_val))
+      }
+      if lit_type == "bool" {
+        if lit_val == "true" || lit_val == true { > [3, 1] }
+        > [3, 0]
+      }
+      if lit_type == "str" {
+        $ s = toString(lit_val)
+        $ data = [4] + intToBytes4(length(s))
+        $ j = 0
+        while j < length(s) {
+          data = data + [charAtCode(s, j)]
+          j = j + 1
+        }
+        > data
+      }
+      if lit_type == "null" { > [0] }
+      # Fallback: encode as string
+      $ fs = toString(lit_val)
+      $ fd = [4] + intToBytes4(length(fs))
+      $ fj = 0
+      while fj < length(fs) {
+        fd = fd + [charAtCode(fs, fj)]
+        fj = fj + 1
+      }
+      > fd
     }
     if kind == "name" {
       $ name_val = val["value"]
@@ -230,10 +257,48 @@ const OP_HALT          = 255
   }
 
   if item.kind == "function" {
+    # Emit OP_DEF_FUNC: name_idx(4), param_count(4), body_length(4), [param_name_idx(4)]...
+    $ name_idx = add_constant(c, item.func_name)
+    emit_byte(c, OP_DEF_FUNC)
+    emit_bytes4(c, name_idx)
+    emit_bytes4(c, length(item.func_params))
+    # Placeholder for body length — will be patched
+    $ body_len_pos = length(c.instructions)
+    emit_bytes4(c, 0)
+    # Emit parameter name constant indices
+    $ pi = 0
+    while pi < length(item.func_params) {
+      $ pidx = add_constant(c, item.func_params[pi].name)
+      emit_bytes4(c, pidx)
+      pi = pi + 1
+    }
+    # Compile function body
+    $ body_start = length(c.instructions)
+    $ bi = 0
+    while bi < length(item.func_body) {
+      $ serr = compile_statement(c, item.func_body[bi])
+      if serr != "" { > serr }
+      bi = bi + 1
+    }
+    # Ensure function ends with a return (push null + return if not explicit)
+    emit_byte(c, OP_PUSH)
+    $ null_idx = add_constant(c, null)
+    emit_bytes4(c, null_idx)
+    emit_byte(c, OP_RETURN)
+    # Patch body length
+    $ body_len = length(c.instructions) - body_start
+    $ bl = intToBytes4(body_len)
+    $ c.instructions[body_len_pos] = bl[0]
+    $ c.instructions[body_len_pos + 1] = bl[1]
+    $ c.instructions[body_len_pos + 2] = bl[2]
+    $ c.instructions[body_len_pos + 3] = bl[3]
     > ""
   }
 
+  if item.kind == "type_def" { > "" }
   if item.kind == "import" { > "" }
+  if item.kind == "from_import" { > "" }
+  if item.kind == "command" { > "" }
   > ""
 }
 
@@ -308,12 +373,55 @@ const OP_HALT          = 255
     > ""
   }
 
+  if stmt.kind == "field_assign" {
+    # obj.field = value → push obj, push field name, push value, SET_FIELD
+    $ err1 = compile_expression(c, stmt.obj_expr)
+    if err1 != "" { > err1 }
+    $ fidx = add_constant(c, stmt.field)
+    emit_byte(c, OP_PUSH)
+    emit_bytes4(c, fidx)
+    $ err2 = compile_expression(c, stmt.value)
+    if err2 != "" { > err2 }
+    emit_byte(c, OP_SET_FIELD)
+    emit_byte(c, OP_POP)
+    > ""
+  }
+
+  if stmt.kind == "index_assign" {
+    # Handle compound field+index: obj.field[idx] = value
+    if stmt.field != "" {
+      # Load obj, get field, then set index
+      $ var_idx = add_constant(c, stmt.target)
+      emit_byte(c, OP_LOAD_VAR)
+      emit_bytes4(c, var_idx)
+      $ fld_idx = add_constant(c, stmt.field)
+      emit_byte(c, OP_PUSH)
+      emit_bytes4(c, fld_idx)
+      emit_byte(c, OP_GET_FIELD)
+    } else {
+      # Simple: arr[idx] = value
+      $ var_idx = add_constant(c, stmt.target)
+      emit_byte(c, OP_LOAD_VAR)
+      emit_bytes4(c, var_idx)
+    }
+    $ err2 = compile_expression(c, stmt.index_expr)
+    if err2 != "" { > err2 }
+    $ err3 = compile_expression(c, stmt.value)
+    if err3 != "" { > err3 }
+    emit_byte(c, OP_SET_INDEX)
+    emit_byte(c, OP_POP)
+    > ""
+  }
+
   if stmt.kind == "expression" {
     $ err = compile_expression(c, stmt.expr)
     if err != "" { > err }
     emit_byte(c, OP_POP)
     > ""
   }
+
+  if stmt.kind == "break" { > "" }
+  if stmt.kind == "continue" { > "" }
 
   > ""
 }
@@ -369,25 +477,31 @@ const OP_HALT          = 255
   }
 
   if expr.kind == "call" {
+    # Push function name onto stack first
+    $ idx = add_constant(c, expr.func_name)
+    emit_byte(c, OP_PUSH)
+    emit_bytes4(c, idx)
+    # Then push arguments
     $ i = 0
     while i < length(expr.args) {
       $ er = compile_expression(c, expr.args[i])
       if er != "" { > er }
       i = i + 1
     }
-    $ idx = add_constant(c, expr.func_name)
+    # OP_CALL operand = arg count (func name already on stack)
     emit_byte(c, OP_CALL)
-    emit_bytes4(c, idx)
     emit_bytes4(c, length(expr.args))
     > ""
   }
 
   if expr.kind == "field" {
+    # Push object, then push field name, then GET_FIELD (no operand)
     $ err = compile_expression(c, expr.object)
     if err != "" { > err }
     $ idx = add_constant(c, expr.field_name)
-    emit_byte(c, OP_GET_FIELD)
+    emit_byte(c, OP_PUSH)
     emit_bytes4(c, idx)
+    emit_byte(c, OP_GET_FIELD)
     > ""
   }
 
@@ -395,11 +509,12 @@ const OP_HALT          = 255
     $ i = 0
     while i < length(expr.fields) {
       $ f = expr.fields[i]
-      $ err = compile_expression(c, f.value)
-      if err != "" { > err }
+      # Push key first, then value (VM pops value first, then key)
       $ kidx = add_constant(c, f.key)
       emit_byte(c, OP_PUSH)
       emit_bytes4(c, kidx)
+      $ err = compile_expression(c, f.value)
+      if err != "" { > err }
       i = i + 1
     }
     emit_byte(c, OP_BUILD_OBJECT)
@@ -416,6 +531,16 @@ const OP_HALT          = 255
     }
     emit_byte(c, OP_BUILD_ARRAY)
     emit_bytes4(c, length(expr.elements))
+    > ""
+  }
+
+  if expr.kind == "index" {
+    # arr[idx] → push arr, push idx, GET_INDEX
+    $ err1 = compile_expression(c, expr.array_expr)
+    if err1 != "" { > err1 }
+    $ err2 = compile_expression(c, expr.index_expr)
+    if err2 != "" { > err2 }
+    emit_byte(c, OP_GET_INDEX)
     > ""
   }
 
