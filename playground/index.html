@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>GlyphLang Playground</title>
+    <style>
+        body { font-family: monospace; background: #050508; color: #00ff00; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        header { padding: 20px; border-bottom: 1px solid #004400; display: flex; justify-content: space-between; align-items: center; }
+        .container { display: flex; flex: 1; overflow: hidden; }
+        .editor-pane, .output-pane { flex: 1; display: flex; flex-direction: column; padding: 20px; }
+        .editor-pane { border-right: 1px solid #004400; }
+        textarea { flex: 1; background: #0a0a12; color: #00ff00; border: 1px solid #004400; padding: 10px; font-family: inherit; font-size: 16px; outline: none; resize: none; }
+        .output { flex: 1; background: #000; border: 1px solid #004400; padding: 10px; overflow-y: auto; white-space: pre-wrap; color: #00ffff; }
+        button { background: #00ff00; color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; font-family: inherit; }
+        button:hover { background: #00aa00; }
+        .status { font-size: 12px; color: #888; }
+    </style>
+</head>
+<body>
+    <header>
+        <div><strong>GLYPHLANG</strong> v0.6.0 ALPHA</div>
+        <div id="status" class="status">Loading WASM...</div>
+        <button id="runBtn" disabled>RUN (Ctrl+Enter)</button>
+    </header>
+    <div class="container">
+        <div class="editor-pane">
+            <textarea id="code" spellcheck="false">@ GET /hello {
+  $ msg = Ok("Hello from GlyphLang WASM!")
+  $ result = try msg
+  > { status: "success", data: result }
+}</textarea>
+        </div>
+        <div class="output-pane">
+            <div id="output" class="output">Initialize output...</div>
+        </div>
+    </div>
+
+    <script src="wasm_exec.js"></script>
+    <script>
+        const go = new Go();
+        let wasmModule;
+
+        const statusEl = document.getElementById('status');
+        const runBtn = document.getElementById('runBtn');
+        const codeEl = document.getElementById('code');
+        const outputEl = document.getElementById('output');
+
+        WebAssembly.instantiateStreaming(fetch("playground.wasm"), go.importObject).then((result) => {
+            go.run(result.instance);
+            statusEl.textContent = "WASM Ready";
+            statusEl.style.color = "#00ff00";
+            runBtn.disabled = false;
+        }).catch(err => {
+            statusEl.textContent = "WASM Failed: " + err;
+            statusEl.style.color = "#ff0000";
+        });
+
+        function run() {
+            if (typeof runGlyph !== 'function') {
+                outputEl.textContent = "Error: runGlyph function not found in WASM.";
+                return;
+            }
+            const source = codeEl.value;
+            outputEl.textContent = "Running...";
+            try {
+                const result = runGlyph(source);
+                try {
+                    const parsed = JSON.parse(result);
+                    outputEl.textContent = JSON.stringify(parsed, null, 2);
+                } catch (e) {
+                    outputEl.textContent = result;
+                }
+            } catch (e) {
+                outputEl.textContent = "Runtime Error: " + e;
+            }
+        }
+
+        runBtn.addEventListener('click', run);
+        window.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') run();
+        });
+    </script>
+</body>
+</html>

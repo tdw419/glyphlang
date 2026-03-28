@@ -61,6 +61,7 @@ Once installed, the skill is automatically discovered by pi-coding-agent when ta
 - [GlyphLang GitHub](https://github.com/GlyphLang/GlyphLang) — Language source, compiler, VM
 - [GlyphLang VS Code Extension](https://marketplace.visualstudio.com/items?itemName=GlyphLang.GlyphLang)
 - [pi-coding-agent](https://github.com/mariozechner/pi-coding-agent) — Agent harness
+- [Orchestrator Extensions](EXTENSIONS.md) — AI self-orchestration extensions (SQL, MODEL, Mitosis, VCC)
 
 ## License
 
