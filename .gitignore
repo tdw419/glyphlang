@@ -13,6 +13,7 @@ go.work
 /dist/
 *.glyphx
 *.glyphc
+*.wasm
 
 # IDE & Editors
 .vscode/
