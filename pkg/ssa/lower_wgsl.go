@@ -8,12 +8,16 @@ import (
 // WGSLLowering lowers an SSA function directly to a WGSL compute shader.
 // This bypasses the bytecode interpreter for maximum performance.
 type WGSLLowering struct {
-	indent int
+	indent  int
+	vars    map[string]int
+	nextVar int
 }
 
 // NewWGSLLowering creates a new WGSL lowering context.
 func NewWGSLLowering() *WGSLLowering {
-	return &WGSLLowering{}
+	return &WGSLLowering{
+		vars: make(map[string]int),
+	}
 }
 
 // LowerFunc generates a complete WGSL compute shader for the given function.
@@ -63,7 +67,7 @@ func (l *WGSLLowering) LowerFunc(f *Func) (string, error) {
 	l.indent++
 
 	for _, blk := range f.Blocks {
-		b.WriteString(l.line(fmt.Sprintf("case %d: { // %s", blk.ID, blk.Name)))
+		b.WriteString(l.line(fmt.Sprintf("case %du: { // %s", blk.ID, blk.Name)))
 		l.indent++
 
 		for _, v := range blk.Values {
@@ -75,6 +79,8 @@ func (l *WGSLLowering) LowerFunc(f *Func) (string, error) {
 		l.indent--
 		b.WriteString(l.line("}"))
 	}
+
+	b.WriteString(l.line("default: { halted = true; }"))
 
 	l.indent--
 	b.WriteString(l.line("}"))
@@ -118,23 +124,31 @@ func (l *WGSLLowering) emitValue(b *strings.Builder, v *Value) error {
 		b.WriteString(l.line(fmt.Sprintf("v%d = v%d < v%d;", v.ID, v.Args[0].ID, v.Args[1].ID)))
 
 	case OpLoadVar:
-		// Map variable names to numeric indices for simplicity in this MVP
-		// In production, we'd have a proper symbol table mapping
-		idx := 0 // placeholder
-		b.WriteString(l.line(fmt.Sprintf("v%d = locals[id * 64 + %d];", v.ID, idx)))
+		idx, ok := l.vars[v.AuxStr]
+		if !ok {
+			idx = l.nextVar
+			l.vars[v.AuxStr] = idx
+			l.nextVar++
+		}
+		b.WriteString(l.line(fmt.Sprintf("v%d = locals[id * 64u + %du];", v.ID, idx)))
 
 	case OpStoreVar:
-		idx := 0 // placeholder
-		b.WriteString(l.line(fmt.Sprintf("locals[id * 64 + %d] = v%d;", idx, v.Args[0].ID)))
+		idx, ok := l.vars[v.AuxStr]
+		if !ok {
+			idx = l.nextVar
+			l.vars[v.AuxStr] = idx
+			l.nextVar++
+		}
+		b.WriteString(l.line(fmt.Sprintf("locals[id * 64u + %du] = v%d;", idx, v.Args[0].ID)))
 
 	case OpIf:
-		b.WriteString(l.line(fmt.Sprintf("if (v%d) { block_id = %d; } else { block_id = %d; }", v.Args[0].ID, v.Block.Succs[0].ID, v.Block.Succs[1].ID)))
+		b.WriteString(l.line(fmt.Sprintf("if (v%d) { block_id = %du; } else { block_id = %du; }", v.Args[0].ID, v.Block.Succs[0].ID, v.Block.Succs[1].ID)))
 	case OpJump:
-		b.WriteString(l.line(fmt.Sprintf("block_id = %d;", v.Block.Succs[0].ID)))
+		b.WriteString(l.line(fmt.Sprintf("block_id = %du;", v.Block.Succs[0].ID)))
 	case OpReturn, OpHalt:
 		b.WriteString(l.line("halted = true;"))
 		if len(v.Args) > 0 {
-			b.WriteString(l.line(fmt.Sprintf("states[id].result_tag = %d;", l.tagForType(v.Args[0].Type))))
+			b.WriteString(l.line(fmt.Sprintf("states[id].result_tag = %du;", l.tagForType(v.Args[0].Type))))
 			b.WriteString(l.line(fmt.Sprintf("states[id].result_data = i32(v%d);", v.Args[0].ID)))
 		}
 
