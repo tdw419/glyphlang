@@ -2,24 +2,30 @@
 
 Self-hosting components for GlyphLang — parsers, compilers, and VM written in GlyphLang itself.
 
-## ✅ v0.9.0 SELF-HOSTING VM
+## ✅ v0.8.6 BOOTSTRAP VM WORKING
 
-**The GlyphLang VM runs in GlyphLang!**
+**The GlyphLang VM now runs in GlyphLang itself with 68% opcode coverage!**
 
-```
+```bash
 $ ./glyph exec bootstrap/vm.glyph run
 
-=== Bootstrap VM Tests ===
-
-✅ test_simple: 42
-✅ test_arithmetic: (5+3)*2 = 16
-✅ test_subtraction: 10-7 = 3
-
-Results: 3/3 passed
+=== Bootstrap VM Tests (Extended) ===
+ 
+✅ test_simple: 42 
+✅ test_arithmetic: (5+3)*2 = 16 
+✅ test_comparison: 5 < 10 = 1 
+✅ test_conditional: if(5>3) = 1 
+✅ test_logic: (5>3) AND (10>5) = 1 
+✅ test_or: (5<3) OR (10>5) = 1 
+✅ test_load_var: LOAD_VAR 0 = 42 
+✅ test_loop (unrolled): 1+2+3+4+5 = 15 
+ 
+Results: 8/8 passed
 🎉 All tests passed!
+[INFO] Execution time: 517.804µs
 ```
 
-## 🧬 v1.0.0 GOAL: TRIPLE CROWN
+## 🧬 v0.9.0 GOAL: FULL SELF-HOSTING
 
 **The Triple Crown Test:**
 ```
@@ -38,60 +44,30 @@ Verify: diff compiler_self.bin compiler_final.bin → IDENTICAL ✅
 | ast.glyph | 131 | AST node definitions | ✅ |
 | parser.glyph | 1141 | Recursive descent parser | ✅ |
 | compiler.glyph | 394 | Bytecode emitter | ✅ |
-| **vm.glyph** | **200** | **Self-hosted VM** | ✅ **NEW** |
+| **vm.glyph** | **550** | **Self-hosted VM** | ✅ **v0.8.6** |
 
-**Total: 2,289 lines of self-hosting GlyphLang**
+**Total: 2,639 lines of self-hosting GlyphLang**
 
 ## Bootstrap VM (`vm.glyph`)
 
 The self-hosted VM executes GlyphLang bytecode without Go dependency.
 
-### Supported Opcodes
+### Opcode Coverage: 23/34 (68%)
 
-| Category | Opcodes |
-|----------|---------|
-| Stack | `PUSH`, `POP` |
-| Arithmetic | `ADD`, `SUB`, `MUL`, `DIV` |
-| Control | `HALT` |
+| Category | Opcodes | Status |
+|----------|---------|--------|
+| Stack | PUSH, POP | ✅ |
+| Arithmetic | ADD, SUB, MUL, DIV, MOD | ✅ |
+| Comparison | EQ, NE, LT, GT, GE, LE | ✅ |
+| Logic | AND, OR, NOT, NEG | ✅ |
+| Variables | LOAD_VAR, STORE_VAR | ✅ |
+| Control Flow | JUMP, JUMP_IF_FALSE, JUMP_IF_TRUE, HALT | ✅ |
+| Functions | CALL, RETURN | ⏳ Next |
+| Arrays | BUILD_ARRAY | ⏳ |
+| Objects | BUILD_OBJECT, GET_FIELD, SET_FIELD, DEF_FUNC | ⏳ |
+| Iterators | GET_ITER, ITER_NEXT, ITER_HAS_NEXT | ⏳ |
 
 ### Architecture
-
-The VM uses a functional style with immutable state:
-
-```glyph
-: VM{
-  stack: [int]!
-  pc: int!
-  halted: bool!
-}
-
-! vm_push(vm: VM, val: int) -> VM{
-  > {
-    stack: vm.stack + [val],
-    pc: vm.pc,
-    halted: vm.halted
-  }
-}
-
-! vm_exec(vm: VM, code: [int], constants: [int]) -> int{
-  $ current = vm
-  while !current.halted && current.pc < length(code){
-    $ op = code[current.pc]
-    # ... execute op ...
-  }
-  > final.val
-}
-```
-
-### Usage
-
-```glyph
-$ code = [OP_PUSH, 0, OP_PUSH, 1, OP_ADD, OP_HALT]
-$ constants = [5, 3]
-$ result = exec(code, constants)  # → 8
-```
-
-## Architecture
 
 ```
 Source (.glyph)
@@ -102,7 +78,44 @@ bootstrap/parser.glyph → AST
     ↓
 bootstrap/compiler.glyph → Bytecode (.glyphbin)
     ↓
-bootstrap/vm.glyph → Execution ✅ NEW
+bootstrap/vm.glyph → Execution ✅ WORKING
+```
+
+### Design Principles
+
+1. **Immutable Structs** - All VM state is immutable, functions return new states
+2. **Functional Style** - No mutation, only transformation
+3. **Helper Functions** - Complex conditionals extracted to avoid scoping issues
+4. **4-byte Addresses** - Little-endian for jump targets
+
+### Example
+
+```glyph
+# Compute (5+3)*2 = 16
+$ code = [
+  OP_PUSH, 0,      # Push constants[0] = 5
+  OP_PUSH, 1,      # Push constants[1] = 3
+  OP_ADD,          # 5 + 3 = 8
+  OP_PUSH, 2,      # Push constants[2] = 2
+  OP_MUL,          # 8 * 2 = 16
+  OP_HALT
+]
+$ constants = [5, 3, 2]
+$ result = exec(code, constants)
+print(result)  # Output: 16
+```
+
+## Running Tests
+
+```bash
+# Bootstrap VM tests
+./glyph exec bootstrap/vm.glyph run
+
+# Self-compilation
+./glyph exec bootstrap/test_self_compile.glyph run
+
+# All bootstrap tests
+./glyph exec bootstrap/test.glyph run
 ```
 
 ## Milestones
@@ -114,50 +127,22 @@ bootstrap/vm.glyph → Execution ✅ NEW
 | Phase 2.5 | ✅ | Parser parses itself |
 | Phase 3 | ✅ | Compiler emits bytecode |
 | Phase 3.5 | ✅ | Compiler compiles itself |
-| **Phase 4** | ✅ | **VM executes bytecode** ← **NEW** |
-| Phase 5 | ⚪ | Bootstrap cycle complete |
-| Phase 6 | ⚪ | GPU-native execution |
+| **Phase 4** | ✅ | **VM executes bytecode (68% coverage)** |
+| Phase 5 | ⚪ | CALL/RETURN for functions |
+| Phase 6 | ⚪ | Full bootstrap cycle complete |
+| Phase 7 | ⚪ | GPU-native execution |
 
-## Test Files
+## Recent Commits
 
-| Test | Description |
-|------|-------------|
-| test.glyph | Basic bootstrap tests |
-| test_e2e.glyph | End-to-end compilation |
-| test_self_compile.glyph | Self-compilation verification |
-| test_vm_exec.glyph | VM execution tests |
-| test_minimal_runtime.glyph | Minimal runtime tests |
-| **vm.glyph (run command)** | **Self-hosted VM tests** ✅ **NEW** |
-
-## Running Tests
-
-```bash
-# Bootstrap tests
-./glyph exec bootstrap/test.glyph run
-
-# Self-compilation
-./glyph exec bootstrap/test_self_compile.glyph run
-
-# Self-hosted VM tests
-./glyph exec bootstrap/vm.glyph run
-```
-
-## Commits
-
+- `ee1bfda` - Extended bootstrap VM (23 opcodes, 68% coverage)
+- `vm-bootstrap` - Self-hosted VM working (v0.8.5)
 - `90ff7d3` - Self-compilation achieved (v0.8.0)
 - `4a3a594` - Enhanced VM and interpreter
-- `232ef77` - Full bootstrap test
-- `55df4a4` - Self-hosted compiler
-
-## Next Steps
-
-1. **Expand VM opcodes** - Add `JUMP`, `JUMP_IF_FALSE`, `CALL`, `RETURN`, etc.
-2. **Triple Crown Test** - Verify bootstrap cycle
-3. **GPU Lowering** - Compile GlyphLang → WGSL for RTX 5090 execution
 
 ---
 
-**Milestone:** v0.9.0 Self-Hosting VM ✅ → v1.0.0 Triple Crown ⚪
+**Milestone:** v0.8.6 Bootstrap VM Extended ✅
+**Next:** v0.9.0 CALL/RETURN for Full Self-Hosting ⚪
 **Date:** 2026-03-29
-**Lines:** 2,289 GlyphLang
-**Status:** BOOTSTRAP VM WORKING ✅
+**Lines:** 2,639 GlyphLang
+**Status:** 68% OPCODE COVERAGE
