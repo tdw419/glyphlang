@@ -422,10 +422,15 @@ const HEAP_BASE = 2000000
     $ idx = vm.fp + offset
     if idx < 0 {
       print("FP index underflow!")
+      print(vm.fp)
+      print(offset)
       > { vm: vm_halted(vm) }
     }
     if idx >= length(vm.stack) {
       print("FP index overflow!")
+      print(vm.fp)
+      print(offset)
+      print(length(vm.stack))
       > { vm: vm_halted(vm) }
     }
     $ val = vm.stack[idx]
@@ -467,28 +472,36 @@ const HEAP_BASE = 2000000
   if op == OP_CALL {
     $ target = read_addr(code, vm.pc + 1)
     $ return_addr = vm.pc + 5
-    # Stack layout: [..., arg, old_fp, return_addr]
-    # FP points to old_fp position (stack_top - 1)
-    $ vm2 = vm_push(vm, vm.fp)
-    $ vm3 = vm_push(vm2, return_addr)
-    $ vm4 = vm_with_fp(vm3, length(vm3.stack) - 2)  # FP points to old_fp
-    $ vm5 = vm_with_pc(vm4, target)
-    > { vm: vm5 }
+    # Stack layout: [..., arg(s), old_fp, return_addr, stack_base]
+    # stack_base = stack size before frame (caller's stack depth)
+    $ stack_base = length(vm.stack)
+    $ vm2 = vm_push(vm, vm.fp)          # old_fp
+    $ vm3 = vm_push(vm2, return_addr)   # return_addr
+    $ vm4 = vm_push(vm3, stack_base)    # stack_base for cleanup
+    $ vm5 = vm_with_fp(vm4, length(vm4.stack) - 3)  # FP points to old_fp
+    $ vm6 = vm_with_pc(vm5, target)
+    > { vm: vm6 }
   }
   
   if op == OP_RETURN {
-    # Stack: [..., arg, old_fp, return_addr, ..., result]
+    # Stack: [..., arg(s), old_fp, return_addr, stack_base, ..., result]
     $ result = vm_pop(vm)
-    # Pop return_addr first (top of call frame)
-    $ addr_result = vm_pop(result.vm)
-    # Pop old_fp second
+    # Pop stack_base
+    $ base_result = vm_pop(result.vm)
+    $ stack_base = base_result.val
+    # Pop return_addr
+    $ addr_result = vm_pop(base_result.vm)
+    # Pop old_fp
     $ fp_result = vm_pop(addr_result.vm)
     # Restore FP and PC
     $ vm2 = vm_with_fp(fp_result.vm, fp_result.val)
     $ vm3 = vm_with_pc(vm2, addr_result.val)
+    # Trim stack to stack_base (removes leftover args)
+    $ trimmed = slice(vm3.stack, 0, stack_base)
+    $ vm4 = { stack: trimmed, pc: vm3.pc, fp: vm3.fp, halted: vm3.halted, heap: vm3.heap }
     # Push result back
-    $ vm4 = vm_push(vm3, result.val)
-    > { vm: vm4 }
+    $ vm5 = vm_push(vm4, result.val)
+    > { vm: vm5 }
   }
   
   # ─── Object & Array Opcodes (v0.9.7) ──────────────────────────────
