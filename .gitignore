@@ -19,3 +19,12 @@ Thumbs.db
 # GlyphLang build output
 .glyph/
 *.glyphc
+*.wasm
+playground/playground.wasm
+playground/wasm_exec.js
+
+# Go binary
+/glyph
+/glyph.exe
+coverage.out
+coverage.html

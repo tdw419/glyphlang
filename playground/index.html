@@ -1,84 +1,378 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>GlyphLang Playground</title>
     <style>
-        body { font-family: monospace; background: #050508; color: #00ff00; margin: 0; display: flex; flex-direction: column; height: 100vh; }
-        header { padding: 20px; border-bottom: 1px solid #004400; display: flex; justify-content: space-between; align-items: center; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+            background: #0d1117; color: #c9d1d9;
+            display: flex; flex-direction: column; height: 100vh;
+        }
+        header {
+            background: #161b22; border-bottom: 1px solid #30363d;
+            padding: 12px 20px; display: flex; align-items: center; gap: 16px;
+        }
+        .logo { color: #58a6ff; font-weight: bold; font-size: 18px; letter-spacing: 1px; }
+        .logo span { color: #7ee787; }
+        .version { color: #8b949e; font-size: 12px; }
+        .toolbar {
+            display: flex; gap: 8px; margin-left: auto; align-items: center;
+        }
+        select {
+            background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+            padding: 6px 10px; border-radius: 6px; font-family: inherit; font-size: 13px;
+            cursor: pointer;
+        }
+        button {
+            border: none; padding: 6px 16px; border-radius: 6px;
+            font-family: inherit; font-size: 13px; font-weight: 600;
+            cursor: pointer; transition: all 0.15s;
+        }
+        .btn-run { background: #238636; color: #fff; }
+        .btn-run:hover { background: #2ea043; }
+        .btn-run:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+        .btn-compile { background: #1f6feb; color: #fff; }
+        .btn-compile:hover { background: #388bfd; }
+        .btn-compile:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+        .btn-clear { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+        .btn-clear:hover { background: #30363d; }
+
         .container { display: flex; flex: 1; overflow: hidden; }
-        .editor-pane, .output-pane { flex: 1; display: flex; flex-direction: column; padding: 20px; }
-        .editor-pane { border-right: 1px solid #004400; }
-        textarea { flex: 1; background: #0a0a12; color: #00ff00; border: 1px solid #004400; padding: 10px; font-family: inherit; font-size: 16px; outline: none; resize: none; }
-        .output { flex: 1; background: #000; border: 1px solid #004400; padding: 10px; overflow-y: auto; white-space: pre-wrap; color: #00ffff; }
-        button { background: #00ff00; color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; font-family: inherit; }
-        button:hover { background: #00aa00; }
-        .status { font-size: 12px; color: #888; }
+        .pane {
+            flex: 1; display: flex; flex-direction: column;
+            min-width: 0;
+        }
+        .pane-header {
+            background: #161b22; padding: 8px 16px; font-size: 12px;
+            color: #8b949e; border-bottom: 1px solid #30363d;
+            display: flex; justify-content: space-between; align-items: center;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .divider { width: 1px; background: #30363d; }
+
+        textarea {
+            flex: 1; background: #0d1117; color: #c9d1d9;
+            border: none; padding: 16px; font-family: inherit;
+            font-size: 14px; line-height: 1.6; outline: none;
+            resize: none; tab-size: 2;
+        }
+        textarea::placeholder { color: #484f58; }
+
+        .output-area {
+            flex: 1; padding: 16px; overflow-y: auto;
+            font-size: 14px; line-height: 1.6; white-space: pre-wrap;
+        }
+        .output-success { color: #7ee787; }
+        .output-error { color: #f85149; }
+        .output-info { color: #58a6ff; }
+        .output-result { color: #d2a8ff; }
+        .output-timing { color: #8b949e; font-size: 12px; }
+
+        .statusbar {
+            background: #161b22; border-top: 1px solid #30363d;
+            padding: 4px 16px; font-size: 12px; color: #8b949e;
+            display: flex; justify-content: space-between;
+        }
+        .status-dot {
+            display: inline-block; width: 8px; height: 8px;
+            border-radius: 50%; margin-right: 6px; vertical-align: middle;
+        }
+        .status-loading { background: #d29922; }
+        .status-ready { background: #3fb950; }
+        .status-error { background: #f85149; }
+
+        .kbd {
+            background: #21262d; border: 1px solid #30363d;
+            border-radius: 3px; padding: 1px 5px; font-size: 11px;
+        }
+
+        @media (max-width: 768px) {
+            .container { flex-direction: column; }
+            .divider { width: auto; height: 1px; }
+        }
     </style>
 </head>
 <body>
     <header>
-        <div><strong>GLYPHLANG</strong> v0.6.0 ALPHA</div>
-        <div id="status" class="status">Loading WASM...</div>
-        <button id="runBtn" disabled>RUN (Ctrl+Enter)</button>
+        <div class="logo">GLYPH<span>LANG</span></div>
+        <span class="version" id="versionLabel">v0.6.0-alpha</span>
+        <div class="toolbar">
+            <select id="examples">
+                <option value="">-- Examples --</option>
+                <option value="hello">Hello World</option>
+                <option value="rest">REST API</option>
+                <option value="math">Math Operations</option>
+                <option value="types">Type System</option>
+                <option value="fib">Fibonacci</option>
+                <option value="pipeline">Pipeline</option>
+            </select>
+            <button class="btn-compile" id="compileBtn" disabled>Compile</button>
+            <button class="btn-run" id="runBtn" disabled>Run <span class="kbd">Ctrl+Enter</span></button>
+            <button class="btn-clear" id="clearBtn">Clear</button>
+        </div>
     </header>
+
     <div class="container">
-        <div class="editor-pane">
-            <textarea id="code" spellcheck="false">@ GET /hello {
-  $ msg = Ok("Hello from GlyphLang WASM!")
-  $ result = try msg
-  > { status: "success", data: result }
+        <div class="pane">
+            <div class="pane-header">
+                <span>Source</span>
+                <span id="charCount">0 chars</span>
+            </div>
+            <textarea id="code" spellcheck="false" placeholder="Write GlyphLang code here...">@ GET /hello {
+  $ msg = "Hello from GlyphLang!"
+  > { status: "success", message: msg }
 }</textarea>
         </div>
-        <div class="output-pane">
-            <div id="output" class="output">Initialize output...</div>
+        <div class="divider"></div>
+        <div class="pane">
+            <div class="pane-header">
+                <span>Output</span>
+                <span id="outputInfo"></span>
+            </div>
+            <div class="output-area" id="output">
+                <span class="output-info">Loading GlyphLang WASM runtime...</span>
+            </div>
         </div>
+    </div>
+
+    <div class="statusbar">
+        <span id="status"><span class="status-dot status-loading"></span>Loading WASM module...</span>
+        <span>GlyphLang Playground | GPU-native bytecode execution</span>
     </div>
 
     <script src="wasm_exec.js"></script>
     <script>
-        const go = new Go();
-        let wasmModule;
+    const EXAMPLES = {
+        hello: `@ GET /hello {
+  $ msg = "Hello from GlyphLang!"
+  > { status: "success", message: msg }
+}`,
+        rest: `@ GET /users/:id {
+  $ user = try fetchUser(id)
+  > { status: "ok", data: user }
+}
 
-        const statusEl = document.getElementById('status');
-        const runBtn = document.getElementById('runBtn');
-        const codeEl = document.getElementById('code');
-        const outputEl = document.getElementById('output');
+@ POST /users {
+  $ body = try parseBody(req)
+  $ user = try createUser(body.name, body.email)
+  > { status: "created", id: user.id }
+}
 
-        WebAssembly.instantiateStreaming(fetch("playground.wasm"), go.importObject).then((result) => {
-            go.run(result.instance);
-            statusEl.textContent = "WASM Ready";
-            statusEl.style.color = "#00ff00";
-            runBtn.disabled = false;
-        }).catch(err => {
-            statusEl.textContent = "WASM Failed: " + err;
-            statusEl.style.color = "#ff0000";
-        });
+@ DELETE /users/:id {
+  $ result = try deleteUser(id)
+  > { status: "deleted" }
+}`,
+        math: `$ a = 42
+$ b = 13
+$ sum = a + b
+$ product = a * b
+$ diff = a - b
+> { sum: sum, product: product, difference: diff }`,
+        types: `$ name = "GlyphLang"
+$ version = 6
+$ features = ["self-hosting", "gpu-native", "ai-native"]
+$ is_fast = true
 
-        function run() {
-            if (typeof runGlyph !== 'function') {
-                outputEl.textContent = "Error: runGlyph function not found in WASM.";
-                return;
-            }
-            const source = codeEl.value;
-            outputEl.textContent = "Running...";
-            try {
-                const result = runGlyph(source);
-                try {
-                    const parsed = JSON.parse(result);
-                    outputEl.textContent = JSON.stringify(parsed, null, 2);
-                } catch (e) {
-                    outputEl.textContent = result;
-                }
-            } catch (e) {
-                outputEl.textContent = "Runtime Error: " + e;
-            }
+> {
+  name: name,
+  version: version,
+  features: features,
+  fast: is_fast
+}`,
+        fib: `fn fib(n) {
+  if n <= 1 {
+    > n
+  }
+  > fib(n - 1) + fib(n - 2)
+}
+
+$ result = fib(10)
+> { fibonacci_10: result }`,
+        pipeline: `$ data = [1, 2, 3, 4, 5]
+$ doubled = map(data, fn(x) { > x * 2 })
+$ filtered = filter(doubled, fn(x) { > x > 4 })
+$ total = reduce(filtered, 0, fn(acc, x) { > acc + x })
+> { original: data, doubled: doubled, filtered: filtered, total: total }`
+    };
+
+    const go = new Go();
+    const statusEl = document.getElementById('status');
+    const runBtn = document.getElementById('runBtn');
+    const compileBtn = document.getElementById('compileBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const codeEl = document.getElementById('code');
+    const outputEl = document.getElementById('output');
+    const outputInfo = document.getElementById('outputInfo');
+    const charCount = document.getElementById('charCount');
+    const examplesEl = document.getElementById('examples');
+    const versionLabel = document.getElementById('versionLabel');
+
+    let wasmReady = false;
+
+    // Character count
+    codeEl.addEventListener('input', () => {
+        charCount.textContent = codeEl.value.length + ' chars';
+    });
+    charCount.textContent = codeEl.value.length + ' chars';
+
+    // Tab key inserts spaces
+    codeEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = codeEl.selectionStart;
+            const end = codeEl.selectionEnd;
+            codeEl.value = codeEl.value.substring(0, start) + '  ' + codeEl.value.substring(end);
+            codeEl.selectionStart = codeEl.selectionEnd = start + 2;
+        }
+    });
+
+    // Examples
+    examplesEl.addEventListener('change', () => {
+        const ex = EXAMPLES[examplesEl.value];
+        if (ex) {
+            codeEl.value = ex;
+            charCount.textContent = ex.length + ' chars';
+        }
+        examplesEl.value = '';
+    });
+
+    // Load WASM
+    const wasmStart = performance.now();
+    WebAssembly.instantiateStreaming(fetch('playground.wasm'), go.importObject).then((result) => {
+        go.run(result.instance);
+        const loadTime = (performance.now() - wasmStart).toFixed(0);
+        wasmReady = true;
+        statusEl.innerHTML = '<span class="status-dot status-ready"></span>WASM ready (' + loadTime + 'ms)';
+        runBtn.disabled = false;
+        compileBtn.disabled = false;
+        outputEl.innerHTML = '<span class="output-success">GlyphLang WASM runtime loaded in ' + loadTime + 'ms</span>\n<span class="output-info">Press Run or Ctrl+Enter to execute code.</span>';
+
+        // Update version from WASM if available
+        if (typeof glyphVersion === 'function') {
+            versionLabel.textContent = glyphVersion();
+        }
+    }).catch(err => {
+        statusEl.innerHTML = '<span class="status-dot status-error"></span>WASM load failed';
+        outputEl.innerHTML = '<span class="output-error">Failed to load WASM: ' + err + '</span>\n<span class="output-info">Make sure playground.wasm is served from the same origin.</span>';
+    });
+
+    function appendOutput(html) {
+        outputEl.innerHTML += '\n' + html;
+        outputEl.scrollTop = outputEl.scrollHeight;
+    }
+
+    function setOutput(html) {
+        outputEl.innerHTML = html;
+    }
+
+    function formatJSON(obj) {
+        return JSON.stringify(obj, null, 2);
+    }
+
+    function runCode() {
+        if (!wasmReady || typeof glyphRun !== 'function') {
+            setOutput('<span class="output-error">WASM runtime not ready.</span>');
+            return;
+        }
+        const source = codeEl.value;
+        if (!source.trim()) {
+            setOutput('<span class="output-info">No source code to run.</span>');
+            return;
         }
 
-        runBtn.addEventListener('click', run);
-        window.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'Enter') run();
-        });
+        setOutput('<span class="output-info">Running...</span>');
+        const start = performance.now();
+
+        try {
+            const raw = glyphRun(source);
+            const elapsed = (performance.now() - start).toFixed(1);
+            const result = JSON.parse(raw);
+
+            if (result.success) {
+                setOutput(
+                    '<span class="output-success">--- Result ---</span>\n' +
+                    '<span class="output-result">' + escapeHtml(formatJSON(result.result)) + '</span>\n' +
+                    '<span class="output-timing">Executed in ' + elapsed + 'ms (VM: ' + (result.time_ms || 0) + 'ms)</span>'
+                );
+                outputInfo.textContent = 'success';
+            } else {
+                setOutput(
+                    '<span class="output-error">--- Error ---</span>\n' +
+                    '<span class="output-error">' + escapeHtml(result.error) + '</span>\n' +
+                    '<span class="output-timing">Failed after ' + elapsed + 'ms</span>'
+                );
+                outputInfo.textContent = 'error';
+            }
+        } catch (e) {
+            setOutput('<span class="output-error">Runtime exception: ' + escapeHtml(String(e)) + '</span>');
+            outputInfo.textContent = 'error';
+        }
+    }
+
+    function compileCode() {
+        if (!wasmReady || typeof glyphCompile !== 'function') {
+            setOutput('<span class="output-error">WASM runtime not ready.</span>');
+            return;
+        }
+        const source = codeEl.value;
+        if (!source.trim()) {
+            setOutput('<span class="output-info">No source code to compile.</span>');
+            return;
+        }
+
+        setOutput('<span class="output-info">Compiling...</span>');
+        const start = performance.now();
+
+        try {
+            const raw = glyphCompile(source);
+            const elapsed = (performance.now() - start).toFixed(1);
+            const result = JSON.parse(raw);
+
+            if (result.success) {
+                const sizeKB = (result.size / 1024).toFixed(1);
+                setOutput(
+                    '<span class="output-success">--- Compilation Successful ---</span>\n' +
+                    '<span class="output-info">Bytecode size: ' + result.size + ' bytes (' + sizeKB + ' KB)</span>\n' +
+                    '<span class="output-info">Source:        ' + source.length + ' chars</span>\n' +
+                    '<span class="output-info">Ratio:         ' + (result.size / source.length).toFixed(2) + 'x</span>\n' +
+                    '<span class="output-timing">Compiled in ' + elapsed + 'ms (compiler: ' + (result.time_ms || 0) + 'ms)</span>'
+                );
+                outputInfo.textContent = result.size + ' bytes';
+            } else {
+                setOutput(
+                    '<span class="output-error">--- Compilation Failed ---</span>\n' +
+                    '<span class="output-error">' + escapeHtml(result.error) + '</span>\n' +
+                    '<span class="output-timing">Failed after ' + elapsed + 'ms</span>'
+                );
+                outputInfo.textContent = 'error';
+            }
+        } catch (e) {
+            setOutput('<span class="output-error">Compilation exception: ' + escapeHtml(String(e)) + '</span>');
+            outputInfo.textContent = 'error';
+        }
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Event listeners
+    runBtn.addEventListener('click', runCode);
+    compileBtn.addEventListener('click', compileCode);
+    clearBtn.addEventListener('click', () => {
+        setOutput('<span class="output-info">Output cleared.</span>');
+        outputInfo.textContent = '';
+    });
+
+    window.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'Enter') {
+            e.preventDefault();
+            runCode();
+        }
+    });
     </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-.PHONY: help build test bench clean docker deploy docs examples installer
+.PHONY: help build test bench clean docker deploy docs examples installer wasm
 
 # Default target
 help:
@@ -14,6 +14,7 @@ help:
 	@echo "  deploy-k8s    - Deploy to Kubernetes"
 	@echo "  examples      - Run example applications"
 	@echo "  installer     - Build Windows installer (requires Inno Setup)"
+	@echo "  wasm          - Build WASM playground"
 	@echo "  fmt           - Format code"
 	@echo "  lint          - Run linters"
 
@@ -120,6 +121,18 @@ example-rest:
 example-blog:
 	@echo "Running Blog API example..."
 	go run ./cmd/glyph dev examples/blog-api-complete/main.glyph --port 8080
+
+# WASM playground
+wasm:
+	@echo "Building WASM module..."
+	GOOS=js GOARCH=wasm go build -o playground/playground.wasm ./pkg/wasm/
+	@cp "$$(go env GOROOT)/misc/wasm/wasm_exec.js" playground/wasm_exec.js
+	@echo "WASM playground built: playground/"
+	@ls -lh playground/playground.wasm
+
+wasm-serve: wasm
+	@echo "Serving playground at http://localhost:8080"
+	@cd playground && python3 -m http.server 8080
 
 # Format targets
 fmt:
