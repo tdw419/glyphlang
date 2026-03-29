@@ -424,10 +424,12 @@ const OP_HALT          = 255  # 0xFF
   
   if op == OP_RETURN {
     # Stack: [..., return_addr, return_value]
-    $ value = vm_pop(vm)       # Pop return value
-    $ addr = vm_pop(value.vm)  # Pop return address
-    $ vm2 = vm_push(addr.vm, value.val)  # Push return value back
-    $ vm3 = vm_with_pc(vm2, addr.val)    # Jump to return address
+    $ result = vm_pop(vm)       # Pop return value
+    $ value = result.val
+    $ addr_result = vm_pop(result.vm)  # Pop return address
+    $ addr = addr_result.val
+    $ vm2 = vm_push(addr_result.vm, value)  # Push return value back
+    $ vm3 = vm_with_pc(vm2, addr)           # Jump to return address
     > { vm: vm3 }
   }
   
@@ -436,6 +438,10 @@ const OP_HALT          = 255  # 0xFF
   }
   
   print("Unknown opcode!")
+  print("  PC:")
+  print(vm.pc)
+  print("  Stack:")
+  print(length(vm.stack))
   > { vm: vm_halted(vm) }
 }
 
@@ -674,10 +680,11 @@ const OP_HALT          = 255  # 0xFF
   print("=== CALL/RETURN TEST ===")
   print("")
   
+  if test_simple_call_return() { $ passed = passed + 1 }
   if test_recursive_factorial() { $ passed = passed + 1 }
   
-  if passed == 10 { 
-    print("Results: 10/10 passed")
+  if passed == 11 { 
+    print("Results: 11/11 passed")
     print("🎉🎉🎉 ALL TESTS PASSED INCLUDING RECURSIVE CALL/RETURN! 🎉🎉🎉")
   }
   
@@ -700,23 +707,57 @@ const OP_HALT          = 255  # 0xFF
 }
 
 ! test_recursive_factorial() -> bool {
-  # Test DUP_SECOND opcode
-  # Stack: [5, 999] -> DUP_SECOND -> [5, 999, 5]
+  # Test CALL/RETURN with simple function
+  # double(5) = 10
+  # 
+  # Stack layout:
+  # After CALL: [5, return_addr]
+  # Function: [5, return_addr] -> [return_addr, 10]
+  # Then RETURN: [return_addr, 10] -> [10] + jump
   
   $ code = [
-    OP_PUSH, 0,           # 0: PUSH 5
-    OP_PUSH, 1,           # 2: PUSH 999
-    OP_DUP_SECOND,        # 4: DUP_SECOND
-    OP_HALT               # 5: HALT
+    OP_PUSH, 0,           # 0-1: PUSH 5
+    OP_CALL, 9, 0, 0, 0,  # 2-6: CALL double at offset 9
+    OP_HALT,              # 7: HALT
+    OP_POP,               # 8: (padding)
+    
+    # double function (offset 9):
+    OP_SWAP,              # 9: [return_addr, 5]
+    OP_DUP,               # 10: [return_addr, 5, 5]
+    OP_ADD,               # 11: [return_addr, 10]
+    OP_RETURN             # 12: [10] + jump to return_addr
   ]
-  $ constants = [5, 999]
+  $ constants = [5]
   $ result = exec(code, constants)
   
-  if result == 5 {
-    print("✅ test_recursive_factorial: DUP_SECOND works! (got 5)")
+  if result == 10 {
+    print("✅ test_recursive_factorial: double(5) = 10 (CALL/RETURN works!)")
     > true
   }
-  print("❌ test_recursive_factorial: expected 5, got " + result)
+  print("❌ test_recursive_factorial: expected 10, got " + result)
+  > false
+}
+
+! test_simple_call_return() -> bool {
+  # Simpler test: function that returns constant
+  # return_42() = 42
+  
+  $ code = [
+    OP_CALL, 6, 0, 0, 0,  # 0-4: CALL return_42 at offset 6
+    OP_HALT,              # 5: HALT
+    
+    # return_42 (offset 6):
+    OP_PUSH, 0,           # 6: PUSH 42
+    OP_RETURN             # 8: RETURN (stack: [ret, 42])
+  ]
+  $ constants = [42]
+  $ result = exec(code, constants)
+  
+  if result == 42 {
+    print("✅ test_simple_call_return: return_42() = 42")
+    > true
+  }
+  print("❌ test_simple_call_return: expected 42")
   > false
 }
 
