@@ -1,0 +1,203 @@
+# bootstrap/vm.glyph
+# Self-hosted VM for GlyphLang bytecode execution.
+# Functional style - immutable structs, returns new states.
+
+# ─── Opcodes ───────────────────────────────────────────────────────
+
+const OP_PUSH  = 1
+const OP_POP   = 2
+const OP_ADD   = 16
+const OP_SUB   = 17
+const OP_MUL   = 18
+const OP_DIV   = 19
+const OP_HALT  = 255
+
+# ─── VM State ────────────────────────────────────────────────────────
+
+: VM {
+  stack: [int]!
+  pc: int!
+  halted: bool!
+}
+
+: PopResult {
+  vm: VM!
+  val: int!
+}
+
+# ─── VM Construction ────────────────────────────────────────────────
+
+! new_vm() -> VM {
+  > { stack: [], pc: 0, halted: false }
+}
+
+! vm_with_pc(vm: VM, pc: int) -> VM {
+  > { stack: vm.stack, pc: pc, halted: vm.halted }
+}
+
+! vm_with_stack(vm: VM, stack: [int]) -> VM {
+  > { stack: stack, pc: vm.pc, halted: vm.halted }
+}
+
+! vm_halted(vm: VM) -> VM {
+  > { stack: vm.stack, pc: vm.pc, halted: true }
+}
+
+# ─── Stack Operations ───────────────────────────────────────────────
+
+! vm_push(vm: VM, val: int) -> VM {
+  > { stack: vm.stack + [val], pc: vm.pc, halted: vm.halted }
+}
+
+! vm_pop(vm: VM) -> PopResult {
+  $ len = length(vm.stack)
+  if len == 0 {
+    print("Stack underflow!")
+    > { vm: vm_halted(vm), val: 0 }
+  }
+  $ val = vm.stack[len - 1]
+  $ new_stack = slice(vm.stack, 0, len - 1)
+  > { vm: vm_with_stack(vm, new_stack), val: val }
+}
+
+# ─── Execution ──────────────────────────────────────────────────────
+
+! vm_exec(vm: VM, code: [int], constants: [int]) -> int {
+  $ current = vm
+  while !current.halted && current.pc < length(code) {
+    $ op = code[current.pc]
+    $ result = vm_step(current, op, code, constants)
+    $ current = result.vm
+  }
+  $ final = vm_pop(current)
+  > final.val
+}
+
+: StepResult {
+  vm: VM!
+}
+
+! vm_step(vm: VM, op: int, code: [int], constants: [int]) -> StepResult {
+  if op == OP_PUSH {
+    $ idx = code[vm.pc + 1]
+    $ vm2 = vm_push(vm, constants[idx])
+    $ vm3 = vm_with_pc(vm2, vm.pc + 2)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_POP {
+    $ result = vm_pop(vm)
+    $ vm2 = vm_with_pc(result.vm, vm.pc + 1)
+    > { vm: vm2 }
+  }
+  
+  if op == OP_ADD {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ vm2 = vm_push(ra.vm, ra.val + rb.val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_SUB {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ vm2 = vm_push(ra.vm, ra.val - rb.val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_MUL {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ vm2 = vm_push(ra.vm, ra.val * rb.val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_DIV {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    if rb.val == 0 {
+      print("Division by zero!")
+      > { vm: vm_halted(vm) }
+    }
+    $ vm2 = vm_push(ra.vm, ra.val / rb.val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_HALT {
+    > { vm: vm_halted(vm) }
+  }
+  
+  print("Unknown opcode: " + str(op))
+  > { vm: vm_halted(vm) }
+}
+
+# ─── Entry Point ─────────────────────────────────────────────────────
+
+! exec(code: [int], constants: [int]) -> int {
+  $ vm = new_vm()
+  > vm_exec(vm, code, constants)
+}
+
+# ─── Tests ───────────────────────────────────────────────────────────
+
+! test_simple() -> bool {
+  $ code = [OP_PUSH, 0, OP_HALT]
+  $ constants = [42]
+  $ result = exec(code, constants)
+  if result == 42 {
+    print("✅ test_simple: 42")
+    > true
+  }
+  print("❌ test_simple: expected 42, got " + str(result))
+  > false
+}
+
+! test_arithmetic() -> bool {
+  $ code = [OP_PUSH, 0, OP_PUSH, 1, OP_ADD, OP_PUSH, 2, OP_MUL, OP_HALT]
+  $ constants = [5, 3, 2]
+  $ result = exec(code, constants)
+  if result == 16 {
+    print("✅ test_arithmetic: (5+3)*2 = 16")
+    > true
+  }
+  print("❌ test_arithmetic: expected 16, got " + str(result))
+  > false
+}
+
+! test_subtraction() -> bool {
+  $ code = [OP_PUSH, 0, OP_PUSH, 1, OP_SUB, OP_HALT]
+  $ constants = [10, 7]
+  $ result = exec(code, constants)
+  if result == 3 {
+    print("✅ test_subtraction: 10-7 = 3")
+    > true
+  }
+  print("❌ test_subtraction: expected 3, got " + str(result))
+  > false
+}
+
+@ command run {
+  print("=== Bootstrap VM Tests ===")
+  print("")
+  
+  $ passed = 0
+  
+  if test_simple() { $ passed = passed + 1 }
+  if test_arithmetic() { $ passed = passed + 1 }
+  if test_subtraction() { $ passed = passed + 1 }
+  
+  print("")
+  if passed == 0 { print("Results: 0/3 passed") }
+  if passed == 1 { print("Results: 1/3 passed") }
+  if passed == 2 { print("Results: 2/3 passed") }
+  if passed == 3 { 
+    print("Results: 3/3 passed")
+    print("🎉 All tests passed!")
+  }
+  
+  > { ok: true }
+}
