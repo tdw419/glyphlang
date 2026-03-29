@@ -127,7 +127,12 @@ type VM struct {
 	maxSteps int
 
 	// JIT profiler for hot path optimization
-	profiler *SimpleProfiler
+	profiler ProfileRecorder
+}
+
+// SetProfiler sets the profiler for this VM.
+func (vm *VM) SetProfiler(p ProfileRecorder) {
+	vm.profiler = p
 }
 
 // NewVM creates a new virtual machine

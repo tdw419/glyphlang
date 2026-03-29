@@ -402,6 +402,27 @@ Examples:
 	aiCmd.Flags().Bool("show-code", false, "Display the generated GlyphLang code")
 	aiCmd.Flags().Bool("code-only", false, "Only output the generated code (no execution)")
 
+	// Profile command - show profiling data from bytecode execution
+	var profileCmd = &cobra.Command{
+		Use:   "profile <bytecode>",
+		Short: "Profile bytecode execution and show hot paths",
+		Long: `Profile bytecode execution to identify hot paths and optimization opportunities.
+
+Executes the bytecode multiple times and reports:
+  - Top routes by execution time
+  - Hot paths exceeding threshold
+  - Inline candidates
+  - Type stability analysis
+
+Examples:
+  glyph profile app.glyphc
+  glyph profile app.glyphc --runs 1000 --threshold 50`,
+		Args: cobra.ExactArgs(1),
+		RunE: runProfile,
+	}
+	profileCmd.Flags().Int("runs", 100, "Number of execution runs")
+	profileCmd.Flags().Int("threshold", 50, "Hot path threshold (executions)")
+
 	// Version command
 	var versionCmd = &cobra.Command{
 		Use:   "version",
@@ -450,6 +471,7 @@ Runs one or more parallel VM instances via WebGPU compute shaders.`,
 	gpuCmd.Flags().Bool("shader", false, "Print the WGSL compute shader source")
 	gpuCmd.Flags().Bool("spatial", false, "Show Hilbert curve spatial grid visualization")
 	rootCmd.AddCommand(gpuCmd)
+	rootCmd.AddCommand(profileCmd)
 
 	rootCmd.AddCommand(versionCmd)
 
