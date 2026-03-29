@@ -465,19 +465,26 @@ const HEAP_BASE = 2000000
   if op == OP_CALL {
     $ target = read_addr(code, vm.pc + 1)
     $ return_addr = vm.pc + 5
-    $ vm2 = vm_push(vm, return_addr)
-    $ vm3 = vm_push(vm2, vm.fp)
-    $ vm4 = vm_with_fp(vm3, length(vm3.stack))
+    # Stack layout: [..., arg, old_fp, return_addr]
+    # FP points to old_fp position (stack_top - 1)
+    $ vm2 = vm_push(vm, vm.fp)
+    $ vm3 = vm_push(vm2, return_addr)
+    $ vm4 = vm_with_fp(vm3, length(vm3.stack) - 2)  # FP points to old_fp
     $ vm5 = vm_with_pc(vm4, target)
     > { vm: vm5 }
   }
   
   if op == OP_RETURN {
+    # Stack: [..., arg, old_fp, return_addr, ..., result]
     $ result = vm_pop(vm)
-    $ fp_result = vm_pop(result.vm)
+    # Pop return_addr first (top of call frame)
+    $ addr_result = vm_pop(result.vm)
+    # Pop old_fp second
+    $ fp_result = vm_pop(addr_result.vm)
+    # Restore FP and PC
     $ vm2 = vm_with_fp(fp_result.vm, fp_result.val)
-    $ addr_result = vm_pop(vm2)
-    $ vm3 = vm_with_pc(addr_result.vm, addr_result.val)
+    $ vm3 = vm_with_pc(vm2, addr_result.val)
+    # Push result back
     $ vm4 = vm_push(vm3, result.val)
     > { vm: vm4 }
   }
@@ -778,7 +785,9 @@ const HEAP_BASE = 2000000
     OP_POP,               # 8: (padding)
     
     # factorial function (offset 9):
-    OP_LOAD_FP, -3,       # 9: Load n from FP-3
+    # Stack: [arg, old_fp, return_addr]
+    # FP points to old_fp, so arg is at FP-1
+    OP_LOAD_FP, -1,       # 9: Load n from FP-1
     OP_PUSH, 1,           # 10: PUSH 1
     OP_LE,                # 11: n <= 1?
     OP_JUMP_IF_FALSE, 22, 0, 0, 0,  # 12-16: If false, jump to recursive case
@@ -788,11 +797,11 @@ const HEAP_BASE = 2000000
     OP_RETURN,            # 21: RETURN
     
     # Recursive case (offset 22):
-    OP_LOAD_FP, -3,       # 22: Load n
+    OP_LOAD_FP, -1,       # 22: Load n from FP-1
     OP_PUSH, 1,           # 23: PUSH 1
     OP_SUB,               # 24: n - 1
     OP_CALL, 9, 0, 0, 0,  # 25-29: CALL factorial(n-1)
-    OP_LOAD_FP, -3,       # 30: Load n again
+    OP_LOAD_FP, -1,       # 30: Load n again from FP-1
     OP_MUL,               # 31: n * factorial(n-1)
     OP_RETURN             # 32: RETURN result
   ]
