@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -80,8 +81,8 @@ func registerRoute(router *server.Router, route *ast.Route, interp *interpreter.
 }
 
 // registerCompiledRoute registers a compiled route with the router
-func registerCompiledRoute(router *server.Router, route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter) error {
-	handler := createCompiledRouteHandler(route, bytecode, wsHub, gpuInterp)
+func registerCompiledRoute(router *server.Router, route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter, jitMgr *JITRouteManager) error {
+	handler := createCompiledRouteHandler(route, bytecode, wsHub, gpuInterp, jitMgr)
 
 	serverRoute := &server.Route{
 		Method:  convertHTTPMethod(route.Method),
@@ -93,8 +94,20 @@ func registerCompiledRoute(router *server.Router, route *ast.Route, bytecode []b
 }
 
 // createCompiledRouteHandler creates an HTTP handler that executes compiled bytecode
-func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter) server.RouteHandler {
+func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter, jitMgr *JITRouteManager) server.RouteHandler {
+	// Mutable bytecode reference — JIT may swap in upgraded bytecode
+	currentBytecode := bytecode
+	routeName := fmt.Sprintf("%s %s", route.Method, route.Path)
+	var bytecodeMu sync.RWMutex
+
 	return func(ctx *server.Context) error {
+		execStart := time.Now()
+
+		// Use current (possibly JIT-upgraded) bytecode
+		bytecodeMu.RLock()
+		activeBytecode := currentBytecode
+		bytecodeMu.RUnlock()
+
 		// Prepare locals for injection
 		locals := make(map[string]vm.Value)
 
@@ -132,7 +145,7 @@ func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websoc
 		if gpuInterp != nil {
 			// Note: Current GPU implementation is optimized for pure compute.
 			// If the route requires complex IO or Stdlib, it may need refinement.
-			gpuResult, gpuErr := gpuInterp.ExecuteBytecode(bytecode)
+			gpuResult, gpuErr := gpuInterp.ExecuteBytecode(activeBytecode)
 			if gpuErr == nil && gpuResult.Error == nil {
 				switch gpuResult.Tag {
 				case 1: // TagInt
@@ -167,7 +180,7 @@ func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websoc
 		}
 
 		// Execute compiled bytecode
-		result, err = vmInstance.Execute(bytecode)
+		result, err = vmInstance.Execute(activeBytecode)
 		if err != nil {
 			printError(fmt.Errorf("bytecode execution failed: %w", err))
 			ctx.StatusCode = http.StatusInternalServerError
@@ -175,6 +188,16 @@ func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websoc
 			return json.NewEncoder(ctx.ResponseWriter).Encode(map[string]interface{}{
 				"error": "Internal server error",
 			})
+		}
+
+		// Record execution for JIT tier progression
+		if jitMgr != nil {
+			execTime := time.Since(execStart)
+			if upgraded := jitMgr.RecordExecution(routeName, execTime); upgraded != nil {
+				bytecodeMu.Lock()
+				currentBytecode = upgraded
+				bytecodeMu.Unlock()
+			}
 		}
 
 		// Set response

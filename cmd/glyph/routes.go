@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,7 +18,7 @@ import (
 // setupRoutes handles the common logic of determining execution mode, compiling routes,
 // and setting up the router. Used by both startServer and startDevServerInternal.
 // filePath is the path to the source file, used for resolving relative module imports.
-func setupRoutes(module *ast.Module, filePath string, forceInterpreter bool, useGPU bool) (useCompiler bool, compiledRoutes map[string][]byte, wsServer *websocket.Server, router *server.Router, err error) {
+func setupRoutes(module *ast.Module, filePath string, forceInterpreter bool, useGPU bool) (useCompiler bool, compiledRoutes map[string][]byte, wsServer *websocket.Server, router *server.Router, jitManager *JITRouteManager, err error) {
 	useCompiler = true
 	if forceInterpreter {
 		useCompiler = false
@@ -45,12 +46,15 @@ func setupRoutes(module *ast.Module, filePath string, forceInterpreter bool, use
 		}
 	}
 
+	// JIT route manager for tier progression
+	var jitMgr *JITRouteManager
+
 	// Try to compile routes if using compiler mode
 	if useCompiler {
-		c := compiler.NewCompilerWithOptLevel(compiler.OptBasic)
+		jitMgr = NewJITRouteManager()
 		for _, item := range module.Items {
 			if route, ok := item.(*ast.Route); ok {
-				bytecode, compileErr := c.CompileRoute(route)
+				bytecode, compileErr := jitMgr.CompileRoute(route)
 				if compileErr != nil {
 					// Semantic errors (like redeclaration) should fail completely, not fall back
 					if compiler.IsSemanticError(compileErr) {
@@ -59,6 +63,7 @@ func setupRoutes(module *ast.Module, filePath string, forceInterpreter bool, use
 					}
 					printWarning(fmt.Sprintf("Compilation failed for %s: %v, falling back to interpreter", route.Path, compileErr))
 					useCompiler = false
+					jitMgr = nil
 					break
 				}
 				compiledRoutes[route.Path] = bytecode
@@ -87,7 +92,7 @@ func setupRoutes(module *ast.Module, filePath string, forceInterpreter bool, use
 		for _, item := range module.Items {
 			if route, ok := item.(*ast.Route); ok {
 				bytecode := compiledRoutes[route.Path]
-				regErr := registerCompiledRoute(router, route, bytecode, wsServer.GetHub(), gpuInterp)
+				regErr := registerCompiledRoute(router, route, bytecode, wsServer.GetHub(), gpuInterp, jitMgr)
 				if regErr != nil {
 					printWarning(fmt.Sprintf("Failed to register route %s: %v", route.Path, regErr))
 				} else {
@@ -131,7 +136,7 @@ func setupRoutes(module *ast.Module, filePath string, forceInterpreter bool, use
 		}
 	}
 
-	return useCompiler, compiledRoutes, wsServer, router, nil
+	return useCompiler, compiledRoutes, wsServer, router, jitMgr, nil
 }
 
 // startServer is the unified server startup function used by both 'run' and 'dev' commands.
@@ -150,7 +155,7 @@ func startServer(filePath string, port int, forceInterpreter bool, useGPU bool) 
 	}
 
 	// Use shared logic for route compilation/interpretation
-	useCompiler, _, wsServer, router, err := setupRoutes(module, filePath, forceInterpreter, useGPU)
+	useCompiler, _, wsServer, router, jitMgr, err := setupRoutes(module, filePath, forceInterpreter, useGPU)
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +163,15 @@ func startServer(filePath string, port int, forceInterpreter bool, useGPU bool) 
 	// Create HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", createHandler(router))
+
+	// JIT stats endpoint for monitoring tier progression
+	if jitMgr != nil {
+		mux.HandleFunc("/_jit/stats", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(jitMgr.DetailedStats())
+		})
+		printInfo("JIT stats: http://localhost:" + fmt.Sprintf("%d", port) + "/_jit/stats")
+	}
 
 	// Register WebSocket routes with HTTP mux
 	for _, item := range module.Items {
@@ -186,7 +200,7 @@ func startServer(filePath string, port int, forceInterpreter bool, useGPU bool) 
 
 	// Start server in background
 	go func() {
-		mode := "compiled"
+		mode := "compiled+JIT"
 		if !useCompiler {
 			mode = "interpreted"
 		}

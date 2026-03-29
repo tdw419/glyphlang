@@ -74,7 +74,7 @@ func (m *hotReloadManager) startDevServerInternal() (*http.Server, error) {
 	}
 
 	// Use shared logic for route compilation/interpretation
-	useCompiler, _, wsServer, router, err := setupRoutes(module, m.filePath, false, m.useGPU)
+	useCompiler, _, wsServer, router, _, err := setupRoutes(module, m.filePath, false, m.useGPU)
 	if err != nil {
 		return nil, err
 	}
