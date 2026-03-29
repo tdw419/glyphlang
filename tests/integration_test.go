@@ -611,8 +611,8 @@ func TestErrorPropagation(t *testing.T) {
 
 	t.Run("http_status_mapping", func(t *testing.T) {
 		tests := []struct {
-			errMsg      string
-			expectCode  int
+			errMsg     string
+			expectCode int
 		}{
 			{"not found", 404},
 			{"user not found", 404},

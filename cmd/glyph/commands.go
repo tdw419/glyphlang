@@ -277,7 +277,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		// Execute bytecode
 		start := time.Now()
 		var result interface{}
-		
+
 		if useGPU {
 			// GPU execution path
 			printInfo("Using GPU compute shader execution...")
@@ -308,7 +308,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("bytecode execution failed: %w", err)
 			}
 		}
-		
+
 		execTime := time.Since(start)
 		printSuccess("Bytecode executed successfully")
 		printInfo(fmt.Sprintf("Execution time: %s", execTime))

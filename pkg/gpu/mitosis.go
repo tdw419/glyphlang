@@ -37,9 +37,9 @@ func NewMitosisVM(maxThreads int) *MitosisVM {
 // ThreadResult contains the result from one VM thread including spawn info.
 type ThreadResult struct {
 	ThreadID int
-	ParentID int     // -1 for root thread
+	ParentID int // -1 for root thread
 	Result   Result
-	Children []int   // IDs of spawned child threads
+	Children []int // IDs of spawned child threads
 }
 
 // ExecuteWithMitosis runs bytecode with S opcode support.

@@ -112,8 +112,8 @@ func runModInit(cmd *cobra.Command, args []string) error {
 
 	// Create mod file
 	modFile := &mod.ModFile{
-		Module: modulePath,
-		Glyph:  mod.Version{Major: 0, Minor: 6, Patch: 0},
+		Module:  modulePath,
+		Glyph:   mod.Version{Major: 0, Minor: 6, Patch: 0},
 		Require: []mod.Require{},
 	}
 
@@ -134,7 +134,7 @@ func runModAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	packagePath := args[0]
-	
+
 	// Parse version if provided
 	var version mod.Version
 	if len(args) > 1 {
@@ -148,7 +148,7 @@ func runModAdd(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("creating resolver: %w", err)
 		}
-		
+
 		version, err = resolver.GetLatestVersion(packagePath)
 		if err != nil {
 			// If can't fetch latest, use a default

@@ -375,10 +375,10 @@ func (l *Logger) log(level LogLevel, msg string, fields map[string]interface{}, 
 		l.writeLog(entry)
 	}
 
-	// Exit on FATAL
+	// Panic on FATAL
 	if level == FATAL {
 		l.Close()
-		os.Exit(1)
+		panic(entry.Message)
 	}
 }
 

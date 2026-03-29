@@ -144,7 +144,7 @@ const (
 	_
 	_
 	_
-	_ // 116-127 reserved
+	_              // 116-127 reserved
 	OP_BUILD_ARRAY // 128
 	_
 	_
@@ -364,16 +364,16 @@ type Function struct {
 
 // VM is a minimal virtual machine
 type VM struct {
-	bytecode   []byte
-	ip         int
-	stack      []Value
-	sp         int
-	globals    map[string]Value
-	constants  []Value
-	functions  map[string]*Function
-	callStack  []callFrame
-	callSP     int
-	output     strings.Builder
+	bytecode  []byte
+	ip        int
+	stack     []Value
+	sp        int
+	globals   map[string]Value
+	constants []Value
+	functions map[string]*Function
+	callStack []callFrame
+	callSP    int
+	output    strings.Builder
 }
 
 type callFrame struct {

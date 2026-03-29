@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GlyphLang Playground</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        header {
+            background: #161b22;
+            padding: 12px 20px;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        header h1 {
+            font-size: 18px;
+            color: #58a6ff;
+        }
+        
+        header .version {
+            background: #238636;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+        
+        header .links {
+            margin-left: auto;
+            display: flex;
+            gap: 15px;
+        }
+        
+        header a {
+            color: #8b949e;
+            text-decoration: none;
+        }
+        
+        header a:hover {
+            color: #58a6ff;
+        }
+        
+        main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        .editor-pane, .output-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #30363d;
+        }
+        
+        .output-pane {
+            border-right: none;
+        }
+        
+        .pane-header {
+            background: #161b22;
+            padding: 8px 15px;
+            font-size: 13px;
+            color: #8b949e;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .pane-header .status {
+            margin-left: auto;
+            font-size: 12px;
+        }
+        
+        .pane-header .status.success {
+            color: #3fb950;
+        }
+        
+        .pane-header .status.error {
+            color: #f85149;
+        }
+        
+        #editor {
+            flex: 1;
+            resize: none;
+            background: #0d1117;
+            color: #c9d1d9;
+            border: none;
+            padding: 15px;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            outline: none;
+        }
+        
+        #output {
+            flex: 1;
+            background: #0d1117;
+            padding: 15px;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 14px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .toolbar {
+            background: #161b22;
+            padding: 10px 15px;
+            border-top: 1px solid #30363d;
+            display: flex;
+            gap: 10px;
+        }
+        
+        button {
+            background: #21262d;
+            color: #c9d1d9;
+            border: 1px solid #30363d;
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        
+        button:hover {
+            background: #30363d;
+            border-color: #8b949e;
+        }
+        
+        button.primary {
+            background: #238636;
+            border-color: #238636;
+            color: white;
+        }
+        
+        button.primary:hover {
+            background: #2ea043;
+        }
+        
+        .examples {
+            margin-left: auto;
+        }
+        
+        select {
+            background: #21262d;
+            color: #c9d1d9;
+            border: 1px solid #30363d;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        
+        .loading {
+            color: #8b949e;
+            font-style: italic;
+        }
+        
+        .result-json {
+            color: #79c0ff;
+        }
+        
+        .error-text {
+            color: #f85149;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🔷 GlyphLang</h1>
+        <span class="version">v0.6.0-alpha</span>
+        <span>AI-Native Backend Language</span>
+        <div class="links">
+            <a href="https://github.com/tdw419/glyphlang" target="_blank">GitHub</a>
+            <a href="https://docs.openclaw.ai/glyphlang" target="_blank">Docs</a>
+        </div>
+    </header>
+    
+    <main>
+        <div class="editor-pane">
+            <div class="pane-header">
+                📝 Source Code
+                <span id="editorStatus" class="status"></span>
+            </div>
+            <textarea id="editor" spellcheck="false" placeholder="// Enter GlyphLang code here...
+// Example:
+GET /hello {
+    respond { message: &quot;Hello, World!&quot; }
+}">// Fibonacci
+fn fib(n: int): int {
+    if n <= 1 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+// Test
+fib(10)</textarea>
+            <div class="toolbar">
+                <button class="primary" onclick="runCode()">▶ Run</button>
+                <button onclick="compileCode()">📦 Compile</button>
+                <button onclick="clearAll()">🗑 Clear</button>
+                <div class="examples">
+                    <select onchange="loadExample(this.value)">
+                        <option value="">Load Example...</option>
+                        <option value="hello">Hello World</option>
+                        <option value="fib">Fibonacci</option>
+                        <option value="factorial">Factorial</option>
+                        <option value="route">HTTP Route</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <div class="output-pane">
+            <div class="pane-header">
+                📤 Output
+                <span id="outputStatus" class="status"></span>
+            </div>
+            <div id="output"><span class="loading">Run code to see output...</span></div>
+        </div>
+    </main>
+
+    <script src="wasm_exec.js"></script>
+    <script>
+        const go = new Go();
+        let wasmModule;
+        
+        // Load WASM module
+        WebAssembly.instantiateStreaming(fetch('glyph.wasm'), go.importObject).then((result) => {
+            wasmModule = result.instance;
+            go.run(wasmModule);
+            console.log('GlyphLang WASM loaded');
+            document.getElementById('editorStatus').textContent = 'WASM Ready';
+            document.getElementById('editorStatus').className = 'status success';
+        }).catch((err) => {
+            console.error('WASM load failed:', err);
+            document.getElementById('editorStatus').textContent = 'WASM Failed';
+            document.getElementById('editorStatus').className = 'status error';
+        });
+        
+        const examples = {
+            hello: `// Hello World
+"Hello, World!"`,
+            
+            fib: `// Fibonacci
+fn fib(n: int): int {
+    if n <= 1 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+fib(15)`,
+            
+            factorial: `// Factorial
+fn factorial(n: int): int {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+factorial(10)`,
+            
+            route: `// HTTP Route Definition
+GET /users/:id {
+    let user = {
+        id: params.id,
+        name: "John Doe",
+        email: "john@example.com"
+    }
+    respond user
+}
+
+// This would create a route handler
+// Access via: GET /users/123`
+        };
+        
+        let wasmReady = false;
+        
+        // Wait for WASM to load
+        function waitForWasm() {
+            if (typeof glyphRun === 'function') {
+                wasmReady = true;
+                document.getElementById('editorStatus').textContent = 'WASM Ready';
+                document.getElementById('editorStatus').className = 'status success';
+            } else {
+                setTimeout(waitForWasm, 100);
+            }
+        }
+        
+        // Start waiting after glyph.js loads
+        setTimeout(waitForWasm, 500);
+        
+        function runCode() {
+            if (!wasmReady) {
+                showOutput('WASM not loaded yet...', true);
+                return;
+            }
+            
+            const source = document.getElementById('editor').value;
+            showOutput('Running...');
+            
+            try {
+                const result = JSON.parse(glyphRun(source));
+                
+                if (result.success) {
+                    showOutput(JSON.stringify(result.result, null, 2));
+                    setStatus('outputStatus', `${result.time_ms}ms`, true);
+                } else {
+                    showOutput(result.error, true);
+                    setStatus('outputStatus', 'Error', false);
+                }
+            } catch (e) {
+                showOutput('Error: ' + e.message, true);
+                setStatus('outputStatus', 'Error', false);
+            }
+        }
+        
+        function compileCode() {
+            if (!wasmReady) {
+                showOutput('WASM not loaded yet...', true);
+                return;
+            }
+            
+            const source = document.getElementById('editor').value;
+            showOutput('Compiling...');
+            
+            try {
+                const result = JSON.parse(glyphCompile(source));
+                
+                if (result.success) {
+                    showOutput(`Compiled: ${result.size} bytes (${result.time_ms}ms)\n\nBytecode (hex):\n${bytesToHex(result.bytecode)}`);
+                    setStatus('outputStatus', `${result.size}B`, true);
+                } else {
+                    showOutput(result.error, true);
+                    setStatus('outputStatus', 'Error', false);
+                }
+            } catch (e) {
+                showOutput('Error: ' + e.message, true);
+            }
+        }
+        
+        function clearAll() {
+            document.getElementById('editor').value = '';
+            document.getElementById('output').innerHTML = '<span class="loading">Run code to see output...</span>';
+            setStatus('editorStatus', '');
+            setStatus('outputStatus', '');
+        }
+        
+        function loadExample(name) {
+            if (examples[name]) {
+                document.getElementById('editor').value = examples[name];
+            }
+        }
+        
+        function showOutput(text, isError = false) {
+            const output = document.getElementById('output');
+            if (isError) {
+                output.innerHTML = `<span class="error-text">${escapeHtml(text)}</span>`;
+            } else {
+                output.innerHTML = `<pre class="result-json">${escapeHtml(text)}</pre>`;
+            }
+        }
+        
+        function setStatus(id, text, success = true) {
+            const el = document.getElementById(id);
+            el.textContent = text;
+            el.className = 'status ' + (success ? 'success' : 'error');
+        }
+        
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+        
+        function bytesToHex(bytes) {
+            if (!bytes || bytes.length === 0) return '(empty)';
+            const hex = bytes.slice(0, 100).map(b => b.toString(16).padStart(2, '0')).join(' ');
+            return hex + (bytes.length > 100 ? '...' : '');
+        }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                runCode();
+            }
+        });
+    </script>
+</body>
+</html>

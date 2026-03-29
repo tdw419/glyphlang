@@ -116,10 +116,10 @@ func TestSimpleAdd(t *testing.T) {
 	// 10 + 5 = 15
 	constants := []interface{}{10, 5}
 	var code []byte
-	code = append(code, pushConst(0)...)  // push 10
-	code = append(code, pushConst(1)...)  // push 5
-	code = append(code, 0x10)             // ADD
-	code = append(code, 0xFF)             // HALT
+	code = append(code, pushConst(0)...) // push 10
+	code = append(code, pushConst(1)...) // push 5
+	code = append(code, 0x10)            // ADD
+	code = append(code, 0xFF)            // HALT
 
 	bytecode := buildBytecode(constants, code)
 
@@ -226,10 +226,10 @@ func TestVariables(t *testing.T) {
 	// x = 42; load x; halt → result should be 42
 	constants := []interface{}{42}
 	var code []byte
-	code = append(code, pushConst(0)...)  // push 42
-	code = append(code, storeVar(0)...)   // store to var[0]
-	code = append(code, loadVar(0)...)    // load var[0]
-	code = append(code, 0xFF)             // HALT
+	code = append(code, pushConst(0)...) // push 42
+	code = append(code, storeVar(0)...)  // store to var[0]
+	code = append(code, loadVar(0)...)   // load var[0]
+	code = append(code, 0xFF)            // HALT
 
 	d := NewDispatcher()
 	result, err := d.ExecuteOne(buildBytecode(constants, code))
@@ -247,15 +247,15 @@ func TestConditionalJump(t *testing.T) {
 	constants := []interface{}{false, 1, 2}
 
 	var code []byte
-	code = append(code, pushConst(0)...)       // push false (const 0)
+	code = append(code, pushConst(0)...) // push false (const 0)
 	// jump_if_false to offset 20 (else branch)
-	code = append(code, jumpIfFalse(20)...)    // 5 bytes
+	code = append(code, jumpIfFalse(20)...) // 5 bytes
 	// then branch: push 1, store, jump to end
-	code = append(code, pushConst(1)...)       // push 1 (offset 10)
-	code = append(code, storeVar(0)...)        // store x (offset 15)
-	code = append(code, jump(25)...)           // jump to halt (offset 20)
+	code = append(code, pushConst(1)...) // push 1 (offset 10)
+	code = append(code, storeVar(0)...)  // store x (offset 15)
+	code = append(code, jump(25)...)     // jump to halt (offset 20)
 	// else branch: push 2, store
-	code = append(code, pushConst(2)...)       // push 2 (offset 25... wait, recalc)
+	code = append(code, pushConst(2)...) // push 2 (offset 25... wait, recalc)
 
 	// Let me recalculate offsets more carefully:
 	// offset 0: pushConst(0) = 5 bytes → ends at 5
@@ -270,15 +270,15 @@ func TestConditionalJump(t *testing.T) {
 
 	// Redo with correct offsets:
 	code = nil
-	code = append(code, pushConst(0)...)       // 0-4: push false
-	code = append(code, jumpIfFalse(25)...)    // 5-9: jump to else at 25
-	code = append(code, pushConst(1)...)       // 10-14: push 1
-	code = append(code, storeVar(0)...)        // 15-19: store x
-	code = append(code, jump(35)...)           // 20-24: jump to end at 35
-	code = append(code, pushConst(2)...)       // 25-29: push 2 (else branch)
-	code = append(code, storeVar(0)...)        // 30-34: store x
-	code = append(code, loadVar(0)...)         // 35-39: load x
-	code = append(code, 0xFF)                  // 40: HALT
+	code = append(code, pushConst(0)...)    // 0-4: push false
+	code = append(code, jumpIfFalse(25)...) // 5-9: jump to else at 25
+	code = append(code, pushConst(1)...)    // 10-14: push 1
+	code = append(code, storeVar(0)...)     // 15-19: store x
+	code = append(code, jump(35)...)        // 20-24: jump to end at 35
+	code = append(code, pushConst(2)...)    // 25-29: push 2 (else branch)
+	code = append(code, storeVar(0)...)     // 30-34: store x
+	code = append(code, loadVar(0)...)      // 35-39: load x
+	code = append(code, 0xFF)               // 40: HALT
 
 	d := NewDispatcher()
 	result, err := d.ExecuteOne(buildBytecode(constants, code))
@@ -472,8 +472,8 @@ func BenchmarkSingleVM(b *testing.B) {
 	constants := []interface{}{1, 1000}
 	// Simple loop: x = 0, while x < 1000: x = x + 1
 	var code []byte
-	code = append(code, pushConst(0)...)    // push 0 (initial x)     0-4
-	code = append(code, storeVar(0)...)     // store x                5-9
+	code = append(code, pushConst(0)...) // push 0 (initial x)     0-4
+	code = append(code, storeVar(0)...)  // store x                5-9
 	// loop start at offset 10:
 	code = append(code, loadVar(0)...)      // load x                 10-14
 	code = append(code, pushConst(1)...)    // push 1000              15-19
@@ -485,8 +485,8 @@ func BenchmarkSingleVM(b *testing.B) {
 	// Redo: need constant for 0 (initial) and 1 (increment) and 1000 (limit)
 	constants = []interface{}{0, 1, 1000}
 	code = nil
-	code = append(code, pushConst(0)...)    // push 0                 0-4
-	code = append(code, storeVar(0)...)     // store x                5-9
+	code = append(code, pushConst(0)...) // push 0                 0-4
+	code = append(code, storeVar(0)...)  // store x                5-9
 	// loop:
 	code = append(code, loadVar(0)...)      // load x                 10-14
 	code = append(code, pushConst(2)...)    // push 1000              15-19

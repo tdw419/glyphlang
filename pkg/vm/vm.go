@@ -101,8 +101,8 @@ type WebSocketHandler interface {
 
 // CallFrame saves the state when entering a function call.
 type CallFrame struct {
-	returnPC int               // Program counter to return to
-	locals   map[string]Value  // Caller's local variables
+	returnPC int              // Program counter to return to
+	locals   map[string]Value // Caller's local variables
 }
 
 // VM represents the virtual machine
@@ -113,8 +113,8 @@ type VM struct {
 	constants  []Value
 	builtins   map[string]BuiltinFunc
 	functions  map[string]FunctionValue // User-defined functions
-	callStack  []CallFrame             // Call frame stack
-	iterators  map[int]*Iterator       // track iterators by ID
+	callStack  []CallFrame              // Call frame stack
+	iterators  map[int]*Iterator        // track iterators by ID
 	nextIterID int
 	pc         int // program counter
 	code       []byte

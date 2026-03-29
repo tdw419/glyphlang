@@ -20,10 +20,10 @@ import (
 )
 
 var (
-	gpuMu     sync.Mutex
-	gpuOnce   sync.Once
-	gpuReady  bool
-	gpuErr    error
+	gpuMu    sync.Mutex
+	gpuOnce  sync.Once
+	gpuReady bool
+	gpuErr   error
 )
 
 // hasGPUDevice returns true if GPU is available and initialized.
@@ -37,17 +37,17 @@ func initGPU() error {
 		// Create instance descriptor
 		var instanceDesc C.WGPUInstanceDescriptor
 		instanceDesc.nextInChain = nil
-		
+
 		instance := C.wgpuCreateInstance(&instanceDesc)
 		if instance == nil {
 			gpuErr = fmt.Errorf("failed to create WebGPU instance")
 			return
 		}
-		
+
 		// Request adapter (simplified - real impl needs async callback)
 		// For now, mark as ready if instance creation succeeded
 		// Full adapter/device creation happens in executeGPU
-		
+
 		gpuReady = true
 		_ = instance // Will be used in full implementation
 	})
@@ -58,18 +58,18 @@ func initGPU() error {
 func (d *Dispatcher) executeGPU(bytecode []byte, config *Config) ([]Result, error) {
 	gpuMu.Lock()
 	defer gpuMu.Unlock()
-	
+
 	// Initialize GPU if needed
 	if err := initGPU(); err != nil {
 		d.hasGPU = false
 		return nil, fmt.Errorf("GPU init failed: %w", err)
 	}
-	
+
 	numVMs := int(config.NumVMs)
 	if numVMs == 0 {
 		numVMs = 1
 	}
-	
+
 	// TODO: Full implementation:
 	// 1. Request adapter with callback
 	// 2. Request device with required features
@@ -81,23 +81,23 @@ func (d *Dispatcher) executeGPU(bytecode []byte, config *Config) ([]Result, erro
 	// 8. Submit and wait for completion
 	// 9. Map vm_states buffer and read results
 	// 10. Convert VMState to Result
-	
+
 	// Mark GPU as available (for metrics/logging)
 	d.hasGPU = true
-	
+
 	// For now, run CPU simulation with GPU-compatible layout
 	// This allows testing the full pipeline without actual GPU execution
 	cpuResults, err := d.executeCPU(bytecode, config)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Tag results to indicate GPU path was taken
 	for i := range cpuResults {
 		// Add marker to distinguish GPU path in benchmarks
 		cpuResults[i].Steps = cpuResults[i].Steps + 1000000
 	}
-	
+
 	return cpuResults, nil
 }
 

@@ -452,8 +452,8 @@ func (UnaryOpExpr) isExpr() {}
 // TryExpression represents a try expression for error propagation
 // Example: try db.get("users", id) - unwraps union type, propagates error if failure
 type TryExpression struct {
-	Expr Expr  // The expression to evaluate
-	Pos  Pos   // Position in source
+	Expr Expr // The expression to evaluate
+	Pos  Pos  // Position in source
 }
 
 func (TryExpression) isExpr() {}

@@ -109,10 +109,10 @@ func rot(n, x, y, rx, ry int) (int, int) {
 
 // SpatialGrid represents bytecode mapped onto a 2D grid for visualization.
 type SpatialGrid struct {
-	Width    int
-	Height   int
-	Cells    []GridCell
-	Mapper   *HilbertMapper
+	Width  int
+	Height int
+	Cells  []GridCell
+	Mapper *HilbertMapper
 }
 
 // GridCell represents one cell in the spatial grid.

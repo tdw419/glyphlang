@@ -18,34 +18,34 @@ Priority: Code quality, testing gaps, CI/CD. Unblock v1.0.
 - [ ] Release automation (goreleaser on tag push)
 
 ### P2: Code Quality (13 items from CODE_REVIEW_ISSUES.md)
-- [ ] P2-1: Run gofmt across all 72 files with violations
-- [ ] P2-2: Split cmd/glyph/main.go (459 lines) into separate command files
-- [ ] P2-3: Decompose evaluateFunctionCall() (618 lines) in interpreter
-- [ ] P2-4: Move AST types from pkg/interpreter to pkg/ast
-- [ ] P2-5: Move MockInterpreter to test-only file
+- [x] P2-1: Run gofmt across all 72 files with violations
+- [x] P2-2: Split cmd/glyph/main.go (459 lines) into separate command files
+- [x] P2-3: Decompose evaluateFunctionCall() (618 lines) in interpreter
+- [x] P2-4: Move AST types from pkg/interpreter to pkg/ast
+- [x] P2-5: Move MockInterpreter to test-only file
 - [ ] P2-6: Replace stub test assertions with real tests
-- [ ] P2-7: Resolve remaining TODO comments
+- [x] P2-7: Resolve remaining TODO comments
 - [ ] P2-8: Dead code cleanup
 - [ ] P2-9: Consistent pointer vs value types in compiler
-- [ ] P2-10: Inject version via ldflags (remove hardcoded string)
-- [ ] P2-11: Enforce gofmt in CI (covered by CI/CD above)
-- [ ] P2-12: Remove os.Exit() from non-main functions
-- [ ] P2-13: Scrub database passwords from log output
+- [x] P2-10: Inject version via ldflags (remove hardcoded string)
+- [x] P2-11: Enforce gofmt in CI (covered by CI/CD above)
+- [x] P2-12: Remove os.Exit() from non-main functions
+- [x] P2-13: Scrub database passwords from log output
 
 ### P3: Test Coverage Gaps
-- [ ] Add tests for pkg/config (0 tests)
-- [ ] Add tests for pkg/runtime (0 tests)
-- [ ] Add tests for pkg/wasm (0 tests, stub package)
-- [ ] Strengthen pkg/jit tests (3 tests for 2,945 LOC)
-- [ ] Strengthen pkg/lsp tests (6 tests for 8,477 LOC)
+- [x] Add tests for pkg/config (0 tests)
+- [x] Add tests for pkg/runtime (0 tests)
+- [x] Add tests for pkg/wasm (0 tests, stub package)
+- [x] Strengthen pkg/jit tests (3 tests for 2,945 LOC)
+- [x] Strengthen pkg/lsp tests (6 tests for 8,477 LOC)
 - [ ] Replace stub assertions in existing tests (P2-6)
 
 ### P4: Documentation
-- [ ] Create README.md (project overview, quickstart, architecture)
+- [x] Create README.md (project overview, quickstart, architecture)
 - [ ] Create CLAUDE.md (AI assistant context file)
-- [ ] Document bootstrap design rationale (why self-hosting matters)
-- [ ] Document GPU spatial grid execution model
-- [ ] Document bytecode format (GLYP header, LE encoding, constant pool)
+- [x] Document bootstrap design rationale (why self-hosting matters)
+- [x] Document GPU spatial grid execution model
+- [x] Document bytecode format (GLYP header, LE encoding, constant pool)
 
 ---
 

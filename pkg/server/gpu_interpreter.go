@@ -32,12 +32,12 @@ func (g *GPUInterpreter) Execute(route *Route, ctx *Context) (interface{}, error
 	// Routes without custom handlers need to be compiled
 	// For now, we use the CPU VM as the primary executor
 	// with GPU acceleration for specific operations
-	
+
 	// The GPU path is used for:
 	// 1. Parallel batch processing (multiple requests)
 	// 2. Compute-intensive operations
 	// 3. Array/map operations that benefit from parallelization
-	
+
 	// For single-route execution, use the standard VM
 	// GPU execution is triggered via --gpu flag or batch operations
 	return nil, fmt.Errorf("GPU interpreter requires compiled bytecode; use standard interpreter for dynamic routes")
@@ -48,7 +48,7 @@ func (g *GPUInterpreter) Execute(route *Route, ctx *Context) (interface{}, error
 func (g *GPUInterpreter) ExecuteBytecode(bytecode []byte) (*gpu.Result, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	
+
 	return g.dispatcher.ExecuteOne(bytecode)
 }
 
@@ -57,7 +57,7 @@ func (g *GPUInterpreter) ExecuteBytecode(bytecode []byte) (*gpu.Result, error) {
 func (g *GPUInterpreter) ExecuteBatch(bytecode []byte, numVMs int) ([]gpu.Result, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	
+
 	return g.dispatcher.Execute(bytecode, numVMs)
 }
 
@@ -69,8 +69,8 @@ func (g *GPUInterpreter) Dispatcher() *gpu.Dispatcher {
 // HybridInterpreter combines GPU and CPU execution.
 // Routes are analyzed to determine the best execution path.
 type HybridInterpreter struct {
-	gpu  *GPUInterpreter
-	cpu  *vm.VM
+	gpu *GPUInterpreter
+	cpu *vm.VM
 }
 
 // NewHybridInterpreter creates an interpreter that uses GPU when beneficial.

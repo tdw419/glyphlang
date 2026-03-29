@@ -27,7 +27,7 @@ func (v Version) String() string {
 func ParseVersion(s string) (Version, error) {
 	// Remove 'v' prefix if present
 	s = strings.TrimPrefix(s, "v")
-	
+
 	var major, minor, patch int
 	_, err := fmt.Sscanf(s, "%d.%d.%d", &major, &minor, &patch)
 	if err != nil {
@@ -48,18 +48,18 @@ func (r Require) String() string {
 
 // ModFile represents the contents of a glyph.mod file
 type ModFile struct {
-	Module  string     // Module path (e.g., "github.com/user/my-api")
-	Glyph   Version    // GlyphLang version requirement
-	Require []Require  // Dependencies
+	Module  string    // Module path (e.g., "github.com/user/my-api")
+	Glyph   Version   // GlyphLang version requirement
+	Require []Require // Dependencies
 }
 
 // String returns the glyph.mod file contents
 func (m *ModFile) String() string {
 	var sb strings.Builder
-	
+
 	sb.WriteString(fmt.Sprintf("module %s\n\n", m.Module))
 	sb.WriteString(fmt.Sprintf("glyph %s\n\n", m.Glyph))
-	
+
 	if len(m.Require) > 0 {
 		sb.WriteString("require (\n")
 		for _, req := range m.Require {
@@ -67,7 +67,7 @@ func (m *ModFile) String() string {
 		}
 		sb.WriteString(")\n")
 	}
-	
+
 	return sb.String()
 }
 
@@ -76,27 +76,27 @@ func ParseModFile(content string) (*ModFile, error) {
 	mod := &ModFile{
 		Require: []Require{},
 	}
-	
+
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	lineNum := 0
-	
+
 	inRequire := false
-	
+
 	for scanner.Scan() {
 		lineNum++
 		line := strings.TrimSpace(scanner.Text())
-		
+
 		// Skip empty lines and comments
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		
+
 		// Module directive
 		if strings.HasPrefix(line, "module ") {
 			mod.Module = strings.TrimPrefix(line, "module ")
 			continue
 		}
-		
+
 		// Glyph version directive
 		if strings.HasPrefix(line, "glyph ") {
 			vStr := strings.TrimPrefix(line, "glyph ")
@@ -107,65 +107,65 @@ func ParseModFile(content string) (*ModFile, error) {
 			mod.Glyph = v
 			continue
 		}
-		
+
 		// Require block
 		if line == "require (" {
 			inRequire = true
 			continue
 		}
-		
+
 		if inRequire && line == ")" {
 			inRequire = false
 			continue
 		}
-		
+
 		if inRequire {
 			// Parse: path version
 			parts := strings.Fields(line)
 			if len(parts) != 2 {
 				return nil, fmt.Errorf("line %d: invalid require syntax, expected 'path version'", lineNum)
 			}
-			
+
 			v, err := ParseVersion(parts[1])
 			if err != nil {
 				return nil, fmt.Errorf("line %d: %w", lineNum, err)
 			}
-			
+
 			mod.Require = append(mod.Require, Require{
 				Path:    parts[0],
 				Version: v,
 			})
 		}
 	}
-	
+
 	if mod.Module == "" {
 		return nil, fmt.Errorf("missing module directive")
 	}
-	
+
 	return mod, nil
 }
 
 // LoadModFile loads and parses a glyph.mod file from the given directory
 func LoadModFile(dir string) (*ModFile, error) {
 	modPath := filepath.Join(dir, "glyph.mod")
-	
+
 	content, err := os.ReadFile(modPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading glyph.mod: %w", err)
 	}
-	
+
 	return ParseModFile(string(content))
 }
 
 // WriteModFile writes a ModFile to disk
 func WriteModFile(dir string, mod *ModFile) error {
 	modPath := filepath.Join(dir, "glyph.mod")
-	
+
 	content := mod.String()
 	if !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	
+
 	return os.WriteFile(modPath, []byte(content), 0644)
 }
 
@@ -178,7 +178,7 @@ func (m *ModFile) AddRequire(path string, version Version) {
 			return
 		}
 	}
-	
+
 	m.Require = append(m.Require, Require{
 		Path:    path,
 		Version: version,

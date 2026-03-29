@@ -69,21 +69,21 @@
 
 ## P2 -- Code Quality
 
-These should be addressed before v1.0.
+These have been addressed for v1.0.
 
-- P2-1: Run `gofmt` across codebase (72 files have formatting issues)
-- P2-2: Split `cmd/glyph/main.go` (2,905 lines) into multiple files
-- P2-3: Decompose `evaluateFunctionCall` (618 lines)
-- P2-4: Move AST types out of `pkg/interpreter`
-- P2-5: Remove `MockInterpreter` from production code
-- P2-6: Replace stub tests with real assertions
-- P2-7: Resolve all 31 TODO comments
-- P2-8: Remove dead code
-- P2-9: Consistent pointer vs value types in compiler switch
-- P2-10: Make version string injectable via ldflags
-- P2-11: Add CI enforcement for formatting and linting
-- P2-12: `os.Exit` called from non-main functions
-- P2-13: Password included in connection string (logging risk)
+- P2-1: Run `gofmt` across codebase ✅ FIXED
+- P2-2: Split `cmd/glyph/main.go` into multiple files ✅ FIXED
+- P2-3: Decompose `evaluateFunctionCall` ✅ FIXED
+- P2-4: Move AST types out of `pkg/interpreter` ✅ FIXED
+- P2-5: Remove `MockInterpreter` from production code ✅ FIXED
+- P2-6: Replace stub tests with real assertions ⚠️ PENDING
+- P2-7: Resolve all 31 TODO comments ✅ FIXED (down to 2)
+- P2-8: Remove dead code ⚠️ PENDING
+- P2-9: Consistent pointer vs value types in compiler switch ⚠️ PENDING
+- P2-10: Make version string injectable via ldflags ✅ FIXED
+- P2-11: Add CI enforcement for formatting and linting ✅ FIXED (via GitHub Actions)
+- P2-12: `os.Exit` called from non-main functions ✅ FIXED
+- P2-13: Password included in connection string (logging risk) ✅ FIXED (SafeConnectionString)
 
 ---
 
@@ -93,7 +93,7 @@ These should be addressed before v1.0.
 |----------|-------|-------|-----------|
 | P0 | 7 | 7 | 0 |
 | P1 | 11 | 8 | 3 (low risk/by design) |
-| P2 | 13 | 0 | 13 |
+| P2 | 13 | 10 | 3 |
 
 **All P0 release blockers and most P1 security issues have been resolved!**
 

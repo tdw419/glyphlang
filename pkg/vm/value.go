@@ -145,9 +145,9 @@ func (v *FutureValue) Await() (Value, error) {
 // ResultValue represents a Result type for error handling (Ok or Err)
 // Used by the try operator for unwrapping success or propagating errors
 type ResultValue struct {
-	Val   Value   // The success value (when IsErr is false)
+	Val    Value  // The success value (when IsErr is false)
 	ErrMsg string // Error message (when IsErr is true)
-	IsErr bool    // True if this is an error result
+	IsErr  bool   // True if this is an error result
 }
 
 func (v *ResultValue) Type() string { return "result" }

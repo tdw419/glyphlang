@@ -166,7 +166,6 @@ func (i *Interpreter) executeAssign(stmt AssignStatement, env *Environment) (int
 	return value, nil
 }
 
-
 // executeFieldAssign handles dot-notation field assignment like obj.field = value
 func (i *Interpreter) executeFieldAssign(objName, fieldPath string, valueExpr Expr, env *Environment) (interface{}, error) {
 	objVal, err := env.Get(objName)

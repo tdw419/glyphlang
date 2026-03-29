@@ -67,6 +67,10 @@ func (s *Server) Start() error {
 
 		// Handle message
 		if err := s.handleMessage(msg); err != nil {
+			if err.Error() == "exit" {
+				s.logger.Println("Exit notification received")
+				return nil
+			}
 			s.logger.Printf("Error handling message: %v", err)
 		}
 	}
@@ -213,7 +217,7 @@ func (s *Server) handleNotification(notif *Notification) error {
 	case "textDocument/didClose":
 		return s.handleDidClose(notif.Params)
 	case "exit":
-		os.Exit(0)
+		return fmt.Errorf("exit")
 	default:
 		s.logger.Printf("Unknown notification: %s", notif.Method)
 	}

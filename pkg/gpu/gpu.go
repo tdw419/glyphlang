@@ -24,10 +24,10 @@ import (
 var shaderSource string
 
 const (
-	MaxStack   = 256
-	MaxVars    = 64
-	MaxVMs     = 4096
-	MaxSteps   = 100000
+	MaxStack      = 256
+	MaxVars       = 64
+	MaxVMs        = 4096
+	MaxSteps      = 100000
 	WorkgroupSize = 64
 )
 
@@ -41,11 +41,11 @@ const (
 
 // Error codes from GPU execution
 const (
-	ErrNone          uint32 = 0
-	ErrStackOverflow uint32 = 1
+	ErrNone           uint32 = 0
+	ErrStackOverflow  uint32 = 1
 	ErrStackUnderflow uint32 = 2
-	ErrDivByZero     uint32 = 3
-	ErrMaxSteps      uint32 = 4
+	ErrDivByZero      uint32 = 3
+	ErrMaxSteps       uint32 = 4
 )
 
 // Config matches the WGSL Config struct layout (8 x u32 = 32 bytes)
@@ -62,14 +62,14 @@ type Config struct {
 
 // VMState matches the WGSL VMState struct layout (8 x u32 = 32 bytes)
 type VMState struct {
-	PC        uint32
-	SP        uint32
-	Halted    uint32
-	Error     uint32
-	Steps     uint32
-	ResultTag uint32
+	PC         uint32
+	SP         uint32
+	Halted     uint32
+	Error      uint32
+	Steps      uint32
+	ResultTag  uint32
 	ResultData int32
-	Pad       uint32
+	Pad        uint32
 }
 
 // GpuValue matches the WGSL GpuValue struct (tag u32 + data i32 = 8 bytes)
@@ -80,20 +80,20 @@ type GpuValue struct {
 
 // Result represents the output of a single GPU VM execution
 type Result struct {
-	Tag    uint32
-	IntVal int64
+	Tag      uint32
+	IntVal   int64
 	FloatVal float64
-	BoolVal bool
-	Error  error
-	Steps  uint32
+	BoolVal  bool
+	Error    error
+	Steps    uint32
 }
 
 // Dispatcher manages GPU compute shader execution.
 // In environments without WebGPU, it falls back to CPU simulation.
 type Dispatcher struct {
-	mu       sync.Mutex
-	shader   string
-	hasGPU   bool
+	mu     sync.Mutex
+	shader string
+	hasGPU bool
 }
 
 // NewDispatcher creates a GPU compute dispatcher.
