@@ -125,6 +125,9 @@ type VM struct {
 
 	// Maximum number of execution steps (0 = unlimited)
 	maxSteps int
+
+	// JIT profiler for hot path optimization
+	profiler *SimpleProfiler
 }
 
 // NewVM creates a new virtual machine
@@ -141,6 +144,7 @@ func NewVM() *VM {
 		nextIterID: 0,
 		pc:         0,
 		halted:     false,
+		profiler:   NewSimpleProfiler(),
 	}
 	vm.registerBuiltins()
 	return vm
@@ -148,6 +152,13 @@ func NewVM() *VM {
 
 // Execute runs bytecode
 func (vm *VM) Execute(bytecode []byte) (Value, error) {
+	start := time.Now()
+	defer func() {
+		if vm.profiler != nil {
+			vm.profiler.Record("vm_execute", time.Since(start))
+		}
+	}()
+
 	if len(bytecode) < 4 {
 		return nil, fmt.Errorf("invalid bytecode: too short")
 	}
