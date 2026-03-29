@@ -1,23 +1,26 @@
-# Bootstrap VM Roadmap: v0.9.6 → v1.0.0
+# Bootstrap VM Roadmap: v0.9.9 → v1.0.0
 
-**Current State (v0.9.6):**
-- 23/32 opcodes implemented in bootstrap VM
+**Current State (v0.9.9):**
+- Bootstrap cycle achieved — compiler.glyph self-compiles to 351 instructions
+- 4/4 bootstrap tests passing
 - Recursion working (factorial(5) = 120)
-- Self-compilation works (compiler.glyph → bytecode via Go VM)
-- **Gap:** bootstrap VM cannot yet execute compiler output (missing object/array/string ops)
+- FP-relative stack reads with stack_base in frame header
+- Reference interpreter: tools/ref_vm.py
+- **Known bug:** arr[i].field chaining (parser postfix loop)
+- **Next:** v0.10.0 — iterators, multi-arg, drop Go dependency
 
 ---
 
-## v0.9.7 — Object & Array Opcodes [PRIORITY: 3]
+## ~~v0.9.7 — Object & Array Opcodes~~ ✅ COMPLETE
 
 **Goal:** Implement 5 defined-but-unimplemented opcodes
 
 ### Tasks
-- [ ] OP_BUILD_OBJECT (0x70) — construct {key: value} on the stack
-- [ ] OP_GET_FIELD (0x71) — read obj.field
-- [ ] OP_SET_FIELD (0x72) — write obj.field = val
-- [ ] OP_BUILD_ARRAY (0x80) — construct [a, b, c] on the stack
-- [ ] OP_DEF_FUNC (0x73) — define a named function
+- [x] OP_BUILD_OBJECT (0x70) — construct {key: value} on the stack
+- [x] OP_GET_FIELD (0x71) — read obj.field
+- [x] OP_SET_FIELD (0x72) — write obj.field = val
+- [x] OP_BUILD_ARRAY (0x80) — construct [a, b, c] on the stack
+- [x] OP_DEF_FUNC (0x73) — define a named function
 
 **Why first:** The compiler emits these opcodes. The bootstrap VM can't run any real GlyphLang program without them — every route handler returns an object.
 
@@ -25,7 +28,7 @@
 
 ---
 
-## v0.9.8 — String & Index Operations [PRIORITY: 4]
+## ~~v0.9.8 — String & Index Operations~~ ✅ COMPLETE
 
 **Goal:** Enable string manipulation and array indexing
 
@@ -41,7 +44,7 @@
 
 ---
 
-## v0.9.9 — Bootstrap Cycle (THE MILESTONE) [PRIORITY: 3]
+## ~~v0.9.9 — Bootstrap Cycle (THE MILESTONE)~~ ✅ COMPLETE
 
 **Goal:** Wire the full pipeline inside the bootstrap VM
 
