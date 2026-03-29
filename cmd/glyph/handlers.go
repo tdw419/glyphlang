@@ -81,8 +81,8 @@ func registerRoute(router *server.Router, route *ast.Route, interp *interpreter.
 }
 
 // registerCompiledRoute registers a compiled route with the router
-func registerCompiledRoute(router *server.Router, route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter, jitMgr *JITRouteManager) error {
-	handler := createCompiledRouteHandler(route, bytecode, wsHub, gpuInterp, jitMgr)
+func registerCompiledRoute(router *server.Router, route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter, jitMgr *JITRouteManager, forceGPU bool) error {
+	handler := createCompiledRouteHandler(route, bytecode, wsHub, gpuInterp, jitMgr, forceGPU)
 
 	serverRoute := &server.Route{
 		Method:  convertHTTPMethod(route.Method),
@@ -94,7 +94,7 @@ func registerCompiledRoute(router *server.Router, route *ast.Route, bytecode []b
 }
 
 // createCompiledRouteHandler creates an HTTP handler that executes compiled bytecode
-func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter, jitMgr *JITRouteManager) server.RouteHandler {
+func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter, jitMgr *JITRouteManager, forceGPU bool) server.RouteHandler {
 	// Mutable bytecode reference — JIT may swap in upgraded bytecode
 	currentBytecode := bytecode
 	routeName := fmt.Sprintf("%s %s", route.Method, route.Path)
@@ -141,8 +141,13 @@ func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websoc
 		var result interface{}
 		var err error
 
-		// Try GPU execution if enabled
-		if gpuInterp != nil {
+		// Try GPU execution if forced or if JIT detected it as beneficial
+		useGPU := forceGPU
+		if !useGPU && jitMgr != nil && jitMgr.ShouldUseGPU(routeName) {
+			useGPU = true
+		}
+
+		if useGPU && gpuInterp != nil {
 			// Note: Current GPU implementation is optimized for pure compute.
 			// If the route requires complex IO or Stdlib, it may need refinement.
 			gpuResult, gpuErr := gpuInterp.ExecuteBytecode(activeBytecode)
@@ -156,6 +161,10 @@ func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websoc
 					result = gpuResult.BoolVal
 				default:
 					result = nil
+				}
+				// Record successful GPU execution if JIT is enabled
+				if jitMgr != nil {
+					jitMgr.RecordExecution(routeName, time.Since(execStart))
 				}
 				// Success via GPU
 				ctx.StatusCode = http.StatusOK

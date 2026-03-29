@@ -84,7 +84,7 @@ func setupRoutes(module *ast.Module, filePath string, forceInterpreter bool, use
 	interp := newConfiguredInterpreter()
 
 	var gpuInterp *server.GPUInterpreter
-	if useGPU {
+	if useGPU || useCompiler {
 		gpuInterp = server.NewGPUInterpreter()
 	}
 
@@ -92,7 +92,7 @@ func setupRoutes(module *ast.Module, filePath string, forceInterpreter bool, use
 		for _, item := range module.Items {
 			if route, ok := item.(*ast.Route); ok {
 				bytecode := compiledRoutes[route.Path]
-				regErr := registerCompiledRoute(router, route, bytecode, wsServer.GetHub(), gpuInterp, jitMgr)
+				regErr := registerCompiledRoute(router, route, bytecode, wsServer.GetHub(), gpuInterp, jitMgr, useGPU)
 				if regErr != nil {
 					printWarning(fmt.Sprintf("Failed to register route %s: %v", route.Path, regErr))
 				} else {

@@ -687,6 +687,44 @@ func loadConstant(bytecode []byte, config *Config, idx uint32) GpuValue {
 	return GpuValue{TagNull, 0}
 }
 
+// IsGPUCompatible checks if the bytecode contains only opcodes supported by the GPU backend.
+func IsGPUCompatible(bytecode []byte) bool {
+	if len(bytecode) < 4 || string(bytecode[:4]) != "GLYP" {
+		return false
+	}
+
+	config, err := parseBytecodeLayout(bytecode)
+	if err != nil {
+		return false
+	}
+
+	code := bytecode[config.CodeOffset:]
+	for i := 0; i < len(code); {
+		op := code[i]
+		
+		// Check if opcode is supported
+		supported := false
+		switch op {
+		case 0x01, 0x02, 0x10, 0x11, 0x12, 0x13, 0x14, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x40, 0x41, 0x50, 0x51, 0x52, 0x61, 0xFF:
+			supported = true
+		}
+
+		if !supported {
+			return false
+		}
+
+		// Advance i based on opcode operands
+		// Opcodes 0x01, 0x40, 0x41, 0x50, 0x51, 0x52 have 4-byte operands
+		if (op == 0x01) || (op >= 0x40 && op <= 0x41) || (op >= 0x50 && op <= 0x52) {
+			i += 5
+		} else {
+			i += 1
+		}
+	}
+
+	return true
+}
+
 func stateToResult(state *VMState) Result {
 	r := Result{
 		Tag:   state.ResultTag,

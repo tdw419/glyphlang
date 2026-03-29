@@ -6,101 +6,135 @@ import (
 	"time"
 
 	"github.com/glyphlang/glyph/pkg/ast"
+	"github.com/glyphlang/glyph/pkg/gpu"
 	"github.com/glyphlang/glyph/pkg/jit"
 )
 
-// JITRouteManager manages JIT compilation and tier progression for routes.
-// It wraps the JIT compiler to provide live recompilation of hot routes.
+// JITRouteManager manages the lifecycle of JIT-optimized routes.
+// It tracks execution frequency and upgrades routes to higher tiers.
 type JITRouteManager struct {
-	jitCompiler *jit.JITCompiler
-	routes      map[string]*ast.Route // route name → AST for recompilation
-	mu          sync.RWMutex
+	compiler *jit.JITCompiler
+	routes   map[string]*ast.Route
+	gpuReady map[string]bool // routes detected as GPU-compatible and beneficial
+	mu       sync.RWMutex
 }
 
-// NewJITRouteManager creates a JIT route manager with default settings.
+// NewJITRouteManager creates a new JIT manager for routes.
 func NewJITRouteManager() *JITRouteManager {
 	return &JITRouteManager{
-		jitCompiler: jit.NewJITCompiler(),
-		routes:      make(map[string]*ast.Route),
+		compiler: jit.NewJITCompiler(),
+		routes:   make(map[string]*ast.Route),
+		gpuReady: make(map[string]bool),
 	}
 }
 
-// CompileRoute compiles a route through the JIT pipeline with tier-aware optimization.
-// Returns bytecode at the appropriate optimization level.
-func (m *JITRouteManager) CompileRoute(route *ast.Route) ([]byte, error) {
-	name := fmt.Sprintf("%s %s", route.Method, route.Path)
+// CompileRoute performs the initial baseline compilation.
+func (j *JITRouteManager) CompileRoute(route *ast.Route) ([]byte, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
 
-	m.mu.Lock()
-	m.routes[name] = route
-	m.mu.Unlock()
+	routeName := fmt.Sprintf("%s %s", route.Method, route.Path)
+	j.routes[routeName] = route
 
-	return m.jitCompiler.CompileRoute(name, route)
+	// Initial compilation at Tier 1 (Baseline)
+	bytecode, err := j.compiler.CompileRoute(routeName, route)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initial check for GPU compatibility
+	if gpu.IsGPUCompatible(bytecode) {
+		fmt.Printf("[JIT] Route %s is GPU-compatible\n", routeName)
+	}
+
+	return bytecode, nil
 }
 
-// RecordExecution records a route execution and returns upgraded bytecode if
-// the route was recompiled to a higher tier, or nil if no recompilation occurred.
-func (m *JITRouteManager) RecordExecution(routeName string, executionTime time.Duration) []byte {
-	m.jitCompiler.RecordExecution(routeName, executionTime)
+// RecordExecution logs a route execution and checks for tier upgrades or GPU offload.
+// Returns upgraded bytecode if an upgrade occurred, nil otherwise.
+func (j *JITRouteManager) RecordExecution(routeName string, duration time.Duration) []byte {
+	// Record execution in profiler
+	j.compiler.RecordExecution(routeName, duration)
 
-	// Check if the route should be recompiled
-	m.mu.RLock()
-	route, exists := m.routes[routeName]
-	m.mu.RUnlock()
-
+	// Get stats from JIT compiler
+	unit, exists := j.compiler.GetUnit(routeName)
 	if !exists {
 		return nil
 	}
 
-	// Try to get recompiled bytecode (will return cached if no recompile needed)
-	unit, ok := m.jitCompiler.GetUnit(routeName)
-	if !ok {
+	// Check if we should upgrade to GPU offload
+	// Strategy: If route is GPU-compatible and avg duration > 5ms, enable GPU offload
+	profile := j.compiler.GetProfiler().GetProfile(routeName)
+	if profile != nil && profile.ExecutionCount > 20 {
+		avgMs := float64(profile.TotalTime.Milliseconds()) / float64(profile.ExecutionCount)
+		
+		j.mu.RLock()
+		isGpuReady := j.gpuReady[routeName]
+		j.mu.RUnlock()
+
+		if !isGpuReady && avgMs > 5.0 && gpu.IsGPUCompatible(unit.Bytecode) {
+			j.mu.Lock()
+			j.gpuReady[routeName] = true
+			j.mu.Unlock()
+			fmt.Printf("[JIT] Enabling auto GPU-offload for %s (avg: %.2fms)\n", routeName, avgMs)
+		}
+	}
+
+	// Check if we should recompile to a higher tier
+	route, _ := j.getRoute(routeName)
+	if route == nil {
 		return nil
 	}
 
-	// Use CompileRoute which internally checks shouldRecompile
-	bytecode, err := m.jitCompiler.CompileRoute(routeName, route)
+	recompiled, err := j.compiler.CheckAdaptiveRecompilation(routeName, route)
 	if err != nil {
+		fmt.Printf("[JIT] Warning: Recompilation failed for %s: %v\n", routeName, err)
 		return nil
 	}
 
-	// Check if tier actually changed (bytecode was upgraded)
-	newUnit, ok := m.jitCompiler.GetUnit(routeName)
-	if !ok || newUnit.Tier == unit.Tier {
-		return nil
+	if recompiled {
+		newUnit, _ := j.compiler.GetUnit(routeName)
+		return newUnit.Bytecode
 	}
 
-	printInfo(fmt.Sprintf("JIT tier upgrade: %s → %s (%s)",
-		tierName(unit.Tier), tierName(newUnit.Tier), routeName))
-
-	return bytecode
+	return nil
 }
 
-// Stats returns JIT statistics.
-func (m *JITRouteManager) Stats() jit.JITStats {
-	return m.jitCompiler.GetStats()
+// ShouldUseGPU returns true if the route should be offloaded to GPU.
+func (j *JITRouteManager) ShouldUseGPU(routeName string) bool {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return j.gpuReady[routeName]
 }
 
-// HotPaths returns currently hot routes.
-func (m *JITRouteManager) HotPaths() []string {
-	return m.jitCompiler.GetHotPaths()
+func (j *JITRouteManager) getRoute(name string) (*ast.Route, bool) {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	r, ok := j.routes[name]
+	return r, ok
 }
 
-// DetailedStats returns comprehensive JIT metrics.
-func (m *JITRouteManager) DetailedStats() map[string]interface{} {
-	return m.jitCompiler.GetDetailedStats()
-}
+// DetailedStats returns a summary of JIT performance.
+func (j *JITRouteManager) DetailedStats() interface{} {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
 
-func tierName(tier jit.OptimizationTier) string {
-	switch tier {
-	case jit.TierInterpreted:
-		return "interpreted"
-	case jit.TierBaseline:
-		return "baseline"
-	case jit.TierOptimized:
-		return "optimized"
-	case jit.TierHighlyOptimized:
-		return "aggressive"
-	default:
-		return "unknown"
+	summary := make(map[string]interface{})
+	for name := range j.routes {
+		unit, _ := j.compiler.GetUnit(name)
+		profile := j.compiler.GetProfiler().GetProfile(name)
+		if unit != nil && profile != nil {
+			summary[name] = map[string]interface{}{
+				"tier":            unit.Tier.String(),
+				"executions":      profile.ExecutionCount,
+				"avg_duration_ms": float64(profile.TotalTime.Milliseconds()) / float64(profile.ExecutionCount),
+				"gpu_offload":     j.gpuReady[name],
+			}
+		}
 	}
+	
+	// Add global JIT stats
+	summary["_global"] = j.compiler.GetDetailedStats()
+	
+	return summary
 }

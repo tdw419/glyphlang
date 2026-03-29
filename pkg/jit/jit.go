@@ -25,6 +25,21 @@ const (
 	TierHighlyOptimized                         // Aggressive optimizations for hot code
 )
 
+func (t OptimizationTier) String() string {
+	switch t {
+	case TierInterpreted:
+		return "Interpreted"
+	case TierBaseline:
+		return "Baseline"
+	case TierOptimized:
+		return "Optimized"
+	case TierHighlyOptimized:
+		return "HighlyOptimized"
+	default:
+		return fmt.Sprintf("Tier(%d)", t)
+	}
+}
+
 // CompilationUnit represents a compiled route or function
 type CompilationUnit struct {
 	Name           string
