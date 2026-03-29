@@ -80,8 +80,8 @@ func registerRoute(router *server.Router, route *ast.Route, interp *interpreter.
 }
 
 // registerCompiledRoute registers a compiled route with the router
-func registerCompiledRoute(router *server.Router, route *ast.Route, bytecode []byte, wsHub *websocket.Hub) error {
-	handler := createCompiledRouteHandler(route, bytecode, wsHub)
+func registerCompiledRoute(router *server.Router, route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter) error {
+	handler := createCompiledRouteHandler(route, bytecode, wsHub, gpuInterp)
 
 	serverRoute := &server.Route{
 		Method:  convertHTTPMethod(route.Method),
@@ -93,23 +93,18 @@ func registerCompiledRoute(router *server.Router, route *ast.Route, bytecode []b
 }
 
 // createCompiledRouteHandler creates an HTTP handler that executes compiled bytecode
-func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websocket.Hub) server.RouteHandler {
+func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter) server.RouteHandler {
 	return func(ctx *server.Context) error {
-		// Create VM instance
-		vmInstance := vm.NewVM()
+		// Prepare locals for injection
+		locals := make(map[string]vm.Value)
 
-		// Set up WebSocket stats handler if hub is available
-		if wsHub != nil {
-			wsHandler := websocket.NewVMStatsHandler(wsHub)
-			vmInstance.SetWebSocketHandler(wsHandler)
-		}
-
-		// Inject path parameters into VM locals
+		// Inject path parameters
 		for key, value := range ctx.PathParams {
-			vmInstance.SetLocal(key, vm.StringValue{Val: value})
+			locals[key] = vm.StringValue{Val: value}
 		}
 
-		// Parse and inject request body as 'input' for POST/PUT/PATCH requests
+		// Parse and inject request body as 'input'
+		var inputVal vm.Value = vm.NullValue{}
 		if ctx.Request.Method == "POST" || ctx.Request.Method == "PUT" || ctx.Request.Method == "PATCH" {
 			contentType := ctx.Request.Header.Get("Content-Type")
 			shouldParseJSON := contentType == "" ||
@@ -123,22 +118,57 @@ func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websoc
 				var bodyMap map[string]interface{}
 				decoder := json.NewDecoder(limitedReader)
 				if err := decoder.Decode(&bodyMap); err == nil {
-					vmInstance.SetLocal("input", interfaceToValue(bodyMap))
-				} else {
-					vmInstance.SetLocal("input", vm.NullValue{})
+					inputVal = interfaceToValue(bodyMap)
 				}
 				ctx.Request.Body.Close()
-			} else {
-				vmInstance.SetLocal("input", vm.NullValue{})
 			}
-		} else {
-			vmInstance.SetLocal("input", vm.NullValue{})
+		}
+		locals["input"] = inputVal
+
+		var result interface{}
+		var err error
+
+		// Try GPU execution if enabled
+		if gpuInterp != nil {
+			// Note: Current GPU implementation is optimized for pure compute.
+			// If the route requires complex IO or Stdlib, it may need refinement.
+			gpuResult, gpuErr := gpuInterp.ExecuteBytecode(bytecode)
+			if gpuErr == nil && gpuResult.Error == nil {
+				switch gpuResult.Tag {
+				case 1: // TagInt
+					result = gpuResult.IntVal
+				case 2: // TagFloat
+					result = gpuResult.FloatVal
+				case 3: // TagBool
+					result = gpuResult.BoolVal
+				default:
+					result = nil
+				}
+				// Success via GPU
+				ctx.StatusCode = http.StatusOK
+				ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
+				return json.NewEncoder(ctx.ResponseWriter).Encode(result)
+			}
+			// Fallback to CPU if GPU fails or is unsupported for this specific bytecode
+		}
+
+		// CPU VM Fallback
+		vmInstance := vm.NewVM()
+
+		// Set up WebSocket stats handler if hub is available
+		if wsHub != nil {
+			wsHandler := websocket.NewVMStatsHandler(wsHub)
+			vmInstance.SetWebSocketHandler(wsHandler)
+		}
+
+		// Inject locals into VM
+		for k, v := range locals {
+			vmInstance.SetLocal(k, v)
 		}
 
 		// Execute compiled bytecode
-		result, err := vmInstance.Execute(bytecode)
+		result, err = vmInstance.Execute(bytecode)
 		if err != nil {
-			// Log full error server-side, return generic message to client
 			printError(fmt.Errorf("bytecode execution failed: %w", err))
 			ctx.StatusCode = http.StatusInternalServerError
 			ctx.ResponseWriter.Header().Set("Content-Type", "application/json")

@@ -77,6 +77,7 @@ to rapidly build high-performance, secure backend applications.`,
 	devCmd.Flags().Uint16P("port", "p", uint16(config.DefaultPort), "Port to listen on")
 	devCmd.Flags().BoolP("watch", "w", true, "Watch for file changes")
 	devCmd.Flags().BoolP("open", "o", false, "Open browser automatically")
+	devCmd.Flags().Bool("gpu", false, "Execute routes on GPU compute shaders (parallel execution)")
 
 	// Init command
 	var initCmd = &cobra.Command{

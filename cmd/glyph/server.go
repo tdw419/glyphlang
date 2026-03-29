@@ -21,6 +21,7 @@ import (
 type hotReloadManager struct {
 	filePath        string
 	port            int
+	useGPU          bool
 	server          *http.Server
 	mu              sync.Mutex
 	watcher         *fsnotify.Watcher
@@ -73,7 +74,7 @@ func (m *hotReloadManager) startDevServerInternal() (*http.Server, error) {
 	}
 
 	// Use shared logic for route compilation/interpretation
-	useCompiler, _, wsServer, router, err := setupRoutes(module, m.filePath)
+	useCompiler, _, wsServer, router, err := setupRoutes(module, m.filePath, false, m.useGPU)
 	if err != nil {
 		return nil, err
 	}

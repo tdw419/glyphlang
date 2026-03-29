@@ -338,6 +338,7 @@ func runDev(cmd *cobra.Command, args []string) error {
 	port, _ := cmd.Flags().GetUint16("port")
 	watch, _ := cmd.Flags().GetBool("watch")
 	openBrowser, _ := cmd.Flags().GetBool("open")
+	useGPU, _ := cmd.Flags().GetBool("gpu")
 
 	printInfo(fmt.Sprintf("Starting development server on port %d...", port))
 
@@ -351,6 +352,7 @@ func runDev(cmd *cobra.Command, args []string) error {
 	manager := &hotReloadManager{
 		filePath:        absPath,
 		port:            int(port),
+		useGPU:          useGPU,
 		liveReloadConns: make(map[*liveReloadConn]bool),
 	}
 

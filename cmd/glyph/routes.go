@@ -17,9 +17,9 @@ import (
 // setupRoutes handles the common logic of determining execution mode, compiling routes,
 // and setting up the router. Used by both startServer and startDevServerInternal.
 // filePath is the path to the source file, used for resolving relative module imports.
-func setupRoutes(module *ast.Module, filePath string, forceInterpreter ...bool) (useCompiler bool, compiledRoutes map[string][]byte, wsServer *websocket.Server, router *server.Router, err error) {
+func setupRoutes(module *ast.Module, filePath string, forceInterpreter bool, useGPU bool) (useCompiler bool, compiledRoutes map[string][]byte, wsServer *websocket.Server, router *server.Router, err error) {
 	useCompiler = true
-	if len(forceInterpreter) > 0 && forceInterpreter[0] {
+	if forceInterpreter {
 		useCompiler = false
 	}
 	compiledRoutes = make(map[string][]byte)
@@ -78,15 +78,24 @@ func setupRoutes(module *ast.Module, filePath string, forceInterpreter ...bool) 
 	router = server.NewRouter()
 	interp := newConfiguredInterpreter()
 
+	var gpuInterp *server.GPUInterpreter
+	if useGPU {
+		gpuInterp = server.NewGPUInterpreter()
+	}
+
 	if useCompiler {
 		for _, item := range module.Items {
 			if route, ok := item.(*ast.Route); ok {
 				bytecode := compiledRoutes[route.Path]
-				regErr := registerCompiledRoute(router, route, bytecode, wsServer.GetHub())
+				regErr := registerCompiledRoute(router, route, bytecode, wsServer.GetHub(), gpuInterp)
 				if regErr != nil {
 					printWarning(fmt.Sprintf("Failed to register route %s: %v", route.Path, regErr))
 				} else {
-					printInfo(fmt.Sprintf("Compiled route: %s %s", route.Method, route.Path))
+					if useGPU {
+						printInfo(fmt.Sprintf("Compiled route (GPU accelerated): %s %s", route.Method, route.Path))
+					} else {
+						printInfo(fmt.Sprintf("Compiled route: %s %s", route.Method, route.Path))
+					}
 				}
 			}
 		}
@@ -141,16 +150,9 @@ func startServer(filePath string, port int, forceInterpreter bool, useGPU bool) 
 	}
 
 	// Use shared logic for route compilation/interpretation
-	useCompiler, compiledRoutes, wsServer, router, err := setupRoutes(module, filePath, forceInterpreter)
+	useCompiler, _, wsServer, router, err := setupRoutes(module, filePath, forceInterpreter, useGPU)
 	if err != nil {
 		return nil, err
-	}
-
-	// If GPU mode is enabled, wrap compiled routes with GPU execution
-	if useGPU && len(compiledRoutes) > 0 {
-		gpuInterp := server.NewGPUInterpreter()
-		printInfo(fmt.Sprintf("GPU mode enabled: %d routes compiled for GPU execution", len(compiledRoutes)))
-		_ = gpuInterp // GPU interpreter available for batch operations
 	}
 
 	// Create HTTP server
