@@ -1,0 +1,133 @@
+# bootstrap/test_vm_bootstrap.glyph
+# Test the self-hosted VM with simple bytecode programs.
+
+import "./vm"
+
+# ─── Test Helpers ────────────────────────────────────────────────────
+
+! test(name: str, result: any, expected: any) -> bool {
+  if result == expected {
+    print("✅ " + name)
+    > true
+  }
+  print("❌ " + name + " - got " + str(result) + ", expected " + str(expected))
+  > false
+}
+
+# ─── Test Programs ────────────────────────────────────────────────────
+
+# Test 1: Simple integer push
+# PUSH 0, HALT
+# Constant 0 = 42
+! test_simple_push() -> bool {
+  $ bytecode = [
+    71, 76, 89, 80,  # GLYP magic
+    1, 0, 0, 0,      # version 1
+    1, 0, 0, 0,      # 1 constant
+    1,               # int tag
+    42, 0, 0, 0, 0, 0, 0, 0,  # value 42 (8 bytes)
+    3, 0, 0, 0,      # 3 instructions
+    1, 0,            # PUSH 0
+    255              # HALT
+  ]
+  $ result = exec(bytecode)
+  > test("Simple Push", result, 42)
+}
+
+# Test 2: Arithmetic - (5 + 3) * 2 = 16
+# PUSH 0, PUSH 1, ADD, PUSH 2, MUL, HALT
+# Constants: [5, 3, 2]
+! test_arithmetic() -> bool {
+  $ bytecode = [
+    71, 76, 89, 80,  # GLYP magic
+    1, 0, 0, 0,      # version 1
+    3, 0, 0, 0,      # 3 constants
+    1, 5, 0, 0, 0, 0, 0, 0, 0,  # 5
+    1, 3, 0, 0, 0, 0, 0, 0, 0,  # 3
+    1, 2, 0, 0, 0, 0, 0, 0, 0,  # 2
+    7, 0, 0, 0,      # 7 instructions
+    1, 0,            # PUSH 0 (5)
+    1, 1,            # PUSH 1 (3)
+    16,              # ADD
+    1, 2,            # PUSH 2 (2)
+    18,              # MUL
+    255              # HALT
+  ]
+  $ result = exec(bytecode)
+  > test("Arithmetic (5+3)*2", result, 16)
+}
+
+# Test 3: Variables - x = 10, y = 20, x + y = 30
+! test_variables() -> bool {
+  $ bytecode = [
+    71, 76, 89, 80,  # GLYP magic
+    1, 0, 0, 0,      # version 1
+    3, 0, 0, 0,      # 3 constants (x, y, 10, 20)
+    3, 1, 0, 0,      # "x" (string tag, len 1)
+    120,             # 'x'
+    3, 1, 0, 0,      # "y"
+    121,             # 'y'
+    1, 10, 0, 0, 0, 0, 0, 0, 0,  # 10
+    1, 20, 0, 0, 0, 0, 0, 0, 0,  # 20
+    10, 0, 0, 0,     # 10 instructions
+    1, 2,            # PUSH 2 (10)
+    65, 0,           # STORE_VAR 0 (x)
+    1, 3,            # PUSH 3 (20)
+    65, 1,           # STORE_VAR 1 (y)
+    64, 0,           # LOAD_VAR 0 (x)
+    64, 1,           # LOAD_VAR 1 (y)
+    16,              # ADD
+    255              # HALT
+  ]
+  $ result = exec(bytecode)
+  > test("Variables x=10, y=20, x+y", result, 30)
+}
+
+# Test 4: Comparison and jump
+# if 5 < 10 { 1 } else { 0 }
+! test_conditional() -> bool {
+  $ bytecode = [
+    71, 76, 89, 80,  # GLYP magic
+    1, 0, 0, 0,      # version 1
+    2, 0, 0, 0,      # 2 constants
+    1, 5, 0, 0, 0, 0, 0, 0, 0,   # 5
+    1, 10, 0, 0, 0, 0, 0, 0, 0,  # 10
+    12, 0, 0, 0,     # 12 instructions
+    1, 0,            # PUSH 0 (5)
+    1, 1,            # PUSH 1 (10)
+    34,              # LT
+    81, 9, 0, 0, 0,  # JUMP_IF_FALSE 9
+    1, 0,            # PUSH 0 (true branch - just push something)
+    80, 11, 0, 0, 0, # JUMP 11
+    1, 1,            # PUSH 1 (false branch)
+    255              # HALT
+  ]
+  $ result = exec(bytecode)
+  # If 5 < 10, we push 0 (from constants), else push 1
+  > test("Conditional 5 < 10", result, 5)
+}
+
+# ─── Main Test Runner ────────────────────────────────────────────────
+
+! run_tests() {
+  print("=== Bootstrap VM Tests ===")
+  print("")
+  
+  $ passed = 0
+  $ total = 4
+  
+  if test_simple_push() { passed = passed + 1 }
+  if test_arithmetic() { passed = passed + 1 }
+  if test_variables() { passed = passed + 1 }
+  if test_conditional() { passed = passed + 1 }
+  
+  print("")
+  print("Results: " + str(passed) + "/" + str(total) + " passed")
+  
+  if passed == total {
+    print("🎉 All tests passed!")
+  }
+}
+
+# Run tests when executed directly
+run_tests()

@@ -1,0 +1,78 @@
+# bootstrap/value.glyph
+# Runtime value type tags for self-hosted GlyphLang VM.
+
+# ─── Type Tags ───────────────────────────────────────────────────────
+
+const TYPE_NULL  = 0
+const TYPE_INT   = 1
+const TYPE_FLOAT = 2
+const TYPE_STR   = 3
+const TYPE_BOOL  = 4
+const TYPE_ARRAY = 5
+const TYPE_OBJ   = 6
+const TYPE_FUNC  = 7
+
+# ─── Tagged Value ────────────────────────────────────────────────────
+
+# A tagged value stores both type and data.
+# We use an object with __tag field for runtime type checking.
+
+: TaggedValue {
+  __tag: int!
+  val: int!
+}
+
+# ─── Constructors ────────────────────────────────────────────────────
+
+! null_val() -> TaggedValue {
+  > { __tag: TYPE_NULL, val: 0 }
+}
+
+! int_val(n: int) -> TaggedValue {
+  > { __tag: TYPE_INT, val: n }
+}
+
+! bool_val(b: int) -> TaggedValue {
+  if b != 0 {
+    > { __tag: TYPE_BOOL, val: 1 }
+  }
+  > { __tag: TYPE_BOOL, val: 0 }
+}
+
+# ─── Type Checking ───────────────────────────────────────────────────
+
+! is_null(v: TaggedValue) -> int {
+  if v.__tag == TYPE_NULL { > 1 }
+  > 0
+}
+
+! is_int(v: TaggedValue) -> int {
+  if v.__tag == TYPE_INT { > 1 }
+  > 0
+}
+
+! is_bool(v: TaggedValue) -> int {
+  if v.__tag == TYPE_BOOL { > 1 }
+  > 0
+}
+
+# ─── Value Extraction ────────────────────────────────────────────────
+
+! get_int(v: TaggedValue) -> int {
+  if is_int(v) != 0 { > v.val }
+  > 0
+}
+
+! get_bool(v: TaggedValue) -> int {
+  if is_bool(v) != 0 { > v.val }
+  > 0
+}
+
+# ─── Type Name ───────────────────────────────────────────────────────
+
+! type_name(v: TaggedValue) -> str {
+  if v.__tag == TYPE_NULL { > "null" }
+  if v.__tag == TYPE_INT { > "int" }
+  if v.__tag == TYPE_BOOL { > "bool" }
+  > "unknown"
+}

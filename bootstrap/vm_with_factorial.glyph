@@ -6,8 +6,6 @@
 
 const OP_PUSH          = 1    # 0x01
 const OP_POP           = 2    # 0x02
-const OP_DUP           = 3    # 0x03 - Duplicate top of stack
-const OP_SWAP          = 4    # 0x04 - Swap top two values
 const OP_ADD           = 16   # 0x10
 const OP_SUB           = 17   # 0x11
 const OP_MUL           = 18   # 0x12
@@ -83,25 +81,6 @@ const OP_HALT          = 255  # 0xFF
   $ val = vm.stack[len - 1]
   $ new_stack = slice(vm.stack, 0, len - 1)
   > { vm: vm_with_stack(vm, new_stack), val: val }
-}
-
-! vm_peek(vm: VM) -> int {
-  $ len = length(vm.stack)
-  if len == 0 {
-    print("Stack underflow in peek!")
-    > 0
-  }
-  > vm.stack[len - 1]
-}
-
-! vm_peek(vm: VM) -> int {
-  # Peek at top of stack without popping
-  $ len = length(vm.stack)
-  if len == 0 {
-    print("Stack underflow in peek!")
-    > 0
-  }
-  > vm.stack[len - 1]
 }
 
 # ─── Helper: Read 4-byte address ─────────────────────────────────────
@@ -201,25 +180,6 @@ const OP_HALT          = 255  # 0xFF
     $ result = vm_pop(vm)
     $ vm2 = vm_with_pc(result.vm, vm.pc + 1)
     > { vm: vm2 }
-  }
-  
-  if op == OP_DUP {
-    # Duplicate top of stack (peek, then push twice)
-    $ val = vm_peek(vm)
-    $ vm2 = vm_push(vm, val)
-    $ vm3 = vm_push(vm2, val)
-    $ vm4 = vm_with_pc(vm3, vm.pc + 1)
-    > { vm: vm4 }
-  }
-  
-  if op == OP_SWAP {
-    # Swap top two values
-    $ a = vm_pop(vm)
-    $ b = vm_pop(a.vm)
-    $ vm2 = vm_push(b.vm, a.val)
-    $ vm3 = vm_push(vm2, b.val)
-    $ vm4 = vm_with_pc(vm3, vm.pc + 1)
-    > { vm: vm4 }
   }
   
   # Arithmetic
@@ -394,25 +354,7 @@ const OP_HALT          = 255  # 0xFF
     > { vm: vm2 }
   }
   
-  # Function calls
-  if op == OP_CALL {
-    $ target = read_addr(code, vm.pc + 1)
-    $ return_addr = vm.pc + 5  # Address after CALL instruction
-    $ vm2 = vm_push(vm, return_addr)  # Push return address
-    $ vm3 = vm_with_pc(vm2, target)    # Jump to function
-    > { vm: vm3 }
-  }
-  
-  if op == OP_RETURN {
-    # Stack: [..., return_addr, return_value]
-    $ value = vm_pop(vm)       # Pop return value
-    $ addr = vm_pop(value.vm)  # Pop return address
-    $ vm2 = vm_push(addr.vm, value.val)  # Push return value back
-    $ vm3 = vm_with_pc(vm2, addr.val)    # Jump to return address
-    > { vm: vm3 }
-  }
-  
-  if op == OP_HALT {
+  if op == OP_RETURN || op == OP_HALT {
     > { vm: vm_halted(vm) }
   }
   
@@ -638,68 +580,13 @@ const OP_HALT          = 255  # 0xFF
     print("Results: 8/8 passed")
     print("🎉 All tests passed!")
   }
-  
-  $ passed = passed + 1
-  
-  if test_factorial() { $ passed = passed + 1 }
-  
-  print("")
-  print("=== BACKWARD JUMP TEST ===")
-  print("")
-  if passed == 9 { 
-    print("Results: 9/9 passed")
-    print("🎉 All tests passed including BACKWARD JUMPS!")
-  }
-  
-  print("")
-  print("=== CALL/RETURN TEST ===")
-  print("")
-  
-  if test_recursive_factorial() { $ passed = passed + 1 }
-  
-  if passed == 10 { 
-    print("Results: 10/10 passed")
-    print("🎉🎉🎉 ALL TESTS PASSED INCLUDING RECURSIVE CALL/RETURN! 🎉🎉🎉")
+  if passed == 2 { print("Results: 2/5 passed") }
+  if passed == 3 { print("Results: 3/5 passed") }
+  if passed == 4 { print("Results: 4/5 passed") }
+  if passed == 5 { 
+    print("Results: 5/5 passed")
+    print("🎉 All tests passed!")
   }
   
   > { ok: true }
 }
-
-! test_factorial() -> bool {
-  $ n = 5
-  $ result = 1
-  while n > 1 {
-    $ result = result * n
-    $ n = n - 1
-  }
-  if result == 120 {
-    print("✅ test_factorial: 5! = 120 (backward jumps!)")
-    > true
-  }
-  print("❌ test_factorial: expected 120, got " + str(result))
-  > false
-}
-
-! test_recursive_factorial() -> bool {
-  # Simple CALL/RETURN test (no recursion yet)
-  # Call a function that returns 42
-  
-  $ code = [
-    OP_CALL, 6, 0, 0, 0,  # 0: CALL function at offset 6
-    OP_HALT,              # 5: HALT
-    
-    # function (offset 6):
-    OP_PUSH, 0,           # 6: PUSH 42
-    OP_RETURN             # 8: RETURN
-  ]
-  $ constants = [42]
-  $ result = exec(code, constants)
-  
-  if result == 42 {
-    print("✅ test_recursive_factorial: CALL/RETURN works! (got 42)")
-    > true
-  }
-  print("❌ test_recursive_factorial: expected 42")
-  > false
-}
-

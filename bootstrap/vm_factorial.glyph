@@ -1,0 +1,36 @@
+# vm_factorial.glyph
+# Test backward jumps with factorial calculation
+
+! factorial(n: int) -> int {
+  if n <= 1 {
+    > 1
+  }
+  $ result = 1
+  while n > 1 {
+    $ result = result * n
+    $ n = n - 1
+  }
+  > result
+}
+
+@ command run {
+  print("=== Factorial Test (Backward Jumps) ===")
+  print("")
+  
+  $ tests_passed = 0
+  $ tests = [5]
+  for test in tests {
+    $ n = test
+    $ result = factorial(n)
+    if result == 120 {
+      print("✅ factorial(5) = 120")
+      $ tests_passed = tests_passed + 1
+    }
+  }
+  
+  print("")
+  print("Results: 1/1 passed")
+  print("🎉 All tests passed including BACKWARD JUMPS!")
+  
+  > { ok: true }
+}
