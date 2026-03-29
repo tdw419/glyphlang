@@ -55,45 +55,40 @@ func (m *MitosisVM) ExecuteWithMitosis(bytecode []byte) ([]ThreadResult, error) 
 	}
 
 	var (
-		mu       sync.Mutex
-		wg       sync.WaitGroup
-		results  []ThreadResult
+		mu          sync.Mutex
+		results     []ThreadResult
 		threadCount int
+		pending     sync.WaitGroup
 	)
 
 	// Channel for spawn requests from running VMs
 	spawns := make(chan spawnWork, m.maxThreads)
-	done := make(chan struct{})
 
 	// Worker that processes spawn requests
 	go func() {
 		for work := range spawns {
-			wg.Add(1)
+			pending.Add(1)
 			go func(w spawnWork) {
-				defer wg.Done()
+				defer pending.Done()
 				r := m.runThread(bytecode, config, w)
 				mu.Lock()
 				results = append(results, r)
 				mu.Unlock()
 			}(work)
 		}
-		close(done)
 	}()
 
-	// Run root thread
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		root := m.runMitosisThread(bytecode, config, 0, -1, 0, nil, nil, &threadCount, spawns)
-		mu.Lock()
-		results = append(results, root)
-		mu.Unlock()
-	}()
+	// Run root thread synchronously so we know when it's done sending spawns
+	root := m.runMitosisThread(bytecode, config, 0, -1, 0, nil, nil, &threadCount, spawns)
+	mu.Lock()
+	results = append(results, root)
+	mu.Unlock()
 
-	// Wait for all threads to finish, then close spawn channel
-	wg.Wait()
+	// Root is done, close spawns channel so worker goroutine exits
 	close(spawns)
-	<-done
+
+	// Wait for any spawned child threads to finish
+	pending.Wait()
 
 	return results, nil
 }
