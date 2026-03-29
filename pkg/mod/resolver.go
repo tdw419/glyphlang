@@ -1,6 +1,8 @@
 package mod
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,7 +61,7 @@ func (r *Resolver) Resolve(req Require) (string, error) {
 
 	// Check cache first
 	cachePath := r.cachePath(req)
-	if _, err := os.Stat(cachePath); err == nil {
+	if _, err := os.Stat(filepath.Join(cachePath, ".downloaded")); err == nil {
 		return cachePath, nil
 	}
 
@@ -145,13 +147,63 @@ func (r *Resolver) downloadFile(url, dest string) error {
 	return err
 }
 
-// extractTarGz extracts a tar.gz file (simplified - in production use archive/tar)
+// extractTarGz extracts a tar.gz file
 func (r *Resolver) extractTarGz(src, dest string) error {
-	// For MVP, we'll use system tar command
-	// In production, use Go's archive/tar and compress/gzip packages
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
 
-	// Create a placeholder file indicating the package was downloaded
-	// Real extraction would happen here
+	gzr, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		// The path in the tarball is usually repo-version/file
+		// We want to strip the first component
+		parts := strings.Split(header.Name, "/")
+		if len(parts) <= 1 {
+			continue
+		}
+		targetPath := filepath.Join(dest, filepath.Join(parts[1:]...))
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(targetPath, 0755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			// Ensure parent directory exists
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+				return err
+			}
+			
+			outFile, err := os.Create(targetPath)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(outFile, tr); err != nil {
+				outFile.Close()
+				return err
+			}
+			outFile.Close()
+		}
+	}
+
+	// Create a placeholder file indicating the package was downloaded successfully
 	placeholder := filepath.Join(dest, ".downloaded")
 	return os.WriteFile(placeholder, []byte(time.Now().Format(time.RFC3339)), 0644)
 }

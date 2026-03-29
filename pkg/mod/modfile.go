@@ -206,6 +206,15 @@ func (m *ModFile) HasRequire(path string) bool {
 	return false
 }
 
+// DefaultCacheDir returns the default directory for cached packages
+func DefaultCacheDir() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ".glyph/cache" // fallback
+	}
+	return filepath.Join(homeDir, ".glyph", "cache")
+}
+
 // IsValidModulePath checks if a path looks like a valid module path
 func IsValidModulePath(path string) bool {
 	// Basic validation: should look like github.com/user/repo or similar

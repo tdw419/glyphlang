@@ -180,6 +180,37 @@ func (c *Compiler) CompileRoute(route *ast.Route) ([]byte, error) {
 	return c.buildBytecode()
 }
 
+// CompileFunction compiles a standard function to bytecode
+func (c *Compiler) CompileFunction(fn *ast.Function) ([]byte, error) {
+	c.Reset()
+
+	// Create function scope
+	c.symbolTable = c.symbolTable.EnterScope(FunctionScope)
+
+	// Add parameters to symbol table
+	for _, param := range fn.Params {
+		nameIdx := c.addConstant(vm.StringValue{Val: param.Name})
+		c.symbolTable.Define(param.Name, nameIdx)
+	}
+
+	// Optimize and compile body
+	optimizedBody := c.optimizer.OptimizeStatements(fn.Body)
+	for _, stmt := range optimizedBody {
+		if err := c.compileStatement(stmt); err != nil {
+			return nil, err
+		}
+	}
+
+	if len(optimizedBody) == 0 || !isReturnStatement(optimizedBody[len(optimizedBody)-1]) {
+		// Functions should return null by default
+		nullIdx := c.addConstant(vm.NullValue{})
+		c.emitWithOperand(vm.OpPush, uint32(nullIdx))
+		c.emit(vm.OpReturn)
+	}
+
+	return c.buildBytecode()
+}
+
 // CompileCommand compiles a CLI command to bytecode
 func (c *Compiler) CompileCommand(cmd *ast.Command) ([]byte, error) {
 	c.Reset()

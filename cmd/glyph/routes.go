@@ -11,6 +11,7 @@ import (
 	"github.com/glyphlang/glyph/pkg/ast"
 	"github.com/glyphlang/glyph/pkg/compiler"
 	"github.com/glyphlang/glyph/pkg/server"
+	"github.com/glyphlang/glyph/pkg/vm"
 	"github.com/glyphlang/glyph/pkg/web"
 	"github.com/glyphlang/glyph/pkg/websocket"
 )
@@ -83,6 +84,52 @@ func setupRoutes(module *ast.Module, filePath string, forceInterpreter bool, use
 	router = server.NewRouter()
 	interp := newConfiguredInterpreter()
 
+	// Load main module and its dependencies to resolve imports
+	basePath := filepath.Dir(filePath)
+	if loadErr := interp.LoadModuleWithPath(*module, basePath); loadErr != nil {
+		err = fmt.Errorf("failed to load module dependencies: %w", loadErr)
+		return
+	}
+
+	// Collect all functions from main module and all imported modules
+	allFunctions := make(map[string]vm.FunctionValue)
+	if useCompiler {
+		c := compiler.NewSSACompiler()
+		resolver := interp.GetModuleResolver()
+		
+		for _, loaded := range resolver.ModuleCache {
+			namespace := loaded.Namespace
+			for _, item := range loaded.Module.Items {
+				if fn, ok := item.(*ast.Function); ok {
+					fnBytecode, compileErr := c.CompileFunction(fn)
+					if compileErr != nil {
+						printWarning(fmt.Sprintf("Failed to compile function %s: %v", fn.Name, compileErr))
+						continue
+					}
+					
+					// Extract parameter names
+					paramNames := make([]string, len(fn.Params))
+					for i, p := range fn.Params {
+						paramNames[i] = p.Name
+					}
+
+					fnValue := vm.FunctionValue{
+						Name:       fn.Name,
+						ParamNames: paramNames,
+						Bytecode:   fnBytecode,
+					}
+
+					// Register with namespace if applicable
+					if namespace != "" {
+						allFunctions[namespace+"."+fn.Name] = fnValue
+					} else {
+						allFunctions[fn.Name] = fnValue
+					}
+				}
+			}
+		}
+	}
+
 	var gpuInterp *server.GPUInterpreter
 	if useGPU || useCompiler {
 		gpuInterp = server.NewGPUInterpreter()
@@ -92,7 +139,7 @@ func setupRoutes(module *ast.Module, filePath string, forceInterpreter bool, use
 		for _, item := range module.Items {
 			if route, ok := item.(*ast.Route); ok {
 				bytecode := compiledRoutes[route.Path]
-				regErr := registerCompiledRoute(router, route, bytecode, wsServer.GetHub(), gpuInterp, jitMgr, useGPU)
+				regErr := registerCompiledRoute(router, route, bytecode, wsServer.GetHub(), gpuInterp, jitMgr, useGPU, allFunctions)
 				if regErr != nil {
 					printWarning(fmt.Sprintf("Failed to register route %s: %v", route.Path, regErr))
 				} else {

@@ -101,8 +101,10 @@ type WebSocketHandler interface {
 
 // CallFrame saves the state when entering a function call.
 type CallFrame struct {
-	returnPC int              // Program counter to return to
-	locals   map[string]Value // Caller's local variables
+	returnPC        int              // Program counter to return to
+	returnBytecode  []byte           // Bytecode buffer to return to
+	returnConstants []Value          // Constant pool to return to
+	locals          map[string]Value // Caller's local variables
 }
 
 // VM represents the virtual machine
@@ -740,7 +742,7 @@ func (vm *VM) execLoadVar() error {
 	nameVal := vm.constants[operand]
 	name, ok := nameVal.(StringValue)
 	if !ok {
-		return fmt.Errorf("variable name must be a string")
+		return fmt.Errorf("variable name must be a string, got %T", nameVal)
 	}
 
 	// Try locals first, then globals
@@ -1421,6 +1423,8 @@ func (vm *VM) execReturn() error {
 	// Restore caller state
 	vm.pc = frame.returnPC
 	vm.locals = frame.locals
+	vm.code = frame.returnBytecode
+	vm.constants = frame.returnConstants
 
 	return nil
 }
@@ -1468,24 +1472,37 @@ func (vm *VM) execCall() error {
 
 	// Look up user-defined function
 	if fn, exists := vm.functions[fnName.Val]; exists {
-		if len(args) != len(fn.ParamNames) {
-			return fmt.Errorf("function %s expects %d arguments, got %d", fnName.Val, len(fn.ParamNames), len(args))
-		}
-
 		// Save current frame
 		vm.callStack = append(vm.callStack, CallFrame{
-			returnPC: vm.pc,
-			locals:   vm.locals,
+			returnPC:        vm.pc,
+			returnBytecode:  vm.code,
+			returnConstants: vm.constants,
+			locals:          vm.locals,
 		})
 
 		// Set up new locals with parameters
 		vm.locals = make(map[string]Value)
 		for i, paramName := range fn.ParamNames {
-			vm.locals[paramName] = args[i]
+			if i < len(args) {
+				vm.locals[paramName] = args[i]
+			}
 		}
 
-		// Jump to function body
-		vm.pc = fn.CodeOffset
+		if fn.Bytecode != nil {
+			// Switch to modular bytecode and its constant pool
+			vm.code = fn.Bytecode
+			if fn.Constants != nil {
+				vm.constants = fn.Constants
+			}
+			layout, err := parseBytecodeLayout(vm.code)
+			if err != nil {
+				return fmt.Errorf("failed to call modular function %s: %w", fnName.Val, err)
+			}
+			vm.pc = int(layout.CodeOffset)
+		} else {
+			// Stay in current bytecode
+			vm.pc = fn.CodeOffset
+		}
 		return nil
 	}
 
@@ -1554,9 +1571,107 @@ func (vm *VM) Pop() (Value, error) {
 	return val, nil
 }
 
+type bytecodeLayout struct {
+	CodeOffset uint32
+}
+
+func parseBytecodeLayout(bytecode []byte) (*bytecodeLayout, error) {
+	if len(bytecode) < 16 {
+		return nil, fmt.Errorf("bytecode too short")
+	}
+	if string(bytecode[:4]) != "GLYP" {
+		return nil, fmt.Errorf("invalid magic")
+	}
+
+	constCount := binary.LittleEndian.Uint32(bytecode[8:12])
+	offset := 12
+	for i := 0; i < int(constCount); i++ {
+		if offset >= len(bytecode) {
+			return nil, fmt.Errorf("invalid constant pool")
+		}
+		tag := bytecode[offset]
+		offset++
+		switch tag {
+		case 0x00: // null
+		case 0x01, 0x02: // int, float
+			offset += 8
+		case 0x03: // bool
+			offset += 1
+		case 0x04: // string
+			if offset+4 > len(bytecode) {
+				return nil, fmt.Errorf("invalid string constant")
+			}
+			length := binary.LittleEndian.Uint32(bytecode[offset : offset+4])
+			offset += 4 + int(length)
+		default:
+			return nil, fmt.Errorf("unknown constant tag: 0x%02x", tag)
+		}
+	}
+
+	if offset+4 > len(bytecode) {
+		return nil, fmt.Errorf("missing instruction count")
+	}
+	// skip instrCount
+	offset += 4
+
+	return &bytecodeLayout{
+		CodeOffset: uint32(offset),
+	}, nil
+}
+
 // SetLocal sets a local variable value (used for route parameters and injections)
 func (vm *VM) SetLocal(name string, value Value) {
 	vm.locals[name] = value
+}
+
+// RegisterFunction registers a compiled function with the VM
+func (vm *VM) RegisterFunction(name string, bytecode []byte) {
+	fn := FunctionValue{
+		Name:     name,
+		Bytecode: bytecode,
+	}
+
+	// Extract constants from bytecode
+	offset := 4 // skip magic
+	// Read version
+	if offset+4 <= len(bytecode) {
+		offset += 4
+		// Read constant count
+		if offset+4 <= len(bytecode) {
+			constCount := binary.LittleEndian.Uint32(bytecode[offset : offset+4])
+			offset += 4
+			for i := uint32(0); i < constCount; i++ {
+				constant, err := vm.readConstant(bytecode, &offset)
+				if err == nil {
+					fn.Constants = append(fn.Constants, constant)
+				}
+			}
+		}
+	}
+
+	vm.functions[name] = fn
+}
+
+// RegisterFunctionValue registers a pre-compiled function value with the VM
+func (vm *VM) RegisterFunctionValue(name string, fn FunctionValue) {
+	// If constants are not provided, extract them from bytecode
+	if len(fn.Constants) == 0 && fn.Bytecode != nil {
+		offset := 4 // skip magic
+		if offset+4 <= len(fn.Bytecode) {
+			offset += 4
+			if offset+4 <= len(fn.Bytecode) {
+				constCount := binary.LittleEndian.Uint32(fn.Bytecode[offset : offset+4])
+				offset += 4
+				for i := uint32(0); i < constCount; i++ {
+					constant, err := vm.readConstant(fn.Bytecode, &offset)
+					if err == nil {
+						fn.Constants = append(fn.Constants, constant)
+					}
+				}
+			}
+		}
+	}
+	vm.functions[name] = fn
 }
 
 // StackSize returns the current size of the stack

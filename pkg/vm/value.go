@@ -90,8 +90,10 @@ func (v ObjectValue) MarshalJSON() ([]byte, error) {
 type FunctionValue struct {
 	Name       string   // Function name
 	ParamNames []string // Parameter names in order
-	CodeOffset int      // Start offset in the bytecode
+	CodeOffset int      // Start offset in the bytecode (if Bytecode is nil)
 	CodeLength int      // Length of the function body bytecode
+	Bytecode   []byte   // Optional: independent bytecode blob for this function
+	Constants  []Value  // Optional: constant pool for the independent bytecode
 }
 
 func (v FunctionValue) Type() string { return "function" }

@@ -38,7 +38,8 @@ func (l *WGSLLowering) LowerFunc(f *Func) (string, error) {
 
 	// 2. Bindings
 	b.WriteString("@group(0) @binding(0) var<storage, read_write> states: array<VMState>;\n")
-	b.WriteString("@group(0) @binding(1) var<storage, read_write> locals: array<i32>; // Simple flat memory\n\n")
+	b.WriteString("@group(0) @binding(1) var<storage, read_write> locals: array<i32>; // Simple flat memory\n")
+	b.WriteString("@group(0) @binding(2) var<storage, read_write> vm_stats: array<atomic<u32>, 11>; // Telemetry (ASCII World HUD)\n\n")
 
 	// 3. Entry Point
 	b.WriteString("@compute @workgroup_size(64)\n")
@@ -148,6 +149,7 @@ func (l *WGSLLowering) emitValue(b *strings.Builder, v *Value) error {
 	case OpReturn, OpHalt:
 		b.WriteString(l.line("halted = true;"))
 		if len(v.Args) > 0 {
+			b.WriteString(l.line(fmt.Sprintf("atomicStore(&vm_stats[1u], u32(v%d));", v.Args[0].ID))) // Write result to vm_stats[1] (ASCII World format)
 			b.WriteString(l.line(fmt.Sprintf("states[id].result_tag = %du;", l.tagForType(v.Args[0].Type))))
 			b.WriteString(l.line(fmt.Sprintf("states[id].result_data = i32(v%d);", v.Args[0].ID)))
 		}

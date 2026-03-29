@@ -22,6 +22,7 @@ import (
 	"github.com/glyphlang/glyph/pkg/ast"
 	"github.com/glyphlang/glyph/pkg/database"
 	"github.com/glyphlang/glyph/pkg/interpreter"
+	"github.com/glyphlang/glyph/pkg/mod"
 	"github.com/glyphlang/glyph/pkg/parser"
 	"github.com/glyphlang/glyph/pkg/server"
 	"github.com/glyphlang/glyph/pkg/vm"
@@ -53,8 +54,24 @@ func newConfiguredInterpreter() *interpreter.Interpreter {
 	mockDB := database.NewMockDatabase()
 	interp.SetDatabaseHandler(mockDB)
 
+	resolver := interp.GetModuleResolver()
+
+	// Add package cache directory to search paths
+	cacheDir := mod.DefaultCacheDir()
+	resolver.AddSearchPath(cacheDir)
+
+	// If glyph.mod exists, add versioned dependencies to search paths
+	if modFile, err := mod.LoadModFile("."); err == nil {
+		for _, req := range modFile.Require {
+			// Add path to versioned cache directory
+			// e.g., ~/.glyph/cache/github.com/user/repo/v1.0.0/
+			versionedPath := filepath.Join(cacheDir, req.Path, req.Version.String())
+			resolver.AddSearchPath(versionedPath)
+		}
+	}
+
 	// Set up the parse function for module resolution
-	interp.GetModuleResolver().SetParseFunc(func(source string) (*ast.Module, error) {
+	resolver.SetParseFunc(func(source string) (*ast.Module, error) {
 		lexer := parser.NewLexer(source)
 		tokens, err := lexer.Tokenize()
 		if err != nil {
@@ -81,8 +98,8 @@ func registerRoute(router *server.Router, route *ast.Route, interp *interpreter.
 }
 
 // registerCompiledRoute registers a compiled route with the router
-func registerCompiledRoute(router *server.Router, route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter, jitMgr *JITRouteManager, forceGPU bool) error {
-	handler := createCompiledRouteHandler(route, bytecode, wsHub, gpuInterp, jitMgr, forceGPU)
+func registerCompiledRoute(router *server.Router, route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter, jitMgr *JITRouteManager, forceGPU bool, allFunctions map[string]vm.FunctionValue) error {
+	handler := createCompiledRouteHandler(route, bytecode, wsHub, gpuInterp, jitMgr, forceGPU, allFunctions)
 
 	serverRoute := &server.Route{
 		Method:  convertHTTPMethod(route.Method),
@@ -94,7 +111,7 @@ func registerCompiledRoute(router *server.Router, route *ast.Route, bytecode []b
 }
 
 // createCompiledRouteHandler creates an HTTP handler that executes compiled bytecode
-func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter, jitMgr *JITRouteManager, forceGPU bool) server.RouteHandler {
+func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websocket.Hub, gpuInterp *server.GPUInterpreter, jitMgr *JITRouteManager, forceGPU bool, allFunctions map[string]vm.FunctionValue) server.RouteHandler {
 	// Mutable bytecode reference — JIT may swap in upgraded bytecode
 	currentBytecode := bytecode
 	routeName := fmt.Sprintf("%s %s", route.Method, route.Path)
@@ -138,6 +155,15 @@ func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websoc
 		}
 		locals["input"] = inputVal
 
+		// Inject query parameters as 'query'
+		queryParams := make(map[string]vm.Value)
+		for key, values := range ctx.Request.URL.Query() {
+			if len(values) > 0 {
+				queryParams[key] = vm.StringValue{Val: values[0]}
+			}
+		}
+		locals["query"] = vm.ObjectValue{Val: queryParams}
+
 		var result interface{}
 		var err error
 
@@ -176,6 +202,11 @@ func createCompiledRouteHandler(route *ast.Route, bytecode []byte, wsHub *websoc
 
 		// CPU VM Fallback
 		vmInstance := vm.NewVM()
+
+		// Inject all compiled functions into VM
+		for name, fn := range allFunctions {
+			vmInstance.RegisterFunctionValue(name, fn)
+		}
 
 		// Set up WebSocket stats handler if hub is available
 		if wsHub != nil {
