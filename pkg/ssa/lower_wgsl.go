@@ -22,10 +22,16 @@ func NewWGSLLowering() *WGSLLowering {
 
 // LowerFunc generates a complete WGSL compute shader for the given function.
 func (l *WGSLLowering) LowerFunc(f *Func) (string, error) {
+	return l.LowerMultiFunc([]*Func{f})
+}
+
+// LowerMultiFunc generates a single WGSL shader that can execute multiple routes.
+// Each route is dispatched based on the global invocation ID.
+func (l *WGSLLowering) LowerMultiFunc(funcs []*Func) (string, error) {
 	var b strings.Builder
 
 	// 1. Headers and Structs
-	b.WriteString("// Auto-generated WGSL shader from GlyphLang SSA\n")
+	b.WriteString("// Auto-generated WGSL multi-route shader from GlyphLang SSA\n")
 	b.WriteString("struct VMState {\n")
 	b.WriteString("    pc: u32,\n")
 	b.WriteString("    sp: u32,\n")
@@ -47,44 +53,67 @@ func (l *WGSLLowering) LowerFunc(f *Func) (string, error) {
 	l.indent++
 	
 	b.WriteString(l.line("let id = global_id.x;"))
-	b.WriteString(l.line("var block_id: u32 = 0; // entry block"))
+	b.WriteString(l.line("if (id >= 11u) { return; } // Boundary check for vm_stats"))
+	b.WriteString(l.line("var block_id: u32 = 0;"))
 	b.WriteString(l.line("var halted: bool = false;"))
 	b.WriteString("\n")
 
-	// 4. Declare all SSA values as variables
-	for _, blk := range f.Blocks {
-		for _, v := range blk.Values {
-			if v.Type != TypeVoid {
-				b.WriteString(l.line(fmt.Sprintf("var v%d: %s;", v.ID, l.wgslType(v.Type))))
+	// 4. Declare all SSA values for all functions
+	// Use unique prefix per function to avoid collisions
+	for i, f := range funcs {
+		b.WriteString(l.line(fmt.Sprintf("// --- Variables for Route %d (%s) ---", i, f.Name)))
+		for _, blk := range f.Blocks {
+			for _, v := range blk.Values {
+				if v.Type != TypeVoid {
+					b.WriteString(l.line(fmt.Sprintf("var f%d_v%d: %s;", i, v.ID, l.wgslType(v.Type))))
+				}
 			}
 		}
 	}
 	b.WriteString("\n")
 
-	// 5. Main Execution Loop
-	b.WriteString(l.line("while (!halted) {"))
-	l.indent++
-	b.WriteString(l.line("switch (block_id) {"))
+	// 5. Multi-Route Dispatch Switch
+	b.WriteString(l.line("switch (id) {"))
 	l.indent++
 
-	for _, blk := range f.Blocks {
-		b.WriteString(l.line(fmt.Sprintf("case %du: { // %s", blk.ID, blk.Name)))
+	for i, f := range funcs {
+		b.WriteString(l.line(fmt.Sprintf("case %du: { // Route: %s", i, f.Name)))
+		l.indent++
+		
+		// Reset state for this route
+		b.WriteString(l.line("block_id = 0u;"))
+		b.WriteString(l.line("halted = false;"))
+		
+		b.WriteString(l.line("while (!halted) {"))
+		l.indent++
+		b.WriteString(l.line("switch (block_id) {"))
 		l.indent++
 
-		for _, v := range blk.Values {
-			if err := l.emitValue(&b, v); err != nil {
-				return "", err
+		for _, blk := range f.Blocks {
+			b.WriteString(l.line(fmt.Sprintf("case %du: { // %s", blk.ID, blk.Name)))
+			l.indent++
+
+			for _, v := range blk.Values {
+				if err := l.emitValueWithPrefix(&b, v, i); err != nil {
+					return "", err
+				}
 			}
+
+			l.indent--
+			b.WriteString(l.line("}"))
 		}
+
+		b.WriteString(l.line("default: { halted = true; }"))
+		l.indent--
+		b.WriteString(l.line("}"))
+		l.indent--
+		b.WriteString(l.line("}"))
 
 		l.indent--
 		b.WriteString(l.line("}"))
 	}
 
-	b.WriteString(l.line("default: { halted = true; }"))
-
-	l.indent--
-	b.WriteString(l.line("}"))
+	b.WriteString(l.line("default: { }"))
 	l.indent--
 	b.WriteString(l.line("}"))
 
@@ -94,35 +123,37 @@ func (l *WGSLLowering) LowerFunc(f *Func) (string, error) {
 	return b.String(), nil
 }
 
-func (l *WGSLLowering) emitValue(b *strings.Builder, v *Value) error {
+func (l *WGSLLowering) emitValueWithPrefix(b *strings.Builder, v *Value, fnIdx int) error {
+	prefix := fmt.Sprintf("f%d_", fnIdx)
+	
 	switch v.Op {
 	case OpConst:
 		switch v.Type {
 		case TypeInt:
-			b.WriteString(l.line(fmt.Sprintf("v%d = %di;", v.ID, v.AuxInt)))
+			b.WriteString(l.line(fmt.Sprintf("%sv%d = %di;", prefix, v.ID, v.AuxInt)))
 		case TypeFloat:
-			b.WriteString(l.line(fmt.Sprintf("v%d = %f;", v.ID, float64(v.AuxInt)))) // Simplified
+			b.WriteString(l.line(fmt.Sprintf("%sv%d = %f;", prefix, v.ID, float64(v.AuxInt))))
 		case TypeBool:
 			val := "false"
 			if v.AuxInt != 0 {
 				val = "true"
 			}
-			b.WriteString(l.line(fmt.Sprintf("v%d = %s;", v.ID, val)))
+			b.WriteString(l.line(fmt.Sprintf("%sv%d = %s;", prefix, v.ID, val)))
 		}
 
 	case OpAddInt:
-		b.WriteString(l.line(fmt.Sprintf("v%d = v%d + v%d;", v.ID, v.Args[0].ID, v.Args[1].ID)))
+		b.WriteString(l.line(fmt.Sprintf("%sv%d = %sv%d + %sv%d;", prefix, v.ID, prefix, v.Args[0].ID, prefix, v.Args[1].ID)))
 	case OpSubInt:
-		b.WriteString(l.line(fmt.Sprintf("v%d = v%d - v%d;", v.ID, v.Args[0].ID, v.Args[1].ID)))
+		b.WriteString(l.line(fmt.Sprintf("%sv%d = %sv%d - %sv%d;", prefix, v.ID, prefix, v.Args[0].ID, prefix, v.Args[1].ID)))
 	case OpMulInt:
-		b.WriteString(l.line(fmt.Sprintf("v%d = v%d * v%d;", v.ID, v.Args[0].ID, v.Args[1].ID)))
+		b.WriteString(l.line(fmt.Sprintf("%sv%d = %sv%d * %sv%d;", prefix, v.ID, prefix, v.Args[0].ID, prefix, v.Args[1].ID)))
 	case OpDivInt:
-		b.WriteString(l.line(fmt.Sprintf("v%d = v%d / v%d;", v.ID, v.Args[0].ID, v.Args[1].ID)))
+		b.WriteString(l.line(fmt.Sprintf("%sv%d = %sv%d / %sv%d;", prefix, v.ID, prefix, v.Args[0].ID, prefix, v.Args[1].ID)))
 
 	case OpEqInt:
-		b.WriteString(l.line(fmt.Sprintf("v%d = v%d == v%d;", v.ID, v.Args[0].ID, v.Args[1].ID)))
+		b.WriteString(l.line(fmt.Sprintf("%sv%d = %sv%d == %sv%d;", prefix, v.ID, prefix, v.Args[0].ID, prefix, v.Args[1].ID)))
 	case OpLtInt:
-		b.WriteString(l.line(fmt.Sprintf("v%d = v%d < v%d;", v.ID, v.Args[0].ID, v.Args[1].ID)))
+		b.WriteString(l.line(fmt.Sprintf("%sv%d = %sv%d < %sv%d;", prefix, v.ID, prefix, v.Args[0].ID, prefix, v.Args[1].ID)))
 
 	case OpLoadVar:
 		idx, ok := l.vars[v.AuxStr]
@@ -131,7 +162,7 @@ func (l *WGSLLowering) emitValue(b *strings.Builder, v *Value) error {
 			l.vars[v.AuxStr] = idx
 			l.nextVar++
 		}
-		b.WriteString(l.line(fmt.Sprintf("v%d = locals[id * 64u + %du];", v.ID, idx)))
+		b.WriteString(l.line(fmt.Sprintf("%sv%d = locals[id * 64u + %du];", prefix, v.ID, idx)))
 
 	case OpStoreVar:
 		idx, ok := l.vars[v.AuxStr]
@@ -140,27 +171,30 @@ func (l *WGSLLowering) emitValue(b *strings.Builder, v *Value) error {
 			l.vars[v.AuxStr] = idx
 			l.nextVar++
 		}
-		b.WriteString(l.line(fmt.Sprintf("locals[id * 64u + %du] = v%d;", idx, v.Args[0].ID)))
+		b.WriteString(l.line(fmt.Sprintf("locals[id * 64u + %du] = %sv%d;", idx, prefix, v.Args[0].ID)))
 
 	case OpIf:
-		b.WriteString(l.line(fmt.Sprintf("if (v%d) { block_id = %du; } else { block_id = %du; }", v.Args[0].ID, v.Block.Succs[0].ID, v.Block.Succs[1].ID)))
+		b.WriteString(l.line(fmt.Sprintf("if (%sv%d) { block_id = %du; } else { block_id = %du; }", prefix, v.Args[0].ID, v.Block.Succs[0].ID, v.Block.Succs[1].ID)))
 	case OpJump:
 		b.WriteString(l.line(fmt.Sprintf("block_id = %du;", v.Block.Succs[0].ID)))
 	case OpReturn, OpHalt:
 		b.WriteString(l.line("halted = true;"))
 		if len(v.Args) > 0 {
-			b.WriteString(l.line(fmt.Sprintf("atomicStore(&vm_stats[1u], u32(v%d));", v.Args[0].ID))) // Write result to vm_stats[1] (ASCII World format)
+			// Write to both VMState and ASCII World HUD (vm_stats)
+			b.WriteString(l.line(fmt.Sprintf("atomicStore(&vm_stats[id], u32(%sv%d));", prefix, v.Args[0].ID)))
 			b.WriteString(l.line(fmt.Sprintf("states[id].result_tag = %du;", l.tagForType(v.Args[0].Type))))
-			b.WriteString(l.line(fmt.Sprintf("states[id].result_data = i32(v%d);", v.Args[0].ID)))
+			b.WriteString(l.line(fmt.Sprintf("states[id].result_data = i32(%sv%d);", prefix, v.Args[0].ID)))
 		}
 
 	case OpPhi:
-		// Phis are handled by the predecessor blocks in a structured lowering,
-		// but for this switch-based approach, we need to carefully assign them.
-		// Simplified: we assume phis are already lowered or handled by variables.
+		// Simplified for MVP
 	}
 
 	return nil
+}
+
+func (l *WGSLLowering) emitValue(b *strings.Builder, v *Value) error {
+	return l.emitValueWithPrefix(b, v, 0)
 }
 
 func (l *WGSLLowering) wgslType(t Type) string {

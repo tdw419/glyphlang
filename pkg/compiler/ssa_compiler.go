@@ -70,6 +70,30 @@ func (c *SSACompiler) CompileRouteToWGSL(route *ast.Route) (string, error) {
 	return lowering.LowerFunc(f)
 }
 
+// CompileModuleToWGSL compiles all routes in a module to a single multi-route WGSL shader.
+func (c *SSACompiler) CompileModuleToWGSL(module *ast.Module) (string, error) {
+	var funcs []*ssa.Func
+	builder := ssa.NewBuilder()
+
+	for _, item := range module.Items {
+		if route, ok := item.(*ast.Route); ok {
+			f, err := builder.BuildRoute(route)
+			if err != nil {
+				return "", fmt.Errorf("SSA build failed for %s: %w", route.Path, err)
+			}
+			c.passMgr.Run(f)
+			funcs = append(funcs, f)
+		}
+	}
+
+	if len(funcs) == 0 {
+		return "", fmt.Errorf("no routes found in module")
+	}
+
+	lowering := ssa.NewWGSLLowering()
+	return lowering.LowerMultiFunc(funcs)
+}
+
 // CompileFunction compiles an AST function to bytecode via SSA.
 func (c *SSACompiler) CompileFunction(fn *ast.Function) ([]byte, error) {
 	// 1. AST -> SSA
