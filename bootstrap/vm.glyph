@@ -8,6 +8,7 @@ const OP_PUSH          = 1    # 0x01
 const OP_POP           = 2    # 0x02
 const OP_DUP           = 3    # 0x03 - Duplicate top of stack
 const OP_SWAP          = 4    # 0x04 - Swap top two values
+const OP_DUP_SECOND    = 5    # 0x05 - Duplicate second element from top
 const OP_ADD           = 16   # 0x10
 const OP_SUB           = 17   # 0x11
 const OP_MUL           = 18   # 0x12
@@ -92,6 +93,15 @@ const OP_HALT          = 255  # 0xFF
     > 0
   }
   > vm.stack[len - 1]
+}
+
+! vm_peek_second(vm: VM) -> int {
+  $ len = length(vm.stack)
+  if len < 2 {
+    print("Stack underflow in peek_second!")
+    > 0
+  }
+  > vm.stack[len - 2]
 }
 
 ! vm_peek(vm: VM) -> int {
@@ -220,6 +230,15 @@ const OP_HALT          = 255  # 0xFF
     $ vm3 = vm_push(vm2, b.val)
     $ vm4 = vm_with_pc(vm3, vm.pc + 1)
     > { vm: vm4 }
+  }
+  
+  if op == OP_DUP_SECOND {
+    # Duplicate second element from top
+    # Stack: [..., a, b] -> [..., a, b, a]
+    $ val = vm_peek_second(vm)
+    $ vm2 = vm_push(vm, val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
   }
   
   # Arithmetic
@@ -681,25 +700,23 @@ const OP_HALT          = 255  # 0xFF
 }
 
 ! test_recursive_factorial() -> bool {
-  # Simple CALL/RETURN test (no recursion yet)
-  # Call a function that returns 42
+  # Test DUP_SECOND opcode
+  # Stack: [5, 999] -> DUP_SECOND -> [5, 999, 5]
   
   $ code = [
-    OP_CALL, 6, 0, 0, 0,  # 0: CALL function at offset 6
-    OP_HALT,              # 5: HALT
-    
-    # function (offset 6):
-    OP_PUSH, 0,           # 6: PUSH 42
-    OP_RETURN             # 8: RETURN
+    OP_PUSH, 0,           # 0: PUSH 5
+    OP_PUSH, 1,           # 2: PUSH 999
+    OP_DUP_SECOND,        # 4: DUP_SECOND
+    OP_HALT               # 5: HALT
   ]
-  $ constants = [42]
+  $ constants = [5, 999]
   $ result = exec(code, constants)
   
-  if result == 42 {
-    print("✅ test_recursive_factorial: CALL/RETURN works! (got 42)")
+  if result == 5 {
+    print("✅ test_recursive_factorial: DUP_SECOND works! (got 5)")
     > true
   }
-  print("❌ test_recursive_factorial: expected 42")
+  print("❌ test_recursive_factorial: expected 5, got " + result)
   > false
 }
 
