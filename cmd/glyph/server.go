@@ -6,12 +6,14 @@ import (
 	"github.com/glyphlang/glyph/pkg/ast"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/glyphlang/glyph/pkg/compiler"
+	"github.com/glyphlang/glyph/pkg/gpu"
 	"github.com/glyphlang/glyph/pkg/server"
 	"github.com/glyphlang/glyph/pkg/vm"
 	"github.com/glyphlang/glyph/pkg/websocket"
@@ -23,6 +25,7 @@ type hotReloadManager struct {
 	port            int
 	useGPU          bool
 	server          *http.Server
+	wgslDaemon      *exec.Cmd
 	mu              sync.Mutex
 	watcher         *fsnotify.Watcher
 	liveReloadConns map[*liveReloadConn]bool
@@ -47,6 +50,12 @@ func (m *hotReloadManager) startServer() error {
 		defer cancel()
 		m.server.Shutdown(ctx)
 		time.Sleep(100 * time.Millisecond) // Allow port to be released
+	}
+
+	// Stop existing WGSL daemon if running
+	if m.wgslDaemon != nil && m.wgslDaemon.Process != nil {
+		m.wgslDaemon.Process.Kill()
+		m.wgslDaemon = nil
 	}
 
 	// Start dev server with live reload support
@@ -77,6 +86,37 @@ func (m *hotReloadManager) startDevServerInternal() (*http.Server, error) {
 	useCompiler, _, wsServer, router, _, err := setupRoutes(module, m.filePath, false, m.useGPU)
 	if err != nil {
 		return nil, err
+	}
+
+	// If using GPU and compiler, start the WGSL daemon for hot-reload
+	if m.useGPU && useCompiler {
+		c := compiler.NewSSACompiler()
+		// Determine workgroup size based on route count (RTX 5090 heuristic)
+		routeCount := 0
+		for _, item := range module.Items {
+			if _, ok := item.(*ast.Route); ok {
+				routeCount++
+			}
+		}
+
+		wgSize := 64
+		if routeCount > 64 {
+			wgSize = 256
+		}
+
+		wgsl, err := c.CompileModuleToWGSL(module, wgSize)
+		if err == nil {
+			// Write shader to a persistent temporary file for the daemon to watch
+			tmpDir := os.TempDir()
+			shaderPath := filepath.Join(tmpDir, fmt.Sprintf("glyph_dev_%d.wgsl", m.port))
+			if err := os.WriteFile(shaderPath, []byte(wgsl), 0644); err == nil {
+				daemon, dErr := gpu.ExecuteWGSLDaemon(shaderPath, routeCount, 1)
+				if dErr == nil {
+					m.wgslDaemon = daemon
+					printSuccess(fmt.Sprintf("GPU Hot-reload enabled: %s", shaderPath))
+				}
+			}
+		}
 	}
 
 	// Create HTTP server with live reload support

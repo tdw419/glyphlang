@@ -33,6 +33,18 @@ func ExecuteWGSL(wgslSource string) (*Result, error) {
 
 // ExecuteMultiWGSL runs a WGSL shader with multiple VMs and dynamic dispatch dimensions.
 func ExecuteMultiWGSL(wgslSource string, numVMs int, workgroupCount int) ([]Result, error) {
+	// For one-shot execution, we write to a temporary file
+	tmpFile, err := os.CreateTemp("", "glyph_shader_*.wgsl")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(wgslSource); err != nil {
+		return nil, err
+	}
+	tmpFile.Close()
+
 	// 1. Find the runner binary
 	_, filename, _, _ := runtime.Caller(0)
 	runnerDir := filepath.Join(filepath.Dir(filename), "wgsl_runner")
@@ -46,7 +58,7 @@ func ExecuteMultiWGSL(wgslSource string, numVMs int, workgroupCount int) ([]Resu
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, runnerBin, wgslSource, fmt.Sprintf("%d", numVMs), fmt.Sprintf("%d", workgroupCount))
+	cmd := exec.CommandContext(ctx, runnerBin, tmpFile.Name(), fmt.Sprintf("%d", numVMs), fmt.Sprintf("%d", workgroupCount))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
@@ -87,4 +99,30 @@ func ExecuteMultiWGSL(wgslSource string, numVMs int, workgroupCount int) ([]Resu
 	}
 
 	return results, nil
+}
+
+// ExecuteWGSLDaemon starts a persistent runner that watches a shader file for hot-reload.
+func ExecuteWGSLDaemon(shaderPath string, numVMs int, workgroupCount int) (*exec.Cmd, error) {
+	// 1. Find the runner binary
+	_, filename, _, _ := runtime.Caller(0)
+	runnerDir := filepath.Join(filepath.Dir(filename), "wgsl_runner")
+	runnerBin := filepath.Join(runnerDir, "target", "release", "glyphlang-wgsl-runner")
+
+	if _, err := os.Stat(runnerBin); os.IsNotExist(err) {
+		return nil, fmt.Errorf("WGSL runner binary not found at %s", runnerBin)
+	}
+
+	// 2. Execute the runner in watch mode
+	cmd := exec.Command(runnerBin, shaderPath, fmt.Sprintf("%d", numVMs), fmt.Sprintf("%d", workgroupCount))
+	cmd.Env = append(os.Environ(), "GLYPH_WATCH=1")
+	
+	// Direct output to stderr for live telemetry logs
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start WGSL daemon: %w", err)
+	}
+
+	return cmd, nil
 }
