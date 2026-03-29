@@ -743,36 +743,53 @@ const OP_HALT          = 255  # 0xFF
 }
 
 ! test_recursive_factorial() -> bool {
-  # Test CALL/RETURN with FP-relative access
-  # double(5) = 10
+  # Test TRUE RECURSION: factorial(5) = 5 * 4 * 3 * 2 * 1 = 120
   # 
   # Stack layout after CALL:
-  # [5, return_addr, old_fp]
+  # [n, return_addr, old_fp]
   #  ↑              ↑         ↑
-  #  0              1         2 (FP = 3, stack length)
-  # 
-  # To access arg (5): idx = 0, so offset = 0 - FP = -3
+  #  0              1         2 (FP points to old_fp)
+  #
+  # To access arg: FP - 3 = index 0
   
   $ code = [
     OP_PUSH, 0,           # 0-1: PUSH 5
-    OP_CALL, 9, 0, 0, 0,  # 2-6: CALL double at offset 9
+    OP_CALL, 9, 0, 0, 0,  # 2-6: CALL factorial at offset 9
     OP_HALT,              # 7: HALT
     OP_POP,               # 8: (padding)
     
-    # double function (offset 9):
-    OP_LOAD_FP, -3,       # 9: Load arg from FP-3 (stack: [5, ret, fp, 5])
-    OP_DUP,               # 10: [5, ret, fp, 5, 5]
-    OP_ADD,               # 11: [5, ret, fp, 10]
-    OP_RETURN             # 12: pops 10, pops fp, pops ret, pushes 10, jumps
+    # factorial function (offset 9):
+    # if n <= 1: return 1
+    # else: return n * factorial(n-1)
+    
+    OP_LOAD_FP, -3,       # 9: Load n from FP-3
+    OP_PUSH, 1,           # 10: PUSH 1
+    OP_LE,                # 11: n <= 1?
+    OP_JUMP_IF_FALSE, 22, 0, 0, 0,  # 12-16: If false, jump to recursive case
+    
+    # Base case (offset 19):
+    OP_PUSH, 1,           # 19: Return 1
+    OP_RETURN,            # 21: RETURN
+    
+    # Recursive case (offset 22):
+    # Calculate n-1, call factorial, multiply by n
+    OP_LOAD_FP, -3,       # 22: Load n
+    OP_PUSH, 1,           # 23: PUSH 1
+    OP_SUB,               # 24: n - 1
+    OP_CALL, 9, 0, 0, 0,  # 25-29: CALL factorial(n-1)
+    OP_LOAD_FP, -3,       # 30: Load n again
+    OP_MUL,               # 31: n * factorial(n-1)
+    OP_RETURN             # 32: RETURN result
   ]
-  $ constants = [5]
+  $ constants = [5, 1]
   $ result = exec(code, constants)
   
-  if result == 10 {
-    print("✅ test_recursive_factorial: double(5) = 10 (FP-relative access works!)")
+  if result == 120 {
+    print("✅ test_recursive_factorial: 5! = 120 (TRUE RECURSION!)")
     > true
   }
-  print("❌ test_recursive_factorial: expected 10")
+  print("❌ test_recursive_factorial: expected 120, got ")
+  print(result)
   > false
 }
 
