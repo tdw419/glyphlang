@@ -422,15 +422,10 @@ const HEAP_BASE = 2000000
     $ idx = vm.fp + offset
     if idx < 0 {
       print("FP index underflow!")
-      print(vm.fp)
-      print(offset)
       > { vm: vm_halted(vm) }
     }
     if idx >= length(vm.stack) {
       print("FP index overflow!")
-      print(vm.fp)
-      print(offset)
-      print(length(vm.stack))
       > { vm: vm_halted(vm) }
     }
     $ val = vm.stack[idx]
@@ -484,19 +479,18 @@ const HEAP_BASE = 2000000
   }
   
   if op == OP_RETURN {
-    # Stack: [..., arg(s), old_fp, return_addr, stack_base, ..., result]
+    # Frame layout at FP: [old_fp, return_addr, stack_base]
+    # Read frame values by FP-relative position, NOT by popping.
+    # There can be leftover temps between result and frame header.
     $ result = vm_pop(vm)
-    # Pop stack_base
-    $ base_result = vm_pop(result.vm)
-    $ stack_base = base_result.val
-    # Pop return_addr
-    $ addr_result = vm_pop(base_result.vm)
-    # Pop old_fp
-    $ fp_result = vm_pop(addr_result.vm)
+    # Read frame directly from stack by position
+    $ old_fp = vm.stack[vm.fp]
+    $ return_addr = vm.stack[vm.fp + 1]
+    $ stack_base = vm.stack[vm.fp + 2]
     # Restore FP and PC
-    $ vm2 = vm_with_fp(fp_result.vm, fp_result.val)
-    $ vm3 = vm_with_pc(vm2, addr_result.val)
-    # Trim stack to stack_base (removes leftover args)
+    $ vm2 = vm_with_fp(result.vm, old_fp)
+    $ vm3 = vm_with_pc(vm2, return_addr)
+    # Trim stack to stack_base (removes leftover args/temps)
     $ trimmed = slice(vm3.stack, 0, stack_base)
     $ vm4 = { stack: trimmed, pc: vm3.pc, fp: vm3.fp, halted: vm3.halted, heap: vm3.heap }
     # Push result back
