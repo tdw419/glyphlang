@@ -142,6 +142,7 @@ const (
 	// GPU-specific
 	OpMitosis // S opcode: clone VM
 	OpMutator // M opcode: self-modify
+	OpTelemetry // telemetry(slot, val) - write to vm_stats
 )
 
 // opNames maps Op to string for printing.
@@ -163,6 +164,7 @@ var opNames = map[Op]string{
 	OpGetIter: "GetIter", OpIterNext: "IterNext", OpIterHasNext: "IterHasNext",
 	OpTry: "Try", OpWsSend: "WsSend", OpWsBroadcast: "WsBroadcast", OpWsClose: "WsClose",
 	OpMitosis: "Mitosis", OpMutator: "Mutator",
+	OpTelemetry: "Telemetry",
 }
 
 func (op Op) String() string {
@@ -178,7 +180,7 @@ func (op Op) IsSideEffect() bool {
 	case OpStoreVar, OpCall, OpReturn, OpHalt, OpIf, OpJump,
 		OpSetField, OpSetIndex,
 		OpWsSend, OpWsBroadcast, OpWsClose,
-		OpMitosis, OpMutator:
+		OpMitosis, OpMutator, OpTelemetry:
 		return true
 	}
 	return false

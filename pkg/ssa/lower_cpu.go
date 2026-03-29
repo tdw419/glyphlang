@@ -48,6 +48,7 @@ const (
 	vmOpTry     byte = 0xB2
 	vmOpMitosis byte = 0xC0
 	vmOpMutator byte = 0xC1
+	vmOpTelem   byte = 0xC2
 	vmOpHalt    byte = 0xFF
 )
 
@@ -312,6 +313,11 @@ func (l *CPULowering) lowerValue(v *Value) error {
 		// Phi nodes are resolved during register allocation / block ordering.
 		// For a stack-based VM, we rely on store/load of the variable.
 		// Phi is a no-op here; the builder should have emitted stores.
+
+	case OpTelemetry:
+		l.pushArg(v.Args[0]) // slot
+		l.pushArg(v.Args[1]) // val
+		l.emitBare(vmOpTelem)
 
 	default:
 		return fmt.Errorf("unsupported SSA op: %s", v.Op)

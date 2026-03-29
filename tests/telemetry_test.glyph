@@ -1,0 +1,5 @@
+@ GET /telemetry-test {
+  telemetry(1, 42)
+  telemetry(2, 1337)
+  > "telemetry sent"
+}

@@ -81,7 +81,35 @@ func init() {
 		"redirect":    builtinRedirect,
 		"vmExec":      builtinVMExec,
 		"gpuExec":     builtinGPUExec,
+		"telemetry":   builtinTelemetry,
 	}
+}
+
+func builtinTelemetry(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("telemetry() expects 2 arguments, got %d", len(args))
+	}
+	slotArg, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	valArg, err := i.EvaluateExpression(args[1], env)
+	if err != nil {
+		return nil, err
+	}
+
+	slot, ok1 := slotArg.(int64)
+	val, ok2 := valArg.(int64)
+	if !ok1 || !ok2 {
+		return nil, fmt.Errorf("telemetry() expects integer arguments, got %T and %T", slotArg, valArg)
+	}
+
+	// For interpreted mode, we just print or potentially update a local mock
+	if os.Getenv("GLYPH_DEBUG") == "true" {
+		fmt.Printf("[TELEMETRY] Slot %d = %d\n", slot, val)
+	}
+
+	return nil, nil
 }
 
 func builtinTimeNow(_ *Interpreter, _ []Expr, _ *Environment) (interface{}, error) {

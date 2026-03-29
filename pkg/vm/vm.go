@@ -69,6 +69,7 @@ const (
 	// GPU/Parallel opcodes
 	OpMitosis Opcode = 0xC0 // S opcode: clone VM state into new thread at spatial offset
 	OpMutator Opcode = 0xC1 // M opcode: self-modify code at IP + offset
+	OpTelemetry Opcode = 0xC2 // write to vm_stats[slot]
 
 	OpHalt Opcode = 0xFF
 )
@@ -420,6 +421,8 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 		return vm.execAwait()
 	case OpTry:
 		return vm.execTry()
+	case OpTelemetry:
+		return vm.execTelemetry()
 	case OpHalt:
 		vm.halted = true
 		return nil
@@ -1508,6 +1511,29 @@ func (vm *VM) execCall() error {
 
 	// Function not found
 	return fmt.Errorf("undefined function: %s", fnName.Val)
+}
+
+// execTelemetry writes to the telemetry plane
+func (vm *VM) execTelemetry() error {
+	val, err := vm.Pop()
+	if err != nil {
+		return err
+	}
+	slot, err := vm.Pop()
+	if err != nil {
+		return err
+	}
+
+	s, ok1 := slot.(IntValue)
+	v, ok2 := val.(IntValue)
+	if !ok1 || !ok2 {
+		return fmt.Errorf("telemetry expects integer arguments")
+	}
+
+	if os.Getenv("GLYPH_DEBUG") == "true" {
+		fmt.Printf("[TELEMETRY] Slot %d = %d\n", s.Val, v.Val)
+	}
+	return nil
 }
 
 // readOperand reads a 4-byte operand

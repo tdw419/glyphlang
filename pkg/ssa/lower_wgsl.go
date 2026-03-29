@@ -195,6 +195,10 @@ func (l *WGSLLowering) emitValueWithPrefix(b *strings.Builder, v *Value, fnIdx i
 
 	case OpPhi:
 		// Simplified for MVP
+	case OpTelemetry:
+		// Args[0] = slot, Args[1] = value
+		// Maps to atomicStore(&vm_stats[slot % 11], value)
+		b.WriteString(l.line(fmt.Sprintf("atomicStore(&vm_stats[u32(%sv%d) %% 11u], u32(%sv%d));", prefix, v.Args[0].ID, prefix, v.Args[1].ID)))
 	}
 
 	return nil

@@ -458,8 +458,20 @@ func (b *Builder) buildUnaryOp(e ast.UnaryOpExpr) (*Value, error) {
 		return operand, nil
 	}
 }
-
 func (b *Builder) buildCall(e ast.FunctionCallExpr) (*Value, error) {
+	// Special handle builtins that map to SSA ops
+	if e.Name == "telemetry" && len(e.Args) == 2 {
+		slot, err := b.buildExpr(e.Args[0])
+		if err != nil {
+			return nil, err
+		}
+		val, err := b.buildExpr(e.Args[1])
+		if err != nil {
+			return nil, err
+		}
+		return b.emit(OpTelemetry, TypeVoid, slot, val), nil
+	}
+
 	args := make([]*Value, len(e.Args))
 	for i, arg := range e.Args {
 		v, err := b.buildExpr(arg)
