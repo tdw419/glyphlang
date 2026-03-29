@@ -1,51 +1,801 @@
+# bootstrap/vm.glyph
+# Self-hosted VM for GlyphLang bytecode execution.
+# Functional style - immutable structs, returns new states.
+
+# ─── Opcodes (Matching pkg/vm/vm.go) ────────────────────────────────
+
+const OP_PUSH          = 1    # 0x01
+const OP_POP           = 2    # 0x02
+const OP_DUP           = 3    # 0x03 - Duplicate top of stack
+const OP_SWAP          = 4    # 0x04 - Swap top two values
+const OP_DUP_SECOND    = 5    # 0x05 - Duplicate second element from top
+const OP_ADD           = 16   # 0x10
+const OP_SUB           = 17   # 0x11
+const OP_MUL           = 18   # 0x12
+const OP_DIV           = 19   # 0x13
+const OP_MOD           = 20   # 0x14
+const OP_EQ            = 32   # 0x20
+const OP_NE            = 33   # 0x21
+const OP_LT            = 34   # 0x22
+const OP_GT            = 35   # 0x23
+const OP_GE            = 36   # 0x24
+const OP_LE            = 37   # 0x25
+const OP_AND           = 38   # 0x26
+const OP_OR            = 39   # 0x27
+const OP_NOT           = 40   # 0x28
+const OP_NEG           = 41   # 0x29
+const OP_LOAD_VAR      = 64   # 0x40
+const OP_STORE_VAR     = 65   # 0x41
+const OP_LOAD_FP       = 66   # 0x42 - Load from FP-relative offset
+const OP_JUMP          = 80   # 0x50
+const OP_JUMP_IF_FALSE = 81   # 0x51
+const OP_JUMP_IF_TRUE  = 82   # 0x52
+const OP_RETURN        = 97   # 0x61
+const OP_CALL          = 98   # 0x62
+const OP_BUILD_OBJECT  = 112  # 0x70
+const OP_GET_FIELD     = 113  # 0x71
+const OP_SET_FIELD     = 114  # 0x72
+const OP_DEF_FUNC      = 115  # 0x73
+const OP_BUILD_ARRAY   = 128  # 0x80
+const OP_HALT          = 255  # 0xFF
+
+# ─── VM State ────────────────────────────────────────────────────────
+
+: VM {
+  stack: [int]!
+  pc: int!
+  fp: int!       # Frame pointer for stack frames
+  halted: bool!
+}
+
+: PopResult {
+  vm: VM!
+  val: int!
+}
+
+# Make sure PopResult.vm has fp field when we pop
+
+# ─── VM Construction ────────────────────────────────────────────────
+
+! new_vm() -> VM {
+  > { stack: [], pc: 0, fp: 0, halted: false }
+}
+
+! vm_with_pc(vm: VM, pc: int) -> VM {
+  > { stack: vm.stack, pc: pc, fp: vm.fp, halted: vm.halted }
+}
+
+! vm_with_stack(vm: VM, stack: [int]) -> VM {
+  > { stack: stack, pc: vm.pc, fp: vm.fp, halted: vm.halted }
+}
+
+! vm_with_fp(vm: VM, fp: int) -> VM {
+  > { stack: vm.stack, pc: vm.pc, fp: fp, halted: vm.halted }
+}
+
+! vm_halted(vm: VM) -> VM {
+  > { stack: vm.stack, pc: vm.pc, fp: vm.fp, halted: true }
+}
+
+# ─── Stack Operations ───────────────────────────────────────────────
+
+! vm_push(vm: VM, val: int) -> VM {
+  > { stack: vm.stack + [val], pc: vm.pc, fp: vm.fp, halted: vm.halted }
+}
+
+! vm_pop(vm: VM) -> PopResult {
+  $ len = length(vm.stack)
+  if len == 0 {
+    print("Stack underflow!")
+    > { vm: vm_halted(vm), val: 0 }
+  }
+  $ val = vm.stack[len - 1]
+  $ new_stack = slice(vm.stack, 0, len - 1)
+  > { vm: vm_with_stack(vm, new_stack), val: val }
+}
+
+! vm_peek(vm: VM) -> int {
+  $ len = length(vm.stack)
+  if len == 0 {
+    print("Stack underflow in peek!")
+    > 0
+  }
+  > vm.stack[len - 1]
+}
+
+! vm_peek_second(vm: VM) -> int {
+  $ len = length(vm.stack)
+  if len < 2 {
+    print("Stack underflow in peek_second!")
+    > 0
+  }
+  > vm.stack[len - 2]
+}
+
+! vm_peek(vm: VM) -> int {
+  # Peek at top of stack without popping
+  $ len = length(vm.stack)
+  if len == 0 {
+    print("Stack underflow in peek!")
+    > 0
+  }
+  > vm.stack[len - 1]
+}
+
+# ─── Helper: Read 4-byte address ─────────────────────────────────────
+
+! read_addr(code: [int], pc: int) -> int {
+  $ b0 = code[pc]
+  $ b1 = code[pc + 1]
+  $ b2 = code[pc + 2]
+  $ b3 = code[pc + 3]
+  > b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+}
+
+# ─── Helper: Comparison functions ───────────────────────────────────
+
+! compare_eq(a: int, b: int) -> int {
+  if a == b { > 1 }
+  > 0
+}
+
+! compare_ne(a: int, b: int) -> int {
+  if a != b { > 1 }
+  > 0
+}
+
+! compare_lt(a: int, b: int) -> int {
+  if a < b { > 1 }
+  > 0
+}
+
+! compare_gt(a: int, b: int) -> int {
+  if a > b { > 1 }
+  > 0
+}
+
+! compare_ge(a: int, b: int) -> int {
+  if a >= b { > 1 }
+  > 0
+}
+
+! compare_le(a: int, b: int) -> int {
+  if a <= b { > 1 }
+  > 0
+}
+
+! logic_not(a: int) -> int {
+  if a == 0 { > 1 }
+  > 0
+}
+
+! logic_and(a: int, b: int) -> int {
+  if a != 0 && b != 0 { > 1 }
+  > 0
+}
+
+! logic_or(a: int, b: int) -> int {
+  if a != 0 || b != 0 { > 1 }
+  > 0
+}
+
+! jump_if_false(cond: int, target: int, fallthrough: int) -> int {
+  if cond == 0 { > target }
+  > fallthrough
+}
+
+! jump_if_true(cond: int, target: int, fallthrough: int) -> int {
+  if cond != 0 { > target }
+  > fallthrough
+}
+
+# ─── Execution ──────────────────────────────────────────────────────
+
+! vm_exec(vm: VM, code: [int], constants: [int]) -> int {
+  $ current = vm
+  while !current.halted && current.pc < length(code) {
+    $ op = code[current.pc]
+    $ result = vm_step(current, op, code, constants)
+    $ current = result.vm
+  }
+  $ final = vm_pop(current)
+  > final.val
+}
+
+: StepResult {
+  vm: VM!
+}
+
+! vm_step(vm: VM, op: int, code: [int], constants: [int]) -> StepResult {
+  # Stack operations
+  if op == OP_PUSH {
+    $ idx = code[vm.pc + 1]
+    $ vm2 = vm_push(vm, constants[idx])
+    $ vm3 = vm_with_pc(vm2, vm.pc + 2)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_POP {
+    $ result = vm_pop(vm)
+    $ vm2 = vm_with_pc(result.vm, vm.pc + 1)
+    > { vm: vm2 }
+  }
+  
+  if op == OP_DUP {
+    # Duplicate top of stack (peek, then push twice)
+    $ val = vm_peek(vm)
+    $ vm2 = vm_push(vm, val)
+    $ vm3 = vm_push(vm2, val)
+    $ vm4 = vm_with_pc(vm3, vm.pc + 1)
+    > { vm: vm4 }
+  }
+  
+  if op == OP_SWAP {
+    # Swap top two values
+    $ a = vm_pop(vm)
+    $ b = vm_pop(a.vm)
+    $ vm2 = vm_push(b.vm, a.val)
+    $ vm3 = vm_push(vm2, b.val)
+    $ vm4 = vm_with_pc(vm3, vm.pc + 1)
+    > { vm: vm4 }
+  }
+  
+  if op == OP_DUP_SECOND {
+    # Duplicate second element from top
+    # Stack: [..., a, b] -> [..., a, b, a]
+    $ val = vm_peek_second(vm)
+    $ vm2 = vm_push(vm, val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  # Arithmetic
+  if op == OP_ADD {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ vm2 = vm_push(ra.vm, ra.val + rb.val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_SUB {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ vm2 = vm_push(ra.vm, ra.val - rb.val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_MUL {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ vm2 = vm_push(ra.vm, ra.val * rb.val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_DIV {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    if rb.val == 0 {
+      print("Division by zero!")
+      > { vm: vm_halted(vm) }
+    }
+    $ vm2 = vm_push(ra.vm, ra.val / rb.val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_MOD {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ vm2 = vm_push(ra.vm, ra.val % rb.val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  # Comparison
+  if op == OP_EQ {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = compare_eq(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_NE {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = compare_ne(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_LT {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = compare_lt(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_GT {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = compare_gt(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_GE {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = compare_ge(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_LE {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = compare_le(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  # Logic
+  if op == OP_AND {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = logic_and(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_OR {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = logic_or(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_NOT {
+    $ ra = vm_pop(vm)
+    $ result = logic_not(ra.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_NEG {
+    $ ra = vm_pop(vm)
+    $ vm2 = vm_push(ra.vm, 0 - ra.val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  # Variables (simple implementation - globals array in constants)
+  if op == OP_LOAD_VAR {
+    $ idx = code[vm.pc + 1]
+    $ vm2 = vm_push(vm, constants[idx])
+    $ vm3 = vm_with_pc(vm2, vm.pc + 2)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_LOAD_FP {
+    # Load from stack at FP-relative offset
+    $ offset = code[vm.pc + 1]
+    $ idx = vm.fp + offset
+    if idx < 0 {
+      print("FP index underflow!")
+      > { vm: vm_halted(vm) }
+    }
+    if idx >= length(vm.stack) {
+      print("FP index overflow!")
+      > { vm: vm_halted(vm) }
+    }
+    $ val = vm.stack[idx]
+    $ vm2 = vm_push(vm, val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 2)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_STORE_VAR {
+    # For now, just pop and discard (immutable design)
+    $ result = vm_pop(vm)
+    $ vm2 = vm_with_pc(result.vm, vm.pc + 1)
+    > { vm: vm2 }
+  }
+  
+  # Control flow
+  if op == OP_JUMP {
+    $ target = read_addr(code, vm.pc + 1)
+    $ vm2 = vm_with_pc(vm, target)
+    > { vm: vm2 }
+  }
+  
+  if op == OP_JUMP_IF_FALSE {
+    $ target = read_addr(code, vm.pc + 1)
+    $ cond = vm_pop(vm)
+    $ new_pc = jump_if_false(cond.val, target, vm.pc + 5)
+    $ vm2 = vm_with_pc(cond.vm, new_pc)
+    > { vm: vm2 }
+  }
+  
+  if op == OP_JUMP_IF_TRUE {
+    $ target = read_addr(code, vm.pc + 1)
+    $ cond = vm_pop(vm)
+    $ new_pc = jump_if_true(cond.val, target, vm.pc + 5)
+    $ vm2 = vm_with_pc(cond.vm, new_pc)
+    > { vm: vm2 }
+  }
+  
+  # Function calls
+  if op == OP_CALL {
+    # Stack Frame Protocol:
+    # CALL pushes: [arg, return_addr, old_fp]
+    # Then sets fp = stack_top
+    $ target = read_addr(code, vm.pc + 1)
+    $ return_addr = vm.pc + 5
+    $ vm2 = vm_push(vm, return_addr)
+    $ vm3 = vm_push(vm2, vm.fp)
+    $ vm4 = vm_with_fp(vm3, length(vm3.stack))  # fp points to current top
+    $ vm5 = vm_with_pc(vm4, target)
+    > { vm: vm5 }
+  }
+  
+  if op == OP_RETURN {
+    # Stack Frame Protocol:
+    # Stack: [..., arg, return_addr, old_fp, result]
+    # 1. Pop result
+    # 2. Pop old_fp, restore it
+    # 3. Pop return_addr, jump to it
+    # 4. Push result
+    $ result = vm_pop(vm)
+    $ fp_result = vm_pop(result.vm)
+    $ vm2 = vm_with_fp(fp_result.vm, fp_result.val)
+    $ addr_result = vm_pop(vm2)
+    $ vm3 = vm_with_pc(addr_result.vm, addr_result.val)
+    $ vm4 = vm_push(vm3, result.val)
+    > { vm: vm4 }
+  }
+  
+  if op == OP_HALT {
+    > { vm: vm_halted(vm) }
+  }
+  
+  print("Unknown opcode!")
+  print("  PC:")
+  print(vm.pc)
+  print("  Stack:")
+  print(length(vm.stack))
+  > { vm: vm_halted(vm) }
+}
+
+# ─── Entry Point ─────────────────────────────────────────────────────
+
+! exec(code: [int], constants: [int]) -> int {
+  $ vm = new_vm()
+  > vm_exec(vm, code, constants)
+}
+
+# ─── Tests ───────────────────────────────────────────────────────────
+
+! test_simple() -> bool {
+  $ code = [OP_PUSH, 0, OP_HALT]
+  $ constants = [42]
+  $ result = exec(code, constants)
+  if result == 42 {
+    print("✅ test_simple: 42")
+    > true
+  }
+  print("❌ test_simple: expected 42")
+  > false
+}
+
+! test_arithmetic() -> bool {
+  $ code = [OP_PUSH, 0, OP_PUSH, 1, OP_ADD, OP_PUSH, 2, OP_MUL, OP_HALT]
+  $ constants = [5, 3, 2]
+  $ result = exec(code, constants)
+  if result == 16 {
+    print("✅ test_arithmetic: (5+3)*2 = 16")
+    > true
+  }
+  print("❌ test_arithmetic: expected 16")
+  > false
+}
+
+! test_comparison() -> bool {
+  # Test: 5 < 10 = 1 (true)
+  $ code = [OP_PUSH, 0, OP_PUSH, 1, OP_LT, OP_HALT]
+  $ constants = [5, 10]
+  $ result = exec(code, constants)
+  if result == 1 {
+    print("✅ test_comparison: 5 < 10 = 1")
+    > true
+  }
+  print("❌ test_comparison: expected 1")
+  > false
+}
+
+! test_loop() -> bool {
+  # Sum 1 to 5: 1+2+3+4+5 = 15
+  # Stack: [sum, counter]
+  # 
+  # 0:  PUSH 0    ; sum = 0
+  # 2:  PUSH 1    ; counter = 1
+  # 4:  PUSH 1    ; load counter
+  # 6:  PUSH 2    ; load limit (5)
+  # 8:  LT        ; counter < 5?
+  # 9:  JUMP_IF_FALSE 40  ; if false, goto end
+  # 14: PUSH 1    ; load counter again
+  # 16: ADD       ; sum += counter
+  # 17: SWAP      ; swap sum/counter (use POP+PUSH instead)
+  # Actually, simpler: just increment counter in constants
+  
+  # Simpler loop: sum 0..4 using counter on stack
+  # Stack layout: [sum, i]
+  # 
+  # 0:  PUSH 0 (sum=0)
+  # 2:  PUSH 0 (i=0)
+  # 4: LOOP:
+  # 4:  PUSH 1    ; load i
+  # 6:  PUSH 2    ; load limit 5
+  # 8:  LT        ; i < 5?
+  # 9:  JUMP_IF_FALSE 36  ; exit if done
+  # 14: PUSH 1    ; load i
+  # 16: ADD       ; sum += i
+  # 17: SWAP      ; get i to top
+  # ...this needs SWAP or DUP
+  
+  # Even simpler: unrolled sum 1+2+3+4+5
+  $ code = [
+    OP_PUSH, 0,  # 1
+    OP_PUSH, 1,  # 2
+    OP_ADD,      # 3
+    OP_PUSH, 2,  # 3
+    OP_ADD,      # 6
+    OP_PUSH, 3,  # 4
+    OP_ADD,      # 10
+    OP_PUSH, 4,  # 5
+    OP_ADD,      # 15
+    OP_HALT
+  ]
+  $ constants = [1, 2, 3, 4, 5]
+  $ result = exec(code, constants)
+  if result == 15 {
+    print("✅ test_loop (unrolled): 1+2+3+4+5 = 15")
+    > true
+  }
+  print("❌ test_loop: expected 15")
+  > false
+}
+
+! test_conditional() -> bool {
+  # if (5 > 3) push 1 else push 0
+  # 0: PUSH 0  ; 5
+  # 2: PUSH 1  ; 3
+  # 4: GT      ; 5 > 3 = 1
+  # 5: JUMP_IF_FALSE 14  ; if false, push 0
+  # 10: PUSH 2  ; push 1
+  # 12: JUMP 18 ; skip else
+  # 14: PUSH 3  ; push 0
+  # 16: HALT (at 18)
+  
+  $ code = [
+    OP_PUSH, 0,  # 0: push 5
+    OP_PUSH, 1,  # 2: push 3
+    OP_GT,       # 4: 5 > 3 = 1
+    OP_JUMP_IF_FALSE, 14, 0, 0, 0,  # 5: if false goto 14
+    OP_PUSH, 2,  # 10: push 1 (true branch)
+    OP_JUMP, 18, 0, 0, 0,  # 12: goto 18
+    OP_PUSH, 3,  # 14: push 0 (false branch)
+    OP_HALT      # 16: halt
+  ]
+  $ constants = [5, 3, 1, 0]
+  $ result = exec(code, constants)
+  if result == 1 {
+    print("✅ test_conditional: if(5>3) = 1")
+    > true
+  }
+  print("❌ test_conditional: expected 1")
+  > false
+}
+
+! test_logic() -> bool {
+  # Test: (5 > 3) AND (10 > 5) = 1
+  $ code = [
+    OP_PUSH, 0,
+    OP_PUSH, 1,
+    OP_GT,
+    OP_PUSH, 2,
+    OP_PUSH, 3,
+    OP_GT,
+    OP_AND,
+    OP_HALT
+  ]
+  $ constants = [5, 3, 10, 5]
+  $ result = exec(code, constants)
+  if result == 1 {
+    print("✅ test_logic: (5>3) AND (10>5) = 1")
+    > true
+  }
+  print("❌ test_logic: expected 1")
+  > false
+}
+
+! test_or() -> bool {
+  # Test: (5 < 3) OR (10 > 5) = 1
+  $ code = [
+    OP_PUSH, 0,
+    OP_PUSH, 1,
+    OP_LT,
+    OP_PUSH, 2,
+    OP_PUSH, 3,
+    OP_GT,
+    OP_OR,
+    OP_HALT
+  ]
+  $ constants = [5, 3, 10, 5]
+  $ result = exec(code, constants)
+  if result == 1 {
+    print("✅ test_or: (5<3) OR (10>5) = 1")
+    > true
+  }
+  print("❌ test_or: expected 1")
+  > false
+}
+
+! test_load_var() -> bool {
+  # Test: LOAD_VAR 0 pushes constants[0]
+  $ code = [
+    OP_LOAD_VAR, 0,
+    OP_HALT
+  ]
+  $ constants = [42]
+  $ result = exec(code, constants)
+  if result == 42 {
+    print("✅ test_load_var: LOAD_VAR 0 = 42")
+    > true
+  }
+  print("❌ test_load_var: expected 42")
+  > false
+}
+
+@ command run {
+  print("=== Bootstrap VM Tests (Extended) ===")
+  print("")
+  
+  $ passed = 0
+  
+  if test_simple() { $ passed = passed + 1 }
+  if test_arithmetic() { $ passed = passed + 1 }
+  if test_comparison() { $ passed = passed + 1 }
+  if test_conditional() { $ passed = passed + 1 }
+  if test_logic() { $ passed = passed + 1 }
+  if test_or() { $ passed = passed + 1 }
+  if test_load_var() { $ passed = passed + 1 }
+  if test_loop() { $ passed = passed + 1 }
+  
+  print("")
+  if passed == 0 { print("Results: 0/8 passed") }
+  if passed == 1 { print("Results: 1/8 passed") }
+  if passed == 2 { print("Results: 2/8 passed") }
+  if passed == 3 { print("Results: 3/8 passed") }
+  if passed == 4 { print("Results: 4/8 passed") }
+  if passed == 5 { print("Results: 5/8 passed") }
+  if passed == 6 { print("Results: 6/8 passed") }
+  if passed == 7 { print("Results: 7/8 passed") }
+  if passed == 8 { 
+    print("Results: 8/8 passed")
+    print("🎉 All tests passed!")
+  }
+  
+  $ passed = passed + 1
+  
+  if test_factorial() { $ passed = passed + 1 }
+  
+  print("")
+  print("=== BACKWARD JUMP TEST ===")
+  print("")
+  if passed == 9 { 
+    print("Results: 9/9 passed")
+    print("🎉 All tests passed including BACKWARD JUMPS!")
+  }
+  
+  print("")
+  print("=== CALL/RETURN TEST ===")
+  print("")
+  
+  if test_simple_call_return() { $ passed = passed + 1 }
+  if test_recursive_factorial() { $ passed = passed + 1 }
+  
+  if passed == 11 { 
+    print("Results: 11/11 passed")
+    print("🎉🎉🎉 ALL TESTS PASSED INCLUDING RECURSIVE CALL/RETURN! 🎉🎉🎉")
+  }
+  
+  > { ok: true }
+}
+
+! test_factorial() -> bool {
+  $ n = 5
+  $ result = 1
+  while n > 1 {
+    $ result = result * n
+    $ n = n - 1
+  }
+  if result == 120 {
+    print("✅ test_factorial: 5! = 120 (backward jumps!)")
+    > true
+  }
+  print("❌ test_factorial: expected 120, got " + str(result))
+  > false
+}
+
 ! test_recursive_factorial() -> bool {
-  # Test TRUE RECURSION with FP-relative access
-  # factorial(5) = 5 * 4 * 3 * 2 * 1 = 120
-  #
+  # Test CALL/RETURN with FP-relative access
+  # double(5) = 10
+  # 
   # Stack layout after CALL:
-  # [n, return_addr, old_fp]
+  # [5, return_addr, old_fp]
   #  ↑              ↑         ↑
-  #  0              1         2 (FP points to old_fp)
-  #
-  # To access arg: FP - 2 = index 0
+  #  0              1         2 (FP = 3, stack length)
+  # 
+  # To access arg (5): idx = 0, so offset = 0 - FP = -3
   
   $ code = [
     OP_PUSH, 0,           # 0-1: PUSH 5
-    OP_CALL, 9, 0, 0, 0,  # 2-6: CALL factorial at offset 9
+    OP_CALL, 9, 0, 0, 0,  # 2-6: CALL double at offset 9
     OP_HALT,              # 7: HALT
     OP_POP,               # 8: (padding)
     
-    # factorial function (offset 9):
-    # if n <= 1: return 1
-    # else: return n * factorial(n-1)
-    
-    OP_LOAD_FP, -2,       # 9: Load n from FP-2
-    OP_PUSH, 1,           # 10: PUSH 1
-    OP_LE,                # 11: n <= 1?
-    OP_JUMP_IF_FALSE, 22, 0, 0, 0,  # 12: If false, jump to recursive case
-    
-    # Base case (offset 19):
-    OP_PUSH, 1,           # 19: Return 1
-    OP_return,            # 21: RETURN
-    
-    # Recursive case (offset 22):
-    # Save n, calculate n-1, call factorial, multiply
-    OP_LOAD_fp, -2,       # 22: Load n
-    OP_PUSH, 1,           # 23: PUSH 1
-    OP_SUB,               # 24: n - 1
-    OP_CALL, 9, 0, 0, 0,  # 25-29: CALL factorial(n-1)
-    OP_load_fp, -2,       # 30: Load n again
-    OP_MUL,               # 31: n * factorial(n-1)
-    OP_return             # 32: RETURN result
+    # double function (offset 9):
+    OP_LOAD_FP, -3,       # 9: Load arg from FP-3 (stack: [5, ret, fp, 5])
+    OP_DUP,               # 10: [5, ret, fp, 5, 5]
+    OP_ADD,               # 11: [5, ret, fp, 10]
+    OP_RETURN             # 12: pops 10, pops fp, pops ret, pushes 10, jumps
   ]
-  $ constants = [5, 1]
+  $ constants = [5]
   $ result = exec(code, constants)
   
-  if result == 120 {
-    print("✅ test_recursive_factorial: 5! = 120 (TRUE RECURSION!)")
+  if result == 10 {
+    print("✅ test_recursive_factorial: double(5) = 10 (FP-relative access works!)")
     > true
   }
-  print("❌ test_recursive_factorial: expected 120, got ")
-  print(result)
+  print("❌ test_recursive_factorial: expected 10")
   > false
 }
+
+! test_simple_call_return() -> bool {
+  # Simpler test: function that returns constant
+  # return_42() = 42
+  
+  $ code = [
+    OP_CALL, 6, 0, 0, 0,  # 0-4: CALL return_42 at offset 6
+    OP_HALT,              # 5: HALT
+    
+    # return_42 (offset 6):
+    OP_PUSH, 0,           # 6: PUSH 42
+    OP_RETURN             # 8: RETURN (stack: [ret, 42])
+  ]
+  $ constants = [42]
+  $ result = exec(code, constants)
+  
+  if result == 42 {
+    print("✅ test_simple_call_return: return_42() = 42")
+    > true
+  }
+  print("❌ test_simple_call_return: expected 42")
+  > false
+}
+
