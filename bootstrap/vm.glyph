@@ -1,5 +1,6 @@
 # bootstrap/vm.glyph
 # Self-hosted VM for GlyphLang bytecode execution.
+# v0.9.7 - Object & Array Opcodes
 # Functional style - immutable structs, returns new states.
 
 # ─── Opcodes (Matching pkg/vm/vm.go) ────────────────────────────────
@@ -39,6 +40,10 @@ const OP_DEF_FUNC      = 115  # 0x73
 const OP_BUILD_ARRAY   = 128  # 0x80
 const OP_HALT          = 255  # 0xFF
 
+# ─── Heap Constants ─────────────────────────────────────────────────
+
+const HEAP_BASE = 2000000
+
 # ─── VM State ────────────────────────────────────────────────────────
 
 : VM {
@@ -46,6 +51,7 @@ const OP_HALT          = 255  # 0xFF
   pc: int!
   fp: int!       # Frame pointer for stack frames
   halted: bool!
+  heap: [int]!   # Flat heap for arrays and objects
 }
 
 : PopResult {
@@ -53,34 +59,32 @@ const OP_HALT          = 255  # 0xFF
   val: int!
 }
 
-# Make sure PopResult.vm has fp field when we pop
-
 # ─── VM Construction ────────────────────────────────────────────────
 
 ! new_vm() -> VM {
-  > { stack: [], pc: 0, fp: 0, halted: false }
+  > { stack: [], pc: 0, fp: 0, halted: false, heap: [] }
 }
 
 ! vm_with_pc(vm: VM, pc: int) -> VM {
-  > { stack: vm.stack, pc: pc, fp: vm.fp, halted: vm.halted }
+  > { stack: vm.stack, pc: pc, fp: vm.fp, halted: vm.halted, heap: vm.heap }
 }
 
 ! vm_with_stack(vm: VM, stack: [int]) -> VM {
-  > { stack: stack, pc: vm.pc, fp: vm.fp, halted: vm.halted }
+  > { stack: stack, pc: vm.pc, fp: vm.fp, halted: vm.halted, heap: vm.heap }
 }
 
 ! vm_with_fp(vm: VM, fp: int) -> VM {
-  > { stack: vm.stack, pc: vm.pc, fp: fp, halted: vm.halted }
+  > { stack: vm.stack, pc: vm.pc, fp: fp, halted: vm.halted, heap: vm.heap }
 }
 
 ! vm_halted(vm: VM) -> VM {
-  > { stack: vm.stack, pc: vm.pc, fp: vm.fp, halted: true }
+  > { stack: vm.stack, pc: vm.pc, fp: vm.fp, halted: true, heap: vm.heap }
 }
 
 # ─── Stack Operations ───────────────────────────────────────────────
 
 ! vm_push(vm: VM, val: int) -> VM {
-  > { stack: vm.stack + [val], pc: vm.pc, fp: vm.fp, halted: vm.halted }
+  > { stack: vm.stack + [val], pc: vm.pc, fp: vm.fp, halted: vm.halted, heap: vm.heap }
 }
 
 ! vm_pop(vm: VM) -> PopResult {
@@ -112,14 +116,39 @@ const OP_HALT          = 255  # 0xFF
   > vm.stack[len - 2]
 }
 
-! vm_peek(vm: VM) -> int {
-  # Peek at top of stack without popping
-  $ len = length(vm.stack)
-  if len == 0 {
-    print("Stack underflow in peek!")
-    > 0
+# ─── Heap Operations ────────────────────────────────────────────────
+
+# Convert heap ref to heap offset
+! ref_to_offset(ref: int) -> int {
+  > 0 - ref - HEAP_BASE
+}
+
+# Convert heap offset to ref
+! offset_to_ref(offset: int) -> int {
+  > 0 - (HEAP_BASE + offset)
+}
+
+# Set value at absolute position in heap array
+! heap_set_at(heap: [int], pos: int, val: int) -> [int] {
+  $ prefix = slice(heap, 0, pos)
+  $ suffix = slice(heap, pos + 1, length(heap))
+  > prefix + [val] + suffix
+}
+
+# Find a key in an object's heap data. Returns value position or -1.
+# Object layout: [field_count, key0, val0, key1, val1, ...]
+! heap_find_key(heap: [int], ref: int, key: int) -> int {
+  $ offset = ref_to_offset(ref)
+  $ field_count = heap[offset]
+  $ i = 0
+  while i < field_count {
+    $ key_pos = offset + 1 + i * 2
+    if heap[key_pos] == key {
+      > offset + 2 + i * 2
+    }
+    $ i = i + 1
   }
-  > vm.stack[len - 1]
+  > -1
 }
 
 # ─── Helper: Read 4-byte address ─────────────────────────────────────
@@ -222,16 +251,13 @@ const OP_HALT          = 255  # 0xFF
   }
   
   if op == OP_DUP {
-    # Duplicate top of stack (peek, then push twice)
     $ val = vm_peek(vm)
     $ vm2 = vm_push(vm, val)
-    $ vm3 = vm_push(vm2, val)
-    $ vm4 = vm_with_pc(vm3, vm.pc + 1)
-    > { vm: vm4 }
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
   }
   
   if op == OP_SWAP {
-    # Swap top two values
     $ a = vm_pop(vm)
     $ b = vm_pop(a.vm)
     $ vm2 = vm_push(b.vm, a.val)
@@ -241,8 +267,6 @@ const OP_HALT          = 255  # 0xFF
   }
   
   if op == OP_DUP_SECOND {
-    # Duplicate second element from top
-    # Stack: [..., a, b] -> [..., a, b, a]
     $ val = vm_peek_second(vm)
     $ vm2 = vm_push(vm, val)
     $ vm3 = vm_with_pc(vm2, vm.pc + 1)
@@ -392,7 +416,6 @@ const OP_HALT          = 255  # 0xFF
   }
   
   if op == OP_LOAD_FP {
-    # Load from stack at FP-relative offset
     $ offset = code[vm.pc + 1]
     $ idx = vm.fp + offset
     if idx < 0 {
@@ -410,7 +433,6 @@ const OP_HALT          = 255  # 0xFF
   }
   
   if op == OP_STORE_VAR {
-    # For now, just pop and discard (immutable design)
     $ result = vm_pop(vm)
     $ vm2 = vm_with_pc(result.vm, vm.pc + 1)
     > { vm: vm2 }
@@ -441,25 +463,16 @@ const OP_HALT          = 255  # 0xFF
   
   # Function calls
   if op == OP_CALL {
-    # Stack Frame Protocol:
-    # CALL pushes: [arg, return_addr, old_fp]
-    # Then sets fp = stack_top
     $ target = read_addr(code, vm.pc + 1)
     $ return_addr = vm.pc + 5
     $ vm2 = vm_push(vm, return_addr)
     $ vm3 = vm_push(vm2, vm.fp)
-    $ vm4 = vm_with_fp(vm3, length(vm3.stack))  # fp points to current top
+    $ vm4 = vm_with_fp(vm3, length(vm3.stack))
     $ vm5 = vm_with_pc(vm4, target)
     > { vm: vm5 }
   }
   
   if op == OP_RETURN {
-    # Stack Frame Protocol:
-    # Stack: [..., arg, return_addr, old_fp, result]
-    # 1. Pop result
-    # 2. Pop old_fp, restore it
-    # 3. Pop return_addr, jump to it
-    # 4. Push result
     $ result = vm_pop(vm)
     $ fp_result = vm_pop(result.vm)
     $ vm2 = vm_with_fp(fp_result.vm, fp_result.val)
@@ -467,6 +480,104 @@ const OP_HALT          = 255  # 0xFF
     $ vm3 = vm_with_pc(addr_result.vm, addr_result.val)
     $ vm4 = vm_push(vm3, result.val)
     > { vm: vm4 }
+  }
+  
+  # ─── Object & Array Opcodes (v0.9.7) ──────────────────────────────
+  
+  # OP_BUILD_ARRAY: operand = element count
+  # Pops `count` elements from stack, stores in heap, pushes ref.
+  # Heap layout: [count, elem0, elem1, ...]
+  if op == OP_BUILD_ARRAY {
+    $ count = code[vm.pc + 1]
+    # Pop elements and collect in order (prepend reverses pop order)
+    $ elems = []
+    $ current = vm
+    $ i = 0
+    while i < count {
+      $ pop_result = vm_pop(current)
+      $ elems = [pop_result.val] + elems
+      $ current = pop_result.vm
+      $ i = i + 1
+    }
+    # Allocate in heap
+    $ heap_data = [count] + elems
+    $ ref = 0 - (HEAP_BASE + length(current.heap))
+    $ new_heap = current.heap + heap_data
+    # Create VM with updated heap, push ref, advance PC
+    $ vm2 = { stack: current.stack, pc: current.pc, fp: current.fp, halted: current.halted, heap: new_heap }
+    $ vm3 = vm_push(vm2, ref)
+    $ vm4 = vm_with_pc(vm3, vm.pc + 2)
+    > { vm: vm4 }
+  }
+  
+  # OP_BUILD_OBJECT: operand = field count
+  # For each field: pop value, then pop key.
+  # Heap layout: [field_count, key0, val0, key1, val1, ...]
+  if op == OP_BUILD_OBJECT {
+    $ field_count = code[vm.pc + 1]
+    $ fields = []
+    $ current = vm
+    $ i = 0
+    while i < field_count {
+      $ val_pop = vm_pop(current)
+      $ key_pop = vm_pop(val_pop.vm)
+      # Prepend key-value pair (reverses to match push order)
+      $ fields = [key_pop.val, val_pop.val] + fields
+      $ current = key_pop.vm
+      $ i = i + 1
+    }
+    # Allocate in heap
+    $ heap_data = [field_count] + fields
+    $ ref = 0 - (HEAP_BASE + length(current.heap))
+    $ new_heap = current.heap + heap_data
+    $ vm2 = { stack: current.stack, pc: current.pc, fp: current.fp, halted: current.halted, heap: new_heap }
+    $ vm3 = vm_push(vm2, ref)
+    $ vm4 = vm_with_pc(vm3, vm.pc + 2)
+    > { vm: vm4 }
+  }
+  
+  # OP_GET_FIELD: pop key, pop obj_ref, look up in heap, push value.
+  if op == OP_GET_FIELD {
+    $ key_pop = vm_pop(vm)
+    $ obj_pop = vm_pop(key_pop.vm)
+    $ val_pos = heap_find_key(obj_pop.vm.heap, obj_pop.val, key_pop.val)
+    if val_pos == -1 {
+      print("Field not found!")
+      > { vm: vm_halted(obj_pop.vm) }
+    }
+    $ val = obj_pop.vm.heap[val_pos]
+    $ vm2 = vm_push(obj_pop.vm, val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  # OP_SET_FIELD: pop value, pop key, pop obj_ref, update heap, push obj_ref.
+  if op == OP_SET_FIELD {
+    $ val_pop = vm_pop(vm)
+    $ key_pop = vm_pop(val_pop.vm)
+    $ obj_pop = vm_pop(key_pop.vm)
+    $ val_pos = heap_find_key(obj_pop.vm.heap, obj_pop.val, key_pop.val)
+    if val_pos == -1 {
+      print("Field not found for set!")
+      > { vm: vm_halted(obj_pop.vm) }
+    }
+    $ new_heap = heap_set_at(obj_pop.vm.heap, val_pos, val_pop.val)
+    $ vm2 = { stack: obj_pop.vm.stack, pc: obj_pop.vm.pc, fp: obj_pop.vm.fp, halted: obj_pop.vm.halted, heap: new_heap }
+    $ vm3 = vm_push(vm2, obj_pop.val)
+    $ vm4 = vm_with_pc(vm3, vm.pc + 1)
+    > { vm: vm4 }
+  }
+  
+  # OP_DEF_FUNC: skip over function body.
+  # Format: OP_DEF_FUNC, name_idx(1), param_count(1), body_length(1), [param_name_idx(1)]..., body...
+  if op == OP_DEF_FUNC {
+    $ name_idx = code[vm.pc + 1]
+    $ param_count = code[vm.pc + 2]
+    $ body_length = code[vm.pc + 3]
+    # Total: opcode(1) + name(1) + params(1) + body_len(1) + param_names(param_count) + body(body_length)
+    $ total_size = 4 + param_count + body_length
+    $ vm2 = vm_with_pc(vm, vm.pc + total_size)
+    > { vm: vm2 }
   }
   
   if op == OP_HALT {
@@ -515,7 +626,6 @@ const OP_HALT          = 255  # 0xFF
 }
 
 ! test_comparison() -> bool {
-  # Test: 5 < 10 = 1 (true)
   $ code = [OP_PUSH, 0, OP_PUSH, 1, OP_LT, OP_HALT]
   $ constants = [5, 10]
   $ result = exec(code, constants)
@@ -528,46 +638,16 @@ const OP_HALT          = 255  # 0xFF
 }
 
 ! test_loop() -> bool {
-  # Sum 1 to 5: 1+2+3+4+5 = 15
-  # Stack: [sum, counter]
-  # 
-  # 0:  PUSH 0    ; sum = 0
-  # 2:  PUSH 1    ; counter = 1
-  # 4:  PUSH 1    ; load counter
-  # 6:  PUSH 2    ; load limit (5)
-  # 8:  LT        ; counter < 5?
-  # 9:  JUMP_IF_FALSE 40  ; if false, goto end
-  # 14: PUSH 1    ; load counter again
-  # 16: ADD       ; sum += counter
-  # 17: SWAP      ; swap sum/counter (use POP+PUSH instead)
-  # Actually, simpler: just increment counter in constants
-  
-  # Simpler loop: sum 0..4 using counter on stack
-  # Stack layout: [sum, i]
-  # 
-  # 0:  PUSH 0 (sum=0)
-  # 2:  PUSH 0 (i=0)
-  # 4: LOOP:
-  # 4:  PUSH 1    ; load i
-  # 6:  PUSH 2    ; load limit 5
-  # 8:  LT        ; i < 5?
-  # 9:  JUMP_IF_FALSE 36  ; exit if done
-  # 14: PUSH 1    ; load i
-  # 16: ADD       ; sum += i
-  # 17: SWAP      ; get i to top
-  # ...this needs SWAP or DUP
-  
-  # Even simpler: unrolled sum 1+2+3+4+5
   $ code = [
-    OP_PUSH, 0,  # 1
-    OP_PUSH, 1,  # 2
-    OP_ADD,      # 3
-    OP_PUSH, 2,  # 3
-    OP_ADD,      # 6
-    OP_PUSH, 3,  # 4
-    OP_ADD,      # 10
-    OP_PUSH, 4,  # 5
-    OP_ADD,      # 15
+    OP_PUSH, 0,
+    OP_PUSH, 1,
+    OP_ADD,
+    OP_PUSH, 2,
+    OP_ADD,
+    OP_PUSH, 3,
+    OP_ADD,
+    OP_PUSH, 4,
+    OP_ADD,
     OP_HALT
   ]
   $ constants = [1, 2, 3, 4, 5]
@@ -581,25 +661,15 @@ const OP_HALT          = 255  # 0xFF
 }
 
 ! test_conditional() -> bool {
-  # if (5 > 3) push 1 else push 0
-  # 0: PUSH 0  ; 5
-  # 2: PUSH 1  ; 3
-  # 4: GT      ; 5 > 3 = 1
-  # 5: JUMP_IF_FALSE 14  ; if false, push 0
-  # 10: PUSH 2  ; push 1
-  # 12: JUMP 18 ; skip else
-  # 14: PUSH 3  ; push 0
-  # 16: HALT (at 18)
-  
   $ code = [
-    OP_PUSH, 0,  # 0: push 5
-    OP_PUSH, 1,  # 2: push 3
-    OP_GT,       # 4: 5 > 3 = 1
-    OP_JUMP_IF_FALSE, 14, 0, 0, 0,  # 5: if false goto 14
-    OP_PUSH, 2,  # 10: push 1 (true branch)
-    OP_JUMP, 18, 0, 0, 0,  # 12: goto 18
-    OP_PUSH, 3,  # 14: push 0 (false branch)
-    OP_HALT      # 16: halt
+    OP_PUSH, 0,
+    OP_PUSH, 1,
+    OP_GT,
+    OP_JUMP_IF_FALSE, 14, 0, 0, 0,
+    OP_PUSH, 2,
+    OP_JUMP, 18, 0, 0, 0,
+    OP_PUSH, 3,
+    OP_HALT
   ]
   $ constants = [5, 3, 1, 0]
   $ result = exec(code, constants)
@@ -612,7 +682,6 @@ const OP_HALT          = 255  # 0xFF
 }
 
 ! test_logic() -> bool {
-  # Test: (5 > 3) AND (10 > 5) = 1
   $ code = [
     OP_PUSH, 0,
     OP_PUSH, 1,
@@ -634,7 +703,6 @@ const OP_HALT          = 255  # 0xFF
 }
 
 ! test_or() -> bool {
-  # Test: (5 < 3) OR (10 > 5) = 1
   $ code = [
     OP_PUSH, 0,
     OP_PUSH, 1,
@@ -656,7 +724,6 @@ const OP_HALT          = 255  # 0xFF
 }
 
 ! test_load_var() -> bool {
-  # Test: LOAD_VAR 0 pushes constants[0]
   $ code = [
     OP_LOAD_VAR, 0,
     OP_HALT
@@ -669,62 +736,6 @@ const OP_HALT          = 255  # 0xFF
   }
   print("❌ test_load_var: expected 42")
   > false
-}
-
-@ command run {
-  print("=== Bootstrap VM Tests (Extended) ===")
-  print("")
-  
-  $ passed = 0
-  
-  if test_simple() { $ passed = passed + 1 }
-  if test_arithmetic() { $ passed = passed + 1 }
-  if test_comparison() { $ passed = passed + 1 }
-  if test_conditional() { $ passed = passed + 1 }
-  if test_logic() { $ passed = passed + 1 }
-  if test_or() { $ passed = passed + 1 }
-  if test_load_var() { $ passed = passed + 1 }
-  if test_loop() { $ passed = passed + 1 }
-  
-  print("")
-  if passed == 0 { print("Results: 0/8 passed") }
-  if passed == 1 { print("Results: 1/8 passed") }
-  if passed == 2 { print("Results: 2/8 passed") }
-  if passed == 3 { print("Results: 3/8 passed") }
-  if passed == 4 { print("Results: 4/8 passed") }
-  if passed == 5 { print("Results: 5/8 passed") }
-  if passed == 6 { print("Results: 6/8 passed") }
-  if passed == 7 { print("Results: 7/8 passed") }
-  if passed == 8 { 
-    print("Results: 8/8 passed")
-    print("🎉 All tests passed!")
-  }
-  
-  $ passed = passed + 1
-  
-  if test_factorial() { $ passed = passed + 1 }
-  
-  print("")
-  print("=== BACKWARD JUMP TEST ===")
-  print("")
-  if passed == 9 { 
-    print("Results: 9/9 passed")
-    print("🎉 All tests passed including BACKWARD JUMPS!")
-  }
-  
-  print("")
-  print("=== CALL/RETURN TEST ===")
-  print("")
-  
-  if test_simple_call_return() { $ passed = passed + 1 }
-  if test_recursive_factorial() { $ passed = passed + 1 }
-  
-  if passed == 11 { 
-    print("Results: 11/11 passed")
-    print("🎉🎉🎉 ALL TESTS PASSED INCLUDING RECURSIVE CALL/RETURN! 🎉🎉🎉")
-  }
-  
-  > { ok: true }
 }
 
 ! test_factorial() -> bool {
@@ -742,16 +753,24 @@ const OP_HALT          = 255  # 0xFF
   > false
 }
 
+! test_simple_call_return() -> bool {
+  $ code = [
+    OP_CALL, 6, 0, 0, 0,
+    OP_HALT,
+    OP_PUSH, 0,
+    OP_RETURN
+  ]
+  $ constants = [42]
+  $ result = exec(code, constants)
+  if result == 42 {
+    print("✅ test_simple_call_return: return_42() = 42")
+    > true
+  }
+  print("❌ test_simple_call_return: expected 42")
+  > false
+}
+
 ! test_recursive_factorial() -> bool {
-  # Test TRUE RECURSION: factorial(5) = 5 * 4 * 3 * 2 * 1 = 120
-  # 
-  # Stack layout after CALL:
-  # [n, return_addr, old_fp]
-  #  ↑              ↑         ↑
-  #  0              1         2 (FP points to old_fp)
-  #
-  # To access arg: FP - 3 = index 0
-  
   $ code = [
     OP_PUSH, 0,           # 0-1: PUSH 5
     OP_CALL, 9, 0, 0, 0,  # 2-6: CALL factorial at offset 9
@@ -759,9 +778,6 @@ const OP_HALT          = 255  # 0xFF
     OP_POP,               # 8: (padding)
     
     # factorial function (offset 9):
-    # if n <= 1: return 1
-    # else: return n * factorial(n-1)
-    
     OP_LOAD_FP, -3,       # 9: Load n from FP-3
     OP_PUSH, 1,           # 10: PUSH 1
     OP_LE,                # 11: n <= 1?
@@ -772,7 +788,6 @@ const OP_HALT          = 255  # 0xFF
     OP_RETURN,            # 21: RETURN
     
     # Recursive case (offset 22):
-    # Calculate n-1, call factorial, multiply by n
     OP_LOAD_FP, -3,       # 22: Load n
     OP_PUSH, 1,           # 23: PUSH 1
     OP_SUB,               # 24: n - 1
@@ -793,26 +808,156 @@ const OP_HALT          = 255  # 0xFF
   > false
 }
 
-! test_simple_call_return() -> bool {
-  # Simpler test: function that returns constant
-  # return_42() = 42
-  
+# ─── v0.9.7 Tests: Object & Array Opcodes ────────────────────────────
+
+! test_build_array() -> bool {
+  # Build array [10, 20, 30], verify ref is -2000000
   $ code = [
-    OP_CALL, 6, 0, 0, 0,  # 0-4: CALL return_42 at offset 6
-    OP_HALT,              # 5: HALT
-    
-    # return_42 (offset 6):
-    OP_PUSH, 0,           # 6: PUSH 42
-    OP_RETURN             # 8: RETURN (stack: [ret, 42])
+    OP_PUSH, 0,         # push 10
+    OP_PUSH, 1,         # push 20
+    OP_PUSH, 2,         # push 30
+    OP_BUILD_ARRAY, 3,  # build array of 3 elements
+    OP_HALT
   ]
-  $ constants = [42]
+  $ constants = [10, 20, 30]
   $ result = exec(code, constants)
-  
-  if result == 42 {
-    print("✅ test_simple_call_return: return_42() = 42")
+  if result == 0 - HEAP_BASE {
+    print("✅ test_build_array: [10,20,30] -> ref ok")
     > true
   }
-  print("❌ test_simple_call_return: expected 42")
+  print("❌ test_build_array: expected -2000000, got ")
+  print(result)
   > false
 }
 
+! test_build_object() -> bool {
+  # Build object {42: 100, 43: 200}, verify ref is -2000000
+  # Stack order: push key, push val for each field (last field pushed first popped)
+  $ code = [
+    OP_PUSH, 0,          # key1 = 42
+    OP_PUSH, 1,          # val1 = 100
+    OP_PUSH, 2,          # key2 = 43
+    OP_PUSH, 3,          # val2 = 200
+    OP_BUILD_OBJECT, 2,  # 2 fields
+    OP_HALT
+  ]
+  $ constants = [42, 100, 43, 200]
+  $ result = exec(code, constants)
+  if result == 0 - HEAP_BASE {
+    print("✅ test_build_object: {42:100, 43:200} -> ref ok")
+    > true
+  }
+  print("❌ test_build_object: expected -2000000, got ")
+  print(result)
+  > false
+}
+
+! test_get_field() -> bool {
+  # Build object {42: 100}, then get field 42 -> should return 100
+  $ code = [
+    OP_PUSH, 0,          # key = 42
+    OP_PUSH, 1,          # val = 100
+    OP_BUILD_OBJECT, 1,  # 1 field -> ref on stack
+    OP_PUSH, 0,          # push key to look up (42)
+    OP_GET_FIELD,        # look up key 42 in object -> 100
+    OP_HALT
+  ]
+  $ constants = [42, 100]
+  $ result = exec(code, constants)
+  if result == 100 {
+    print("✅ test_get_field: obj[42] = 100")
+    > true
+  }
+  print("❌ test_get_field: expected 100, got ")
+  print(result)
+  > false
+}
+
+! test_set_field() -> bool {
+  # Build object {42: 100}, set field 42 to 200, get field 42 -> 200
+  $ code = [
+    OP_PUSH, 0,          # key = 42
+    OP_PUSH, 1,          # val = 100
+    OP_BUILD_OBJECT, 1,  # 1 field -> ref on stack
+    # SET_FIELD: stack needs [obj, key, value]
+    OP_PUSH, 0,          # push key (42)
+    OP_PUSH, 2,          # push new value (200)
+    OP_SET_FIELD,        # pops val, key, obj; pushes obj
+    # GET_FIELD to verify
+    OP_PUSH, 0,          # push key (42)
+    OP_GET_FIELD,        # look up -> 200
+    OP_HALT
+  ]
+  $ constants = [42, 100, 200]
+  $ result = exec(code, constants)
+  if result == 200 {
+    print("✅ test_set_field: obj[42] = 100 -> set 200 -> get 200")
+    > true
+  }
+  print("❌ test_set_field: expected 200, got ")
+  print(result)
+  > false
+}
+
+! test_def_func() -> bool {
+  # Define a function (skip body), then push 42 and halt
+  # Format: OP_DEF_FUNC, name_idx(1), param_count(1), body_length(1), param_names..., body...
+  $ code = [
+    OP_DEF_FUNC, 0, 1, 3,  # name_idx=0, params=1, body_len=3
+    # param name idx (1 byte per param):
+    0,                       # param 0 name idx
+    # body (3 bytes):
+    OP_PUSH, 0,
+    OP_RETURN,
+    # After function def, execution continues here:
+    OP_PUSH, 1,              # push 42
+    OP_HALT
+  ]
+  $ constants = [5, 42]
+  $ result = exec(code, constants)
+  if result == 42 {
+    print("✅ test_def_func: skips body, continues to push 42")
+    > true
+  }
+  print("❌ test_def_func: expected 42, got ")
+  print(result)
+  > false
+}
+
+@ command run {
+  print("=== Bootstrap VM Tests v0.9.7 ===")
+  print("")
+  
+  $ passed = 0
+  
+  # Original tests
+  if test_simple() { $ passed = passed + 1 }
+  if test_arithmetic() { $ passed = passed + 1 }
+  if test_comparison() { $ passed = passed + 1 }
+  if test_conditional() { $ passed = passed + 1 }
+  if test_logic() { $ passed = passed + 1 }
+  if test_or() { $ passed = passed + 1 }
+  if test_load_var() { $ passed = passed + 1 }
+  if test_loop() { $ passed = passed + 1 }
+  if test_factorial() { $ passed = passed + 1 }
+  if test_simple_call_return() { $ passed = passed + 1 }
+  if test_recursive_factorial() { $ passed = passed + 1 }
+  
+  # v0.9.7 tests
+  if test_build_array() { $ passed = passed + 1 }
+  if test_build_object() { $ passed = passed + 1 }
+  if test_get_field() { $ passed = passed + 1 }
+  if test_set_field() { $ passed = passed + 1 }
+  if test_def_func() { $ passed = passed + 1 }
+  
+  print("")
+  if passed == 16 { print("Results: 16/16 passed") }
+  if passed == 15 { print("Results: 15/16 passed") }
+  if passed < 15 { print("Results: < 15/16 passed") }
+  
+  if passed == 16 {
+    print("🎉🎉🎉 ALL 16 TESTS PASSED! v0.9.7 Object & Array Opcodes complete! 🎉🎉🎉")
+  }
+  
+  > { ok: true }
+}
