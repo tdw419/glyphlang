@@ -276,20 +276,14 @@ func (jit *JITCompiler) recompileRoute(name string, route *ast.Route, currentUni
 
 // compileWithTier compiles a route with a specific optimization tier
 func (jit *JITCompiler) compileWithTier(route *ast.Route, tier OptimizationTier) ([]byte, error) {
-	var comp *compiler.Compiler
-
-	// Create a new compiler instance for each compilation to avoid race conditions
-	switch tier {
-	case TierBaseline:
-		comp = compiler.NewCompilerWithOptLevel(compiler.OptNone)
-	case TierOptimized:
-		comp = compiler.NewCompilerWithOptLevel(compiler.OptBasic)
-	case TierHighlyOptimized:
-		comp = compiler.NewCompilerWithOptLevel(compiler.OptAggressive)
-	default:
-		comp = compiler.NewCompilerWithOptLevel(compiler.OptNone)
+	// Use SSA-based compiler for optimized tiers
+	if tier >= TierOptimized {
+		ssaComp := compiler.NewSSACompiler()
+		return ssaComp.CompileRoute(route)
 	}
 
+	// Baseline uses standard basic compiler
+	comp := compiler.NewCompilerWithOptLevel(compiler.OptNone)
 	return comp.CompileRoute(route)
 }
 

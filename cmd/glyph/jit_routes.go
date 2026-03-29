@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/glyphlang/glyph/pkg/ast"
-	"github.com/glyphlang/glyph/pkg/gpu"
+	"github.com/glyphlang/glyph/pkg/compiler"
 	"github.com/glyphlang/glyph/pkg/jit"
 )
 
@@ -42,9 +42,10 @@ func (j *JITRouteManager) CompileRoute(route *ast.Route) ([]byte, error) {
 		return nil, err
 	}
 
-	// Initial check for GPU compatibility
-	if gpu.IsGPUCompatible(bytecode) {
-		fmt.Printf("[JIT] Route %s is GPU-compatible\n", routeName)
+	// Use SSA analysis for GPU compatibility check
+	ssaComp := compiler.NewSSACompiler()
+	if ssaComp.IsGPUCompatible(route) {
+		fmt.Printf("[JIT] Route %s is GPU-compatible (via SSA analysis)\n", routeName)
 	}
 
 	return bytecode, nil
@@ -57,8 +58,7 @@ func (j *JITRouteManager) RecordExecution(routeName string, duration time.Durati
 	j.compiler.RecordExecution(routeName, duration)
 
 	// Get stats from JIT compiler
-	unit, exists := j.compiler.GetUnit(routeName)
-	if !exists {
+	if _, exists := j.compiler.GetUnit(routeName); !exists {
 		return nil
 	}
 
@@ -70,13 +70,17 @@ func (j *JITRouteManager) RecordExecution(routeName string, duration time.Durati
 		
 		j.mu.RLock()
 		isGpuReady := j.gpuReady[routeName]
+		route := j.routes[routeName]
 		j.mu.RUnlock()
 
-		if !isGpuReady && avgMs > 5.0 && gpu.IsGPUCompatible(unit.Bytecode) {
-			j.mu.Lock()
-			j.gpuReady[routeName] = true
-			j.mu.Unlock()
-			fmt.Printf("[JIT] Enabling auto GPU-offload for %s (avg: %.2fms)\n", routeName, avgMs)
+		if !isGpuReady && avgMs > 5.0 && route != nil {
+			ssaComp := compiler.NewSSACompiler()
+			if ssaComp.IsGPUCompatible(route) {
+				j.mu.Lock()
+				j.gpuReady[routeName] = true
+				j.mu.Unlock()
+				fmt.Printf("[JIT] Enabling auto GPU-offload for %s (avg: %.2fms)\n", routeName, avgMs)
+			}
 		}
 	}
 
