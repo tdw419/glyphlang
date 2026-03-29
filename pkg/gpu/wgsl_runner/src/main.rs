@@ -16,7 +16,10 @@ struct VMState {
 }
 
 async fn run() {
-    let wgsl_source = std::env::args().nth(1).expect("No WGSL source provided");
+    let mut args = std::env::args().skip(1);
+    let wgsl_source = args.next().expect("No WGSL source provided");
+    let num_vms: u32 = args.next().map(|s| s.parse().unwrap()).unwrap_or(1);
+    let workgroup_count: u32 = args.next().map(|s| s.parse().unwrap()).unwrap_or(1);
     
     // 1. Setup WGPU
     let instance = wgpu::Instance::default();
@@ -38,17 +41,17 @@ async fn run() {
     });
 
     // 3. Create Buffers
-    let initial_state = VMState {
+    let initial_states = vec![VMState {
         pc: 0, sp: 0, halted: 0, error: 0, steps: 0, result_tag: 0, result_data: 0, pad: 0,
-    };
+    }; num_vms as usize];
     
     let state_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("VMState Buffer"),
-        contents: bytemuck::cast_slice(&[initial_state]),
+        contents: bytemuck::cast_slice(&initial_states),
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
     });
 
-    let locals = vec![0i32; 64]; // Match 64 locals per VM
+    let locals = vec![0i32; 64 * num_vms as usize]; // Match 64 locals per VM
     let locals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Locals Buffer"),
         contents: bytemuck::cast_slice(&locals),
@@ -85,7 +88,7 @@ async fn run() {
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: None });
         cpass.set_pipeline(&compute_pipeline);
         cpass.set_bind_group(0, &bind_group, &[]);
-        cpass.dispatch_workgroups(1, 1, 1);
+        cpass.dispatch_workgroups(workgroup_count, 1, 1);
     }
     
     queue.submit(Some(encoder.finish()));
@@ -93,13 +96,13 @@ async fn run() {
     // 6. Read back results
     let readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Readback Buffer"),
-        size: std::mem::size_of::<VMState>() as u64,
+        size: (std::mem::size_of::<VMState>() * num_vms as usize) as u64,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    encoder.copy_buffer_to_buffer(&state_buffer, 0, &readback_buffer, 0, std::mem::size_of::<VMState>() as u64);
+    encoder.copy_buffer_to_buffer(&state_buffer, 0, &readback_buffer, 0, (std::mem::size_of::<VMState>() * num_vms as usize) as u64);
     queue.submit(Some(encoder.finish()));
 
     let buffer_slice = readback_buffer.slice(..);
@@ -110,8 +113,12 @@ async fn run() {
 
     if let Some(Ok(())) = receiver.receive().await {
         let data = buffer_slice.get_mapped_range();
-        let result: VMState = *bytemuck::from_bytes(&data);
-        println!("{}", serde_json::to_string(&result).unwrap());
+        let results: &[VMState] = bytemuck::cast_slice(&data);
+        if num_vms == 1 {
+            println!("{}", serde_json::to_string(&results[0]).unwrap());
+        } else {
+            println!("{}", serde_json::to_string(&results).unwrap());
+        }
     } else {
         panic!("Failed to read buffer from GPU");
     }

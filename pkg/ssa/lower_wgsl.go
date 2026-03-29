@@ -8,16 +8,23 @@ import (
 // WGSLLowering lowers an SSA function directly to a WGSL compute shader.
 // This bypasses the bytecode interpreter for maximum performance.
 type WGSLLowering struct {
-	indent  int
-	vars    map[string]int
-	nextVar int
+	indent        int
+	vars          map[string]int
+	nextVar       int
+	workgroupSize int
 }
 
 // NewWGSLLowering creates a new WGSL lowering context.
 func NewWGSLLowering() *WGSLLowering {
 	return &WGSLLowering{
-		vars: make(map[string]int),
+		vars:          make(map[string]int),
+		workgroupSize: 64, // default
 	}
+}
+
+// SetWorkgroupSize sets the workgroup size for the generated shader.
+func (l *WGSLLowering) SetWorkgroupSize(size int) {
+	l.workgroupSize = size
 }
 
 // LowerFunc generates a complete WGSL compute shader for the given function.
@@ -48,7 +55,7 @@ func (l *WGSLLowering) LowerMultiFunc(funcs []*Func) (string, error) {
 	b.WriteString("@group(0) @binding(2) var<storage, read_write> vm_stats: array<atomic<u32>, 11>; // Telemetry (ASCII World HUD)\n\n")
 
 	// 3. Entry Point
-	b.WriteString("@compute @workgroup_size(64)\n")
+	b.WriteString(fmt.Sprintf("@compute @workgroup_size(%d)\n", l.workgroupSize))
 	b.WriteString("fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {\n")
 	l.indent++
 	

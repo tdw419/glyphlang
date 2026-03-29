@@ -24,6 +24,15 @@ type WGSLExecutionResult struct {
 
 // ExecuteWGSL runs a WGSL shader using the native wgpu runner.
 func ExecuteWGSL(wgslSource string) (*Result, error) {
+	results, err := ExecuteMultiWGSL(wgslSource, 1, 1)
+	if err != nil {
+		return nil, err
+	}
+	return &results[0], nil
+}
+
+// ExecuteMultiWGSL runs a WGSL shader with multiple VMs and dynamic dispatch dimensions.
+func ExecuteMultiWGSL(wgslSource string, numVMs int, workgroupCount int) ([]Result, error) {
 	// 1. Find the runner binary
 	_, filename, _, _ := runtime.Caller(0)
 	runnerDir := filepath.Join(filepath.Dir(filename), "wgsl_runner")
@@ -34,10 +43,10 @@ func ExecuteWGSL(wgslSource string) (*Result, error) {
 	}
 
 	// 2. Execute the runner with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, runnerBin, wgslSource)
+	cmd := exec.CommandContext(ctx, runnerBin, wgslSource, fmt.Sprintf("%d", numVMs), fmt.Sprintf("%d", workgroupCount))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
@@ -47,21 +56,35 @@ func ExecuteWGSL(wgslSource string) (*Result, error) {
 	}
 
 	// 3. Parse JSON result
-	var res WGSLExecutionResult
+	if numVMs == 1 {
+		var res WGSLExecutionResult
+		if err := json.Unmarshal(output, &res); err != nil {
+			return nil, fmt.Errorf("failed to parse WGSL runner output: %w (output: %s)", err, string(output))
+		}
+		return []Result{{
+			Tag:    res.ResultTag,
+			IntVal: int64(res.ResultData),
+			Steps:  res.Steps,
+		}}, nil
+	}
+
+	var res []WGSLExecutionResult
 	if err := json.Unmarshal(output, &res); err != nil {
 		return nil, fmt.Errorf("failed to parse WGSL runner output: %w (output: %s)", err, string(output))
 	}
 
 	// 4. Convert to common Result type
-	result := &Result{
-		Tag:    res.ResultTag,
-		IntVal: int64(res.ResultData),
-		Steps:  res.Steps,
+	results := make([]Result, len(res))
+	for i, r := range res {
+		results[i] = Result{
+			Tag:    r.ResultTag,
+			IntVal: int64(r.ResultData),
+			Steps:  r.Steps,
+		}
+		if r.Error != 0 {
+			results[i].Error = fmt.Errorf("GPU error code: %d", r.Error)
+		}
 	}
 
-	if res.Error != 0 {
-		result.Error = fmt.Errorf("GPU error code: %d", res.Error)
-	}
-
-	return result, nil
+	return results, nil
 }

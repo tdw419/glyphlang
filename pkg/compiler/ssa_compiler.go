@@ -70,8 +70,9 @@ func (c *SSACompiler) CompileRouteToWGSL(route *ast.Route) (string, error) {
 	return lowering.LowerFunc(f)
 }
 
-// CompileModuleToWGSL compiles all routes in a module to a single multi-route WGSL shader.
-func (c *SSACompiler) CompileModuleToWGSL(module *ast.Module) (string, error) {
+// CompileModuleToWGSL compiles all routes in a module to a single multi-route WGSL shader
+// with adaptive workgroup sizing.
+func (c *SSACompiler) CompileModuleToWGSL(module *ast.Module, workgroupSize int) (string, error) {
 	var funcs []*ssa.Func
 	builder := ssa.NewBuilder()
 
@@ -91,6 +92,9 @@ func (c *SSACompiler) CompileModuleToWGSL(module *ast.Module) (string, error) {
 	}
 
 	lowering := ssa.NewWGSLLowering()
+	if workgroupSize > 0 {
+		lowering.SetWorkgroupSize(workgroupSize)
+	}
 	return lowering.LowerMultiFunc(funcs)
 }
 
