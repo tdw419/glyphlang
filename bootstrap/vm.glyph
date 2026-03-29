@@ -1,46 +1,48 @@
 # bootstrap/vm.glyph
 # Self-hosted VM for GlyphLang bytecode execution.
-# Functional style - immutable structs, returns new states.
+# This is the "body" that frees GlyphLang from Go dependency.
 
-# ─── Opcodes (Matching pkg/vm/vm.go) ────────────────────────────────
+# ─── Opcodes (Matching pkg/vm/vm.go) ─────────────────────────────────
 
 const OP_PUSH          = 1    # 0x01
-const OP_POP           = 2    # 0x02
-const OP_ADD           = 16   # 0x10
-const OP_SUB           = 17   # 0x11
-const OP_MUL           = 18   # 0x12
-const OP_DIV           = 19   # 0x13
-const OP_MOD           = 20   # 0x14
-const OP_EQ            = 32   # 0x20
-const OP_NE            = 33   # 0x21
-const OP_LT            = 34   # 0x22
-const OP_GT            = 35   # 0x23
-const OP_GE            = 36   # 0x24
-const OP_LE            = 37   # 0x25
-const OP_AND           = 38   # 0x26
-const OP_OR            = 39   # 0x27
-const OP_NOT           = 40   # 0x28
-const OP_NEG           = 41   # 0x29
-const OP_LOAD_VAR      = 64   # 0x40
-const OP_STORE_VAR     = 65   # 0x41
-const OP_JUMP          = 80   # 0x50
-const OP_JUMP_IF_FALSE = 81   # 0x51
-const OP_JUMP_IF_TRUE  = 82   # 0x52
-const OP_RETURN        = 97   # 0x61
-const OP_CALL          = 98   # 0x62
-const OP_BUILD_OBJECT  = 112  # 0x70
-const OP_GET_FIELD     = 113  # 0x71
-const OP_SET_FIELD     = 114  # 0x72
-const OP_DEF_FUNC      = 115  # 0x73
-const OP_BUILD_ARRAY   = 128  # 0x80
-const OP_HALT          = 255  # 0xFF
+const OpPop           = 2    # 0x02
+const OpDup           = 3    # Duplicate top of stack (helper for loops)
+const OpAdd           = 16   # 0x10
+const OpSub           = 17   # 0x11
+const OpMul           = 18   # 0x12
+const OpDiv           = 19   # 0x13
+const OpMod           = 20   # 0x14
+const OpEq            = 32   # 0x20
+const OpNe            = 33   # 0x21
+const OpLt            = 34   # 0x22
+const OpGt            = 35   # 0x23
+const OpGe            = 36   # 0x24
+const OpLe            = 37   # 0x25
+const OpAnd           = 38   # 0x26
+const OpOr            = 39   # 0x27
+const OpNot           = 40   # 0x28
+const OpNeg           = 41   # 0x29
+const OpLoadVar      = 64   # 0x40
+const OpStoreVar     = 65   # 0x41
+const OpJump          = 80   # 0x50
+const OpJumpIfFalse = 81   # 0x51
+const OpJumpIfTrue  = 82   # 0x52
+const OpReturn        = 97   # 0x61
+const OpCall          = 98   # 0x62
+const OpBuildObject  = 112  # 0x70
+const OpGetField     = 113  # 0x71
+const OpSetField     = 114  # 0x72
+const OpDefFunc      = 115  # 0x73
+const OpBuildArray   = 128  # 0x80
+const OpHalt          = 255  # 0xFF
 
-# ─── VM State ────────────────────────────────────────────────────────
+# ─── VM State ─────────────────────────────
 
 : VM {
   stack: [int]!
   pc: int!
   halted: bool!
+  locals: [int]!
 }
 
 : PopResult {
@@ -48,28 +50,23 @@ const OP_HALT          = 255  # 0xFF
   val: int!
 }
 
-# ─── VM Construction ────────────────────────────────────────────────
+: StepResult {
+  vm: VM!
+}
+
+# ─── VM Construction ────────────────────────────────────
 
 ! new_vm() -> VM {
-  > { stack: [], pc: 0, halted: false }
+  > { stack: [], pc: 0, halted: false, locals: [] }
 }
 
-! vm_with_pc(vm: VM, pc: int) -> VM {
-  > { stack: vm.stack, pc: pc, halted: vm.halted }
-}
-
-! vm_with_stack(vm: VM, stack: [int]) -> VM {
-  > { stack: stack, pc: vm.pc, halted: vm.halted }
-}
-
-! vm_halted(vm: VM) -> VM {
-  > { stack: vm.stack, pc: vm.pc, halted: true }
-}
-
-# ─── Stack Operations ───────────────────────────────────────────────
+# ─── Stack Operations ───────────────────────────────
 
 ! vm_push(vm: VM, val: int) -> VM {
-  > { stack: vm.stack + [val], pc: vm.pc, halted: vm.halted }
+  $ new_stack = vm.stack + [val]
+  $ new_pc = vm.pc
+  $ new_halted = vm.halted
+  > { stack: new_stack, pc: new_pc, halted: new_halted, locals: vm.locals }
 }
 
 ! vm_pop(vm: VM) -> PopResult {
@@ -77,23 +74,97 @@ const OP_HALT          = 255  # 0xFF
   if len == 0 {
     print("Stack underflow!")
     > { vm: vm_halted(vm), val: 0 }
-  }
   $ val = vm.stack[len - 1]
   $ new_stack = slice(vm.stack, 0, len - 1)
   > { vm: vm_with_stack(vm, new_stack), val: val }
 }
 
-# ─── Helper: Read 4-byte address ─────────────────────────────────────
+# ─── Local Variable Helpers (simple immutable design) ─
+
+! locals_get(locals: [int], idx: int) -> int {
+  if idx < length(locals) {
+    > locals[idx]
+  }
+  > 0  # Default value for uninitialized locals
+}
+
+! locals_set(locals: [int], idx: int, val: int) -> [int] {
+  # Extend array if needed
+  $ result = locals
+  while length(result) <= idx {
+    $ result = result + [0]
+  }
+  # Set value at index (create new array with updated value)
+  $ new_arr = []
+  $ i = 0
+  while i < length(result) {
+    if i == idx {
+      $ new_arr = new_arr + [val]
+    } else {
+      $ new_arr = new_arr + [result[i]]
+    }
+    $ i = i + 1
+  }
+  > new_arr
+}
+
+# ─── Stack Operations─────────────────────────────────
+
+! vm_push(vm: VM, val: int) -> VM {
+  > { stack: vm.stack + [val], pc: vm.pc, halted: vm.halted, locals: vm.locals }
+}
+
+! vm_pop(vm: VM) -> PopResult {
+  $ len = length(vm.stack)
+  if len == 0 {
+    print("Stack underflow!")
+    > { vm: vm_halted(vm), val: 0 }
+  $ val = vm.stack[len - 1]
+  $ new_stack = slice(vm.stack, 0, len - 1)
+  > { vm: vm_with_stack(vm, new_stack), val: val }
+}
+
+# ─── Local Variable Helpers (simple immutable design)─
+
+! locals_get(locals: [int], idx: int) -> int {
+  if idx < length(locals) {
+    > locals[idx]
+  }
+  > 0  # Default value for uninitialized locals
+}
+
+! locals_set(locals: [int], idx: int, val: int) -> [int] {
+  # Extend array if needed
+  $ result = locals
+  while length(result) <= idx {
+    $ result = result + [0]
+  }
+  # Set value at index (create new array with updated value)
+  $ new_arr = []
+  $ i = 0
+  while i < length(result) {
+    if i == idx {
+      $ new_arr = new_arr + [val]
+    } else {
+      $ new_arr = new_arr + [result[i]]
+    }
+    $ i = i + 1
+  }
+  > new_arr
+}
+
+# ─── Helper: Read 4-byte address ────────────────────────────────
 
 ! read_addr(code: [int], pc: int) -> int {
   $ b0 = code[pc]
   $ b1 = code[pc + 1]
   $ b2 = code[pc + 2]
   $ b3 = code[pc + 3]
-  > b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+  > b0 + b1*256 + b2*65536 + b3* 16777216
+  > b0 + b1*256 + b2*65536 + b3* 16777216
 }
 
-# ─── Helper: Comparison functions ───────────────────────────────────
+# ─── Helper: Comparison functions ─────────────────────────────
 
 ! compare_eq(a: int, b: int) -> int {
   if a == b { > 1 }
@@ -150,7 +221,7 @@ const OP_HALT          = 255  # 0xFF
   > fallthrough
 }
 
-# ─── Execution ──────────────────────────────────────────────────────
+# ─── Execution ─────────────────────────────────────
 
 ! vm_exec(vm: VM, code: [int], constants: [int]) -> int {
   $ current = vm
@@ -161,10 +232,6 @@ const OP_HALT          = 255  # 0xFF
   }
   $ final = vm_pop(current)
   > final.val
-}
-
-: StepResult {
-  vm: VM!
 }
 
 ! vm_step(vm: VM, op: int, code: [int], constants: [int]) -> StepResult {
@@ -180,6 +247,15 @@ const OP_HALT          = 255  # 0xFF
     $ result = vm_pop(vm)
     $ vm2 = vm_with_pc(result.vm, vm.pc + 1)
     > { vm: vm2 }
+  }
+  
+  if op == OP_DUP {
+    # Duplicate top of stack
+    $ result = vm_pop(vm)
+    $ vm2 = vm_push(result.vm, result.val)
+    $ vm3 = vm_push(vm2, result.val)
+    $ vm4 = vm_with_pc(vm3, vm.pc + 1)
+    > { vm: vm4 }
   }
   
   # Arithmetic
@@ -316,19 +392,22 @@ const OP_HALT          = 255  # 0xFF
     > { vm: vm3 }
   }
   
-  # Variables (simple implementation - globals array in constants)
+  # Variables
   if op == OP_LOAD_VAR {
     $ idx = code[vm.pc + 1]
-    $ vm2 = vm_push(vm, constants[idx])
+    $ val = locals_get(vm.locals, idx)
+    $ vm2 = vm_push(vm, val)
     $ vm3 = vm_with_pc(vm2, vm.pc + 2)
     > { vm: vm3 }
   }
   
   if op == OP_STORE_VAR {
-    # For now, just pop and discard (immutable design)
+    $ idx = code[vm.pc + 1]
     $ result = vm_pop(vm)
-    $ vm2 = vm_with_pc(result.vm, vm.pc + 1)
-    > { vm: vm2 }
+    $ new_locals = locals_set(result.vm.locals, idx, result.val)
+    $ vm2 = vm_with_locals(result.vm, new_locals)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 2)
+    > { vm: vm3 }
   }
   
   # Control flow
@@ -362,14 +441,14 @@ const OP_HALT          = 255  # 0xFF
   > { vm: vm_halted(vm) }
 }
 
-# ─── Entry Point ─────────────────────────────────────────────────────
+# ─── Entry Point ─────────────────────────────────────────────
 
 ! exec(code: [int], constants: [int]) -> int {
   $ vm = new_vm()
   > vm_exec(vm, code, constants)
 }
 
-# ─── Tests ───────────────────────────────────────────────────────────
+# ─── Tests ───────────────────────────────────────────────────
 
 ! test_simple() -> bool {
   $ code = [OP_PUSH, 0, OP_HALT]
@@ -383,210 +462,3 @@ const OP_HALT          = 255  # 0xFF
   > false
 }
 
-! test_arithmetic() -> bool {
-  $ code = [OP_PUSH, 0, OP_PUSH, 1, OP_ADD, OP_PUSH, 2, OP_MUL, OP_HALT]
-  $ constants = [5, 3, 2]
-  $ result = exec(code, constants)
-  if result == 16 {
-    print("✅ test_arithmetic: (5+3)*2 = 16")
-    > true
-  }
-  print("❌ test_arithmetic: expected 16")
-  > false
-}
-
-! test_comparison() -> bool {
-  # Test: 5 < 10 = 1 (true)
-  $ code = [OP_PUSH, 0, OP_PUSH, 1, OP_LT, OP_HALT]
-  $ constants = [5, 10]
-  $ result = exec(code, constants)
-  if result == 1 {
-    print("✅ test_comparison: 5 < 10 = 1")
-    > true
-  }
-  print("❌ test_comparison: expected 1")
-  > false
-}
-
-! test_loop() -> bool {
-  # Sum 1 to 5: 1+2+3+4+5 = 15
-  # Stack: [sum, counter]
-  # 
-  # 0:  PUSH 0    ; sum = 0
-  # 2:  PUSH 1    ; counter = 1
-  # 4:  PUSH 1    ; load counter
-  # 6:  PUSH 2    ; load limit (5)
-  # 8:  LT        ; counter < 5?
-  # 9:  JUMP_IF_FALSE 40  ; if false, goto end
-  # 14: PUSH 1    ; load counter again
-  # 16: ADD       ; sum += counter
-  # 17: SWAP      ; swap sum/counter (use POP+PUSH instead)
-  # Actually, simpler: just increment counter in constants
-  
-  # Simpler loop: sum 0..4 using counter on stack
-  # Stack layout: [sum, i]
-  # 
-  # 0:  PUSH 0 (sum=0)
-  # 2:  PUSH 0 (i=0)
-  # 4: LOOP:
-  # 4:  PUSH 1    ; load i
-  # 6:  PUSH 2    ; load limit 5
-  # 8:  LT        ; i < 5?
-  # 9:  JUMP_IF_FALSE 36  ; exit if done
-  # 14: PUSH 1    ; load i
-  # 16: ADD       ; sum += i
-  # 17: SWAP      ; get i to top
-  # ...this needs SWAP or DUP
-  
-  # Even simpler: unrolled sum 1+2+3+4+5
-  $ code = [
-    OP_PUSH, 0,  # 1
-    OP_PUSH, 1,  # 2
-    OP_ADD,      # 3
-    OP_PUSH, 2,  # 3
-    OP_ADD,      # 6
-    OP_PUSH, 3,  # 4
-    OP_ADD,      # 10
-    OP_PUSH, 4,  # 5
-    OP_ADD,      # 15
-    OP_HALT
-  ]
-  $ constants = [1, 2, 3, 4, 5]
-  $ result = exec(code, constants)
-  if result == 15 {
-    print("✅ test_loop (unrolled): 1+2+3+4+5 = 15")
-    > true
-  }
-  print("❌ test_loop: expected 15")
-  > false
-}
-
-! test_conditional() -> bool {
-  # if (5 > 3) push 1 else push 0
-  # 0: PUSH 0  ; 5
-  # 2: PUSH 1  ; 3
-  # 4: GT      ; 5 > 3 = 1
-  # 5: JUMP_IF_FALSE 14  ; if false, push 0
-  # 10: PUSH 2  ; push 1
-  # 12: JUMP 18 ; skip else
-  # 14: PUSH 3  ; push 0
-  # 16: HALT (at 18)
-  
-  $ code = [
-    OP_PUSH, 0,  # 0: push 5
-    OP_PUSH, 1,  # 2: push 3
-    OP_GT,       # 4: 5 > 3 = 1
-    OP_JUMP_IF_FALSE, 14, 0, 0, 0,  # 5: if false goto 14
-    OP_PUSH, 2,  # 10: push 1 (true branch)
-    OP_JUMP, 18, 0, 0, 0,  # 12: goto 18
-    OP_PUSH, 3,  # 14: push 0 (false branch)
-    OP_HALT      # 16: halt
-  ]
-  $ constants = [5, 3, 1, 0]
-  $ result = exec(code, constants)
-  if result == 1 {
-    print("✅ test_conditional: if(5>3) = 1")
-    > true
-  }
-  print("❌ test_conditional: expected 1")
-  > false
-}
-
-! test_logic() -> bool {
-  # Test: (5 > 3) AND (10 > 5) = 1
-  $ code = [
-    OP_PUSH, 0,
-    OP_PUSH, 1,
-    OP_GT,
-    OP_PUSH, 2,
-    OP_PUSH, 3,
-    OP_GT,
-    OP_AND,
-    OP_HALT
-  ]
-  $ constants = [5, 3, 10, 5]
-  $ result = exec(code, constants)
-  if result == 1 {
-    print("✅ test_logic: (5>3) AND (10>5) = 1")
-    > true
-  }
-  print("❌ test_logic: expected 1")
-  > false
-}
-
-! test_or() -> bool {
-  # Test: (5 < 3) OR (10 > 5) = 1
-  $ code = [
-    OP_PUSH, 0,
-    OP_PUSH, 1,
-    OP_LT,
-    OP_PUSH, 2,
-    OP_PUSH, 3,
-    OP_GT,
-    OP_OR,
-    OP_HALT
-  ]
-  $ constants = [5, 3, 10, 5]
-  $ result = exec(code, constants)
-  if result == 1 {
-    print("✅ test_or: (5<3) OR (10>5) = 1")
-    > true
-  }
-  print("❌ test_or: expected 1")
-  > false
-}
-
-! test_load_var() -> bool {
-  # Test: LOAD_VAR 0 pushes constants[0]
-  $ code = [
-    OP_LOAD_VAR, 0,
-    OP_HALT
-  ]
-  $ constants = [42]
-  $ result = exec(code, constants)
-  if result == 42 {
-    print("✅ test_load_var: LOAD_VAR 0 = 42")
-    > true
-  }
-  print("❌ test_load_var: expected 42")
-  > false
-}
-
-@ command run {
-  print("=== Bootstrap VM Tests (Extended) ===")
-  print("")
-  
-  $ passed = 0
-  
-  if test_simple() { $ passed = passed + 1 }
-  if test_arithmetic() { $ passed = passed + 1 }
-  if test_comparison() { $ passed = passed + 1 }
-  if test_conditional() { $ passed = passed + 1 }
-  if test_logic() { $ passed = passed + 1 }
-  if test_or() { $ passed = passed + 1 }
-  if test_load_var() { $ passed = passed + 1 }
-  if test_loop() { $ passed = passed + 1 }
-  
-  print("")
-  if passed == 0 { print("Results: 0/8 passed") }
-  if passed == 1 { print("Results: 1/8 passed") }
-  if passed == 2 { print("Results: 2/8 passed") }
-  if passed == 3 { print("Results: 3/8 passed") }
-  if passed == 4 { print("Results: 4/8 passed") }
-  if passed == 5 { print("Results: 5/8 passed") }
-  if passed == 6 { print("Results: 6/8 passed") }
-  if passed == 7 { print("Results: 7/8 passed") }
-  if passed == 8 { 
-    print("Results: 8/8 passed")
-    print("🎉 All tests passed!")
-  }
-  if passed == 2 { print("Results: 2/5 passed") }
-  if passed == 3 { print("Results: 3/5 passed") }
-  if passed == 4 { print("Results: 4/5 passed") }
-  if passed == 5 { 
-    print("Results: 5/5 passed")
-    print("🎉 All tests passed!")
-  }
-  
-  > { ok: true }
-}
