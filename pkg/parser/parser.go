@@ -2865,45 +2865,100 @@ func (p *Parser) parsePrimary() (ast.Expr, error) {
 		identPos := ast.Pos{Line: identTok.Line, Column: identTok.Column}
 		p.advance()
 
-		// Check for field access: a.b.c
-		if p.check(DOT) {
-			return p.parseFieldAccess(name)
-		}
+		var expr ast.Expr = ast.VariableExpr{Name: name, Pos: identPos}
 
-		// Check for array indexing: a[0]
-		if p.check(LBRACKET) {
-			return p.parseArrayIndex(ast.VariableExpr{Name: name, Pos: identPos})
-		}
-
-		// Check for function call: f(...)
-		if p.check(LPAREN) {
-			p.advance()
-			var args []ast.Expr
-
-			for !p.check(RPAREN) && !p.isAtEnd() {
-				arg, err := p.parseExpr()
+		// Postfix loop: chain DOT, LBRACKET, LPAREN in any order
+		// This replaces the old separate if/return paths that broke arr[i].field
+		for {
+			if p.check(DOT) {
+				dotTok := p.tokens[p.position]
+				p.advance()
+				field, err := p.expectIdent()
 				if err != nil {
 					return nil, err
 				}
-				args = append(args, arg)
 
-				if !p.match(COMMA) {
-					break
+				// Method call: obj.method(args)
+				if p.check(LPAREN) {
+					p.advance()
+					var args []ast.Expr
+					for !p.check(RPAREN) && !p.isAtEnd() {
+						arg, err := p.parseExpr()
+						if err != nil {
+							return nil, err
+						}
+						args = append(args, arg)
+						if !p.match(COMMA) {
+							break
+						}
+					}
+					if err := p.expect(RPAREN); err != nil {
+						return nil, err
+					}
+
+					if varExpr, ok := expr.(ast.VariableExpr); ok {
+						expr = ast.FunctionCallExpr{
+							Name: varExpr.Name + "." + field,
+							Args: args,
+							Pos:  ast.Pos{Line: dotTok.Line, Column: dotTok.Column},
+						}
+					} else {
+						allArgs := make([]ast.Expr, 0, len(args)+1)
+						allArgs = append(allArgs, expr)
+						allArgs = append(allArgs, args...)
+						expr = ast.FunctionCallExpr{
+							Name: field,
+							Args: allArgs,
+							Pos:  ast.Pos{Line: dotTok.Line, Column: dotTok.Column},
+						}
+					}
+				} else {
+					expr = ast.FieldAccessExpr{
+						Object: expr,
+						Field:  field,
+						Pos:    ast.Pos{Line: dotTok.Line, Column: dotTok.Column},
+					}
 				}
+			} else if p.check(LBRACKET) {
+				p.advance()
+				index, err := p.parseExpr()
+				if err != nil {
+					return nil, err
+				}
+				if err := p.expect(RBRACKET); err != nil {
+					return nil, err
+				}
+				expr = ast.ArrayIndexExpr{
+					Array: expr,
+					Index: index,
+					Pos:   identPos,
+				}
+			} else if p.check(LPAREN) {
+				// Direct function call: f(args)
+				p.advance()
+				var args []ast.Expr
+				for !p.check(RPAREN) && !p.isAtEnd() {
+					arg, err := p.parseExpr()
+					if err != nil {
+						return nil, err
+					}
+					args = append(args, arg)
+					if !p.match(COMMA) {
+						break
+					}
+				}
+				if err := p.expect(RPAREN); err != nil {
+					return nil, err
+				}
+				expr = ast.FunctionCallExpr{
+					Name: name,
+					Args: args,
+					Pos:  identPos,
+				}
+			} else {
+				return expr, nil
 			}
-
-			if err := p.expect(RPAREN); err != nil {
-				return nil, err
-			}
-
-			return ast.FunctionCallExpr{
-				Name: name,
-				Args: args,
-				Pos:  identPos,
-			}, nil
 		}
-
-		return ast.VariableExpr{Name: name, Pos: identPos}, nil
 
 	case LBRACE:
 		// Object literal: {key: value} or {:key = value}

@@ -758,8 +758,8 @@ import "./ast"
   p = res.parser
   $ expr = res.expr
 
-  $ done = false
-  while !done {
+  $ _done = false
+  while !_done {
     $ t = cur_type(p)
     if t == token.DOT {
       $ adv = advance(p)
@@ -802,7 +802,7 @@ import "./ast"
       p = rb.parser
       expr = _index_expr(expr, ir.expr)
     } else {
-      done = true
+      _done = true
     }
   }
   > { parser: p, expr: expr, error: "" }

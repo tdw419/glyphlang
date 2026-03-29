@@ -899,8 +899,8 @@ func (i *Interpreter) ApplyTypeDefaults(obj map[string]interface{}, typeDef Type
 
 // executeFunction executes a user-defined function
 func (i *Interpreter) executeFunction(fn Function, args []Expr, env *Environment) (interface{}, error) {
-	// Create a new environment for the function
-	fnEnv := NewChildEnvironment(env)
+	// Create a new environment for the function (function boundary prevents variable leaking)
+	fnEnv := NewFunctionEnvironment(env)
 
 	// Count required parameters (those marked required without defaults)
 	requiredCount := 0
@@ -1029,8 +1029,8 @@ func (i *Interpreter) executeGenericFunction(fn Function, typeArgs []Type, args 
 		i.typeChecker.PopTypeScope(names)
 	}()
 
-	// Create a new environment for the function
-	fnEnv := NewChildEnvironment(env)
+	// Create a new environment for the function (function boundary prevents variable leaking)
+	fnEnv := NewFunctionEnvironment(env)
 
 	// Validate argument count
 	if len(argValues) != len(instantiatedFn.Params) {
@@ -1404,8 +1404,8 @@ func (i *Interpreter) callWithPipedArg(fn interface{}, pipedVal interface{}, ext
 
 // executeFunctionWithValues executes a user-defined function with pre-evaluated argument values
 func (i *Interpreter) executeFunctionWithValues(fn Function, argVals []interface{}, env *Environment) (interface{}, error) {
-	// Create a new environment for the function
-	fnEnv := NewChildEnvironment(env)
+	// Create a new environment for the function (function boundary prevents variable leaking)
+	fnEnv := NewFunctionEnvironment(env)
 
 	// Count required parameters (those marked required without defaults)
 	requiredCount := 0
@@ -1477,8 +1477,8 @@ func (i *Interpreter) executeFunctionWithValues(fn Function, argVals []interface
 
 // callLambdaClosure executes a lambda closure with the given arguments
 func (i *Interpreter) callLambdaClosure(closure *LambdaClosure, args []interface{}) (interface{}, error) {
-	// Create a new environment for the lambda execution
-	lambdaEnv := NewChildEnvironment(closure.Env)
+	// Create a new environment for the lambda execution (function boundary)
+	lambdaEnv := NewFunctionEnvironment(closure.Env)
 
 	// Bind parameters to arguments
 	for idx, param := range closure.Lambda.Params {
@@ -1607,7 +1607,7 @@ func (i *Interpreter) evaluateResultMethod(result *ResultValue, method string, a
 func (i *Interpreter) callFnArg(fn interface{}, arg interface{}, env *Environment) (interface{}, error) {
 	switch f := fn.(type) {
 	case Function:
-		fnEnv := NewChildEnvironment(env)
+		fnEnv := NewFunctionEnvironment(env)
 		if len(f.Params) > 0 {
 			fnEnv.Define(f.Params[0].Name, arg)
 		}
@@ -1622,7 +1622,7 @@ func (i *Interpreter) callFnArg(fn interface{}, arg interface{}, env *Environmen
 	case *Function:
 		return i.callFnArg(*f, arg, env)
 	case *LambdaClosure:
-		fnEnv := NewChildEnvironment(f.Env)
+		fnEnv := NewFunctionEnvironment(f.Env)
 		if len(f.Lambda.Params) > 0 {
 			fnEnv.Define(f.Lambda.Params[0].Name, arg)
 		}

@@ -153,15 +153,14 @@ func (i *Interpreter) executeAssign(stmt AssignStatement, env *Environment) (int
 		return nil, err
 	}
 
-	// If the variable exists in current or parent scope, update it in place
-	if env.Has(stmt.Target) {
-		if err := env.Set(stmt.Target, value); err != nil {
-			return nil, err
-		}
+	// $ var = expr: update if it exists within the current function's scope chain
+	// (walking through block scopes like while/if), but never cross function boundaries.
+	// This ensures while-loop updates work, but recursive function calls don't leak.
+	if env.SetWithinFunction(stmt.Target, value) {
 		return value, nil
 	}
 
-	// Otherwise define a new variable in the current scope
+	// Variable doesn't exist yet in this function — define it locally
 	env.Define(stmt.Target, value)
 	return value, nil
 }

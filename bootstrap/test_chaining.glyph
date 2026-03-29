@@ -1,0 +1,55 @@
+import "./parser"
+
+@ command run {
+    $ passed = 0
+    $ total = 0
+
+    # Test 1: field access
+    $ total = total + 1
+    $ p1 = parser.new_parser("! f(x:any) {\n  $ a = x.field\n}")
+    $ r1 = parser.parse(p1)
+    if r1.error != "" { print("FAIL field: " + r1.error) } else {
+        print("PASS field")
+        $ passed = passed + 1
+    }
+
+    # Test 2: index access
+    $ total = total + 1
+    $ p2 = parser.new_parser("! f(x:any) {\n  $ a = x[0]\n}")
+    $ r2 = parser.parse(p2)
+    if r2.error != "" { print("FAIL index: " + r2.error) } else {
+        print("PASS index")
+        $ passed = passed + 1
+    }
+
+    # Test 3: field then index (x.field[0])
+    $ total = total + 1
+    $ p3 = parser.new_parser("! f(x:any) {\n  $ a = x.field[0]\n}")
+    $ r3 = parser.parse(p3)
+    if r3.error != "" { print("FAIL field.index: " + r3.error) } else {
+        print("PASS field.index")
+        $ passed = passed + 1
+    }
+
+    # Test 4: index then field (x[0].name) - THE CRITICAL TEST
+    $ total = total + 1
+    $ p4 = parser.new_parser("! f(x:any) {\n  $ a = x[0].name\n}")
+    $ r4 = parser.parse(p4)
+    if r4.error != "" { print("FAIL index.field: " + r4.error) } else {
+        print("PASS index.field")
+        $ passed = passed + 1
+    }
+
+    # Test 5: deep chain (obj.items[0].name)
+    $ total = total + 1
+    $ p5 = parser.new_parser("! f(x:any) {\n  $ a = obj.items[0].name\n}")
+    $ r5 = parser.parse(p5)
+    if r5.error != "" { print("FAIL deep: " + r5.error) } else {
+        print("PASS deep chain")
+        $ passed = passed + 1
+    }
+
+    print("")
+    print("Bootstrap parser chaining: " + toString(passed) + "/" + toString(total))
+    > {ok: passed == total, passed: passed, total: total}
+}

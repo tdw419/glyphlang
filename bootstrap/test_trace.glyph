@@ -1,0 +1,52 @@
+import "./parser"
+import "./token"
+
+@ command run {
+    $ src = "! f(x:any) {\n  $ a = x[0].name\n}"
+    print("Source: " + src)
+    print("")
+
+    $ p = parser.new_parser(src)
+    $ res = parser.parse(p)
+
+    print("Error: " + res.error)
+
+    # Manual trace of what parse_call_or_member should do:
+    $ p2 = parser.new_parser(src)
+    # Skip past "! f(x:any) { $ a = x"
+    advance(p2)  # !
+    advance(p2)  # f
+    advance(p2)  # (
+    advance(p2)  # x
+    advance(p2)  # :
+    advance(p2)  # any
+    advance(p2)  # )
+    advance(p2)  # {
+    advance(p2)  # NEWLINE
+    advance(p2)  # $
+    advance(p2)  # a
+    advance(p2)  # =
+    # Now we're at x
+    print("At token after skipping to 'x': type=" + toString(cur_type(p2)) + " lit=" + cur_literal(p2))
+
+    # Simulate postfix loop
+    advance(p2)  # consume x
+    print("After consuming x: type=" + toString(cur_type(p2)) + " lit=" + cur_literal(p2))
+
+    # Should be [
+    advance(p2)  # consume [
+    print("After consuming [: type=" + toString(cur_type(p2)) + " lit=" + cur_literal(p2))
+
+    # Should be 0
+    advance(p2)  # consume 0
+    print("After consuming 0: type=" + toString(cur_type(p2)) + " lit=" + cur_literal(p2))
+
+    # Should be ]
+    advance(p2)  # consume ]
+    print("After consuming ]: type=" + toString(cur_type(p2)) + " lit=" + cur_literal(p2))
+
+    # Should be .
+    print("Is DOT? " + toString(cur_type(p2) == token.DOT))
+
+    > {ok: true}
+}

@@ -6,8 +6,9 @@ import (
 
 // Environment manages variable scopes and bindings
 type Environment struct {
-	vars   map[string]interface{}
-	parent *Environment
+	vars            map[string]interface{}
+	parent          *Environment
+	isFunctionScope bool // true for function call boundaries; $ declarations don't cross these
 }
 
 // NewEnvironment creates a new environment
@@ -18,11 +19,21 @@ func NewEnvironment() *Environment {
 	}
 }
 
-// NewChildEnvironment creates a child environment with a parent scope
+// NewChildEnvironment creates a child environment with a parent scope (for blocks like while/if)
 func NewChildEnvironment(parent *Environment) *Environment {
 	return &Environment{
 		vars:   make(map[string]interface{}),
 		parent: parent,
+	}
+}
+
+// NewFunctionEnvironment creates a child environment that marks a function boundary.
+// $ declarations will not walk past this boundary to modify the caller's variables.
+func NewFunctionEnvironment(parent *Environment) *Environment {
+	return &Environment{
+		vars:            make(map[string]interface{}),
+		parent:          parent,
+		isFunctionScope: true,
 	}
 }
 
@@ -75,6 +86,21 @@ func (e *Environment) Has(name string) bool {
 func (e *Environment) HasLocal(name string) bool {
 	_, ok := e.vars[name]
 	return ok
+}
+
+// SetWithinFunction updates a variable in the current scope or any parent block scope,
+// but will NOT cross a function boundary. Returns false if the variable was not found
+// within the current function's scope chain.
+func (e *Environment) SetWithinFunction(name string, value interface{}) bool {
+	if _, ok := e.vars[name]; ok {
+		e.vars[name] = value
+		return true
+	}
+	// Walk up through block scopes, but stop at function boundaries
+	if e.parent != nil && !e.isFunctionScope {
+		return e.parent.SetWithinFunction(name, value)
+	}
+	return false
 }
 
 // GetAll returns all variables in this environment and all parent environments.

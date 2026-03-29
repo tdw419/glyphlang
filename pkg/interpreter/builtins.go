@@ -796,7 +796,7 @@ func (i *Interpreter) callCallable(fn interface{}, args []interface{}) (interfac
 	case *LambdaClosure:
 		return i.callLambdaClosure(f, args)
 	case Function:
-		fnEnv := NewChildEnvironment(NewEnvironment())
+		fnEnv := NewFunctionEnvironment(NewEnvironment())
 		for idx, param := range f.Params {
 			if idx < len(args) {
 				fnEnv.Define(param.Name, args[idx])
