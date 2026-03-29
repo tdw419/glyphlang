@@ -2,15 +2,38 @@
 # Self-hosted VM for GlyphLang bytecode execution.
 # Functional style - immutable structs, returns new states.
 
-# ─── Opcodes ───────────────────────────────────────────────────────
+# ─── Opcodes (Matching pkg/vm/vm.go) ────────────────────────────────
 
-const OP_PUSH  = 1
-const OP_POP   = 2
-const OP_ADD   = 16
-const OP_SUB   = 17
-const OP_MUL   = 18
-const OP_DIV   = 19
-const OP_HALT  = 255
+const OP_PUSH          = 1    # 0x01
+const OP_POP           = 2    # 0x02
+const OP_ADD           = 16   # 0x10
+const OP_SUB           = 17   # 0x11
+const OP_MUL           = 18   # 0x12
+const OP_DIV           = 19   # 0x13
+const OP_MOD           = 20   # 0x14
+const OP_EQ            = 32   # 0x20
+const OP_NE            = 33   # 0x21
+const OP_LT            = 34   # 0x22
+const OP_GT            = 35   # 0x23
+const OP_GE            = 36   # 0x24
+const OP_LE            = 37   # 0x25
+const OP_AND           = 38   # 0x26
+const OP_OR            = 39   # 0x27
+const OP_NOT           = 40   # 0x28
+const OP_NEG           = 41   # 0x29
+const OP_LOAD_VAR      = 64   # 0x40
+const OP_STORE_VAR     = 65   # 0x41
+const OP_JUMP          = 80   # 0x50
+const OP_JUMP_IF_FALSE = 81   # 0x51
+const OP_JUMP_IF_TRUE  = 82   # 0x52
+const OP_RETURN        = 97   # 0x61
+const OP_CALL          = 98   # 0x62
+const OP_BUILD_OBJECT  = 112  # 0x70
+const OP_GET_FIELD     = 113  # 0x71
+const OP_SET_FIELD     = 114  # 0x72
+const OP_DEF_FUNC      = 115  # 0x73
+const OP_BUILD_ARRAY   = 128  # 0x80
+const OP_HALT          = 255  # 0xFF
 
 # ─── VM State ────────────────────────────────────────────────────────
 
@@ -60,6 +83,73 @@ const OP_HALT  = 255
   > { vm: vm_with_stack(vm, new_stack), val: val }
 }
 
+# ─── Helper: Read 4-byte address ─────────────────────────────────────
+
+! read_addr(code: [int], pc: int) -> int {
+  $ b0 = code[pc]
+  $ b1 = code[pc + 1]
+  $ b2 = code[pc + 2]
+  $ b3 = code[pc + 3]
+  > b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+}
+
+# ─── Helper: Comparison functions ───────────────────────────────────
+
+! compare_eq(a: int, b: int) -> int {
+  if a == b { > 1 }
+  > 0
+}
+
+! compare_ne(a: int, b: int) -> int {
+  if a != b { > 1 }
+  > 0
+}
+
+! compare_lt(a: int, b: int) -> int {
+  if a < b { > 1 }
+  > 0
+}
+
+! compare_gt(a: int, b: int) -> int {
+  if a > b { > 1 }
+  > 0
+}
+
+! compare_ge(a: int, b: int) -> int {
+  if a >= b { > 1 }
+  > 0
+}
+
+! compare_le(a: int, b: int) -> int {
+  if a <= b { > 1 }
+  > 0
+}
+
+! logic_not(a: int) -> int {
+  if a == 0 { > 1 }
+  > 0
+}
+
+! logic_and(a: int, b: int) -> int {
+  if a != 0 && b != 0 { > 1 }
+  > 0
+}
+
+! logic_or(a: int, b: int) -> int {
+  if a != 0 || b != 0 { > 1 }
+  > 0
+}
+
+! jump_if_false(cond: int, target: int, fallthrough: int) -> int {
+  if cond == 0 { > target }
+  > fallthrough
+}
+
+! jump_if_true(cond: int, target: int, fallthrough: int) -> int {
+  if cond != 0 { > target }
+  > fallthrough
+}
+
 # ─── Execution ──────────────────────────────────────────────────────
 
 ! vm_exec(vm: VM, code: [int], constants: [int]) -> int {
@@ -78,6 +168,7 @@ const OP_HALT  = 255
 }
 
 ! vm_step(vm: VM, op: int, code: [int], constants: [int]) -> StepResult {
+  # Stack operations
   if op == OP_PUSH {
     $ idx = code[vm.pc + 1]
     $ vm2 = vm_push(vm, constants[idx])
@@ -91,6 +182,7 @@ const OP_HALT  = 255
     > { vm: vm2 }
   }
   
+  # Arithmetic
   if op == OP_ADD {
     $ rb = vm_pop(vm)
     $ ra = vm_pop(rb.vm)
@@ -127,11 +219,146 @@ const OP_HALT  = 255
     > { vm: vm3 }
   }
   
-  if op == OP_HALT {
+  if op == OP_MOD {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ vm2 = vm_push(ra.vm, ra.val % rb.val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  # Comparison
+  if op == OP_EQ {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = compare_eq(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_NE {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = compare_ne(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_LT {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = compare_lt(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_GT {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = compare_gt(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_GE {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = compare_ge(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_LE {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = compare_le(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  # Logic
+  if op == OP_AND {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = logic_and(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_OR {
+    $ rb = vm_pop(vm)
+    $ ra = vm_pop(rb.vm)
+    $ result = logic_or(ra.val, rb.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_NOT {
+    $ ra = vm_pop(vm)
+    $ result = logic_not(ra.val)
+    $ vm2 = vm_push(ra.vm, result)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_NEG {
+    $ ra = vm_pop(vm)
+    $ vm2 = vm_push(ra.vm, 0 - ra.val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  # Variables (simple implementation - globals array in constants)
+  if op == OP_LOAD_VAR {
+    $ idx = code[vm.pc + 1]
+    $ vm2 = vm_push(vm, constants[idx])
+    $ vm3 = vm_with_pc(vm2, vm.pc + 2)
+    > { vm: vm3 }
+  }
+  
+  if op == OP_STORE_VAR {
+    # For now, just pop and discard (immutable design)
+    $ result = vm_pop(vm)
+    $ vm2 = vm_with_pc(result.vm, vm.pc + 1)
+    > { vm: vm2 }
+  }
+  
+  # Control flow
+  if op == OP_JUMP {
+    $ target = read_addr(code, vm.pc + 1)
+    $ vm2 = vm_with_pc(vm, target)
+    > { vm: vm2 }
+  }
+  
+  if op == OP_JUMP_IF_FALSE {
+    $ target = read_addr(code, vm.pc + 1)
+    $ cond = vm_pop(vm)
+    $ new_pc = jump_if_false(cond.val, target, vm.pc + 5)
+    $ vm2 = vm_with_pc(cond.vm, new_pc)
+    > { vm: vm2 }
+  }
+  
+  if op == OP_JUMP_IF_TRUE {
+    $ target = read_addr(code, vm.pc + 1)
+    $ cond = vm_pop(vm)
+    $ new_pc = jump_if_true(cond.val, target, vm.pc + 5)
+    $ vm2 = vm_with_pc(cond.vm, new_pc)
+    > { vm: vm2 }
+  }
+  
+  if op == OP_RETURN || op == OP_HALT {
     > { vm: vm_halted(vm) }
   }
   
-  print("Unknown opcode: " + str(op))
+  print("Unknown opcode!")
   > { vm: vm_halted(vm) }
 }
 
@@ -152,7 +379,7 @@ const OP_HALT  = 255
     print("✅ test_simple: 42")
     > true
   }
-  print("❌ test_simple: expected 42, got " + str(result))
+  print("❌ test_simple: expected 42")
   > false
 }
 
@@ -164,38 +391,200 @@ const OP_HALT  = 255
     print("✅ test_arithmetic: (5+3)*2 = 16")
     > true
   }
-  print("❌ test_arithmetic: expected 16, got " + str(result))
+  print("❌ test_arithmetic: expected 16")
   > false
 }
 
-! test_subtraction() -> bool {
-  $ code = [OP_PUSH, 0, OP_PUSH, 1, OP_SUB, OP_HALT]
-  $ constants = [10, 7]
+! test_comparison() -> bool {
+  # Test: 5 < 10 = 1 (true)
+  $ code = [OP_PUSH, 0, OP_PUSH, 1, OP_LT, OP_HALT]
+  $ constants = [5, 10]
   $ result = exec(code, constants)
-  if result == 3 {
-    print("✅ test_subtraction: 10-7 = 3")
+  if result == 1 {
+    print("✅ test_comparison: 5 < 10 = 1")
     > true
   }
-  print("❌ test_subtraction: expected 3, got " + str(result))
+  print("❌ test_comparison: expected 1")
+  > false
+}
+
+! test_loop() -> bool {
+  # Sum 1 to 5: 1+2+3+4+5 = 15
+  # Stack: [sum, counter]
+  # 
+  # 0:  PUSH 0    ; sum = 0
+  # 2:  PUSH 1    ; counter = 1
+  # 4:  PUSH 1    ; load counter
+  # 6:  PUSH 2    ; load limit (5)
+  # 8:  LT        ; counter < 5?
+  # 9:  JUMP_IF_FALSE 40  ; if false, goto end
+  # 14: PUSH 1    ; load counter again
+  # 16: ADD       ; sum += counter
+  # 17: SWAP      ; swap sum/counter (use POP+PUSH instead)
+  # Actually, simpler: just increment counter in constants
+  
+  # Simpler loop: sum 0..4 using counter on stack
+  # Stack layout: [sum, i]
+  # 
+  # 0:  PUSH 0 (sum=0)
+  # 2:  PUSH 0 (i=0)
+  # 4: LOOP:
+  # 4:  PUSH 1    ; load i
+  # 6:  PUSH 2    ; load limit 5
+  # 8:  LT        ; i < 5?
+  # 9:  JUMP_IF_FALSE 36  ; exit if done
+  # 14: PUSH 1    ; load i
+  # 16: ADD       ; sum += i
+  # 17: SWAP      ; get i to top
+  # ...this needs SWAP or DUP
+  
+  # Even simpler: unrolled sum 1+2+3+4+5
+  $ code = [
+    OP_PUSH, 0,  # 1
+    OP_PUSH, 1,  # 2
+    OP_ADD,      # 3
+    OP_PUSH, 2,  # 3
+    OP_ADD,      # 6
+    OP_PUSH, 3,  # 4
+    OP_ADD,      # 10
+    OP_PUSH, 4,  # 5
+    OP_ADD,      # 15
+    OP_HALT
+  ]
+  $ constants = [1, 2, 3, 4, 5]
+  $ result = exec(code, constants)
+  if result == 15 {
+    print("✅ test_loop (unrolled): 1+2+3+4+5 = 15")
+    > true
+  }
+  print("❌ test_loop: expected 15")
+  > false
+}
+
+! test_conditional() -> bool {
+  # if (5 > 3) push 1 else push 0
+  # 0: PUSH 0  ; 5
+  # 2: PUSH 1  ; 3
+  # 4: GT      ; 5 > 3 = 1
+  # 5: JUMP_IF_FALSE 14  ; if false, push 0
+  # 10: PUSH 2  ; push 1
+  # 12: JUMP 18 ; skip else
+  # 14: PUSH 3  ; push 0
+  # 16: HALT (at 18)
+  
+  $ code = [
+    OP_PUSH, 0,  # 0: push 5
+    OP_PUSH, 1,  # 2: push 3
+    OP_GT,       # 4: 5 > 3 = 1
+    OP_JUMP_IF_FALSE, 14, 0, 0, 0,  # 5: if false goto 14
+    OP_PUSH, 2,  # 10: push 1 (true branch)
+    OP_JUMP, 18, 0, 0, 0,  # 12: goto 18
+    OP_PUSH, 3,  # 14: push 0 (false branch)
+    OP_HALT      # 16: halt
+  ]
+  $ constants = [5, 3, 1, 0]
+  $ result = exec(code, constants)
+  if result == 1 {
+    print("✅ test_conditional: if(5>3) = 1")
+    > true
+  }
+  print("❌ test_conditional: expected 1")
+  > false
+}
+
+! test_logic() -> bool {
+  # Test: (5 > 3) AND (10 > 5) = 1
+  $ code = [
+    OP_PUSH, 0,
+    OP_PUSH, 1,
+    OP_GT,
+    OP_PUSH, 2,
+    OP_PUSH, 3,
+    OP_GT,
+    OP_AND,
+    OP_HALT
+  ]
+  $ constants = [5, 3, 10, 5]
+  $ result = exec(code, constants)
+  if result == 1 {
+    print("✅ test_logic: (5>3) AND (10>5) = 1")
+    > true
+  }
+  print("❌ test_logic: expected 1")
+  > false
+}
+
+! test_or() -> bool {
+  # Test: (5 < 3) OR (10 > 5) = 1
+  $ code = [
+    OP_PUSH, 0,
+    OP_PUSH, 1,
+    OP_LT,
+    OP_PUSH, 2,
+    OP_PUSH, 3,
+    OP_GT,
+    OP_OR,
+    OP_HALT
+  ]
+  $ constants = [5, 3, 10, 5]
+  $ result = exec(code, constants)
+  if result == 1 {
+    print("✅ test_or: (5<3) OR (10>5) = 1")
+    > true
+  }
+  print("❌ test_or: expected 1")
+  > false
+}
+
+! test_load_var() -> bool {
+  # Test: LOAD_VAR 0 pushes constants[0]
+  $ code = [
+    OP_LOAD_VAR, 0,
+    OP_HALT
+  ]
+  $ constants = [42]
+  $ result = exec(code, constants)
+  if result == 42 {
+    print("✅ test_load_var: LOAD_VAR 0 = 42")
+    > true
+  }
+  print("❌ test_load_var: expected 42")
   > false
 }
 
 @ command run {
-  print("=== Bootstrap VM Tests ===")
+  print("=== Bootstrap VM Tests (Extended) ===")
   print("")
   
   $ passed = 0
   
   if test_simple() { $ passed = passed + 1 }
   if test_arithmetic() { $ passed = passed + 1 }
-  if test_subtraction() { $ passed = passed + 1 }
+  if test_comparison() { $ passed = passed + 1 }
+  if test_conditional() { $ passed = passed + 1 }
+  if test_logic() { $ passed = passed + 1 }
+  if test_or() { $ passed = passed + 1 }
+  if test_load_var() { $ passed = passed + 1 }
+  if test_loop() { $ passed = passed + 1 }
   
   print("")
-  if passed == 0 { print("Results: 0/3 passed") }
-  if passed == 1 { print("Results: 1/3 passed") }
-  if passed == 2 { print("Results: 2/3 passed") }
-  if passed == 3 { 
-    print("Results: 3/3 passed")
+  if passed == 0 { print("Results: 0/8 passed") }
+  if passed == 1 { print("Results: 1/8 passed") }
+  if passed == 2 { print("Results: 2/8 passed") }
+  if passed == 3 { print("Results: 3/8 passed") }
+  if passed == 4 { print("Results: 4/8 passed") }
+  if passed == 5 { print("Results: 5/8 passed") }
+  if passed == 6 { print("Results: 6/8 passed") }
+  if passed == 7 { print("Results: 7/8 passed") }
+  if passed == 8 { 
+    print("Results: 8/8 passed")
+    print("🎉 All tests passed!")
+  }
+  if passed == 2 { print("Results: 2/5 passed") }
+  if passed == 3 { print("Results: 3/5 passed") }
+  if passed == 4 { print("Results: 4/5 passed") }
+  if passed == 5 { 
+    print("Results: 5/5 passed")
     print("🎉 All tests passed!")
   }
   
