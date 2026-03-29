@@ -26,6 +26,7 @@ const OP_NOT           = 40   # 0x28
 const OP_NEG           = 41   # 0x29
 const OP_LOAD_VAR      = 64   # 0x40
 const OP_STORE_VAR     = 65   # 0x41
+const OP_LOAD_FP       = 66   # 0x42 - Load from FP-relative offset
 const OP_JUMP          = 80   # 0x50
 const OP_JUMP_IF_FALSE = 81   # 0x51
 const OP_JUMP_IF_TRUE  = 82   # 0x52
@@ -43,6 +44,7 @@ const OP_HALT          = 255  # 0xFF
 : VM {
   stack: [int]!
   pc: int!
+  fp: int!       # Frame pointer for stack frames
   halted: bool!
 }
 
@@ -51,28 +53,34 @@ const OP_HALT          = 255  # 0xFF
   val: int!
 }
 
+# Make sure PopResult.vm has fp field when we pop
+
 # ─── VM Construction ────────────────────────────────────────────────
 
 ! new_vm() -> VM {
-  > { stack: [], pc: 0, halted: false }
+  > { stack: [], pc: 0, fp: 0, halted: false }
 }
 
 ! vm_with_pc(vm: VM, pc: int) -> VM {
-  > { stack: vm.stack, pc: pc, halted: vm.halted }
+  > { stack: vm.stack, pc: pc, fp: vm.fp, halted: vm.halted }
 }
 
 ! vm_with_stack(vm: VM, stack: [int]) -> VM {
-  > { stack: stack, pc: vm.pc, halted: vm.halted }
+  > { stack: stack, pc: vm.pc, fp: vm.fp, halted: vm.halted }
+}
+
+! vm_with_fp(vm: VM, fp: int) -> VM {
+  > { stack: vm.stack, pc: vm.pc, fp: fp, halted: vm.halted }
 }
 
 ! vm_halted(vm: VM) -> VM {
-  > { stack: vm.stack, pc: vm.pc, halted: true }
+  > { stack: vm.stack, pc: vm.pc, fp: vm.fp, halted: true }
 }
 
 # ─── Stack Operations ───────────────────────────────────────────────
 
 ! vm_push(vm: VM, val: int) -> VM {
-  > { stack: vm.stack + [val], pc: vm.pc, halted: vm.halted }
+  > { stack: vm.stack + [val], pc: vm.pc, fp: vm.fp, halted: vm.halted }
 }
 
 ! vm_pop(vm: VM) -> PopResult {
@@ -383,6 +391,24 @@ const OP_HALT          = 255  # 0xFF
     > { vm: vm3 }
   }
   
+  if op == OP_LOAD_FP {
+    # Load from stack at FP-relative offset
+    $ offset = code[vm.pc + 1]
+    $ idx = vm.fp + offset
+    if idx < 0 {
+      print("FP index underflow!")
+      > { vm: vm_halted(vm) }
+    }
+    if idx >= length(vm.stack) {
+      print("FP index overflow!")
+      > { vm: vm_halted(vm) }
+    }
+    $ val = vm.stack[idx]
+    $ vm2 = vm_push(vm, val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 2)
+    > { vm: vm3 }
+  }
+  
   if op == OP_STORE_VAR {
     # For now, just pop and discard (immutable design)
     $ result = vm_pop(vm)
@@ -415,22 +441,32 @@ const OP_HALT          = 255  # 0xFF
   
   # Function calls
   if op == OP_CALL {
+    # Stack Frame Protocol:
+    # CALL pushes: [arg, return_addr, old_fp]
+    # Then sets fp = stack_top
     $ target = read_addr(code, vm.pc + 1)
-    $ return_addr = vm.pc + 5  # Address after CALL instruction
-    $ vm2 = vm_push(vm, return_addr)  # Push return address
-    $ vm3 = vm_with_pc(vm2, target)    # Jump to function
-    > { vm: vm3 }
+    $ return_addr = vm.pc + 5
+    $ vm2 = vm_push(vm, return_addr)
+    $ vm3 = vm_push(vm2, vm.fp)
+    $ vm4 = vm_with_fp(vm3, length(vm3.stack))  # fp points to current top
+    $ vm5 = vm_with_pc(vm4, target)
+    > { vm: vm5 }
   }
   
   if op == OP_RETURN {
-    # Stack: [..., return_addr, return_value]
-    $ result = vm_pop(vm)       # Pop return value
-    $ value = result.val
-    $ addr_result = vm_pop(result.vm)  # Pop return address
-    $ addr = addr_result.val
-    $ vm2 = vm_push(addr_result.vm, value)  # Push return value back
-    $ vm3 = vm_with_pc(vm2, addr)           # Jump to return address
-    > { vm: vm3 }
+    # Stack Frame Protocol:
+    # Stack: [..., arg, return_addr, old_fp, result]
+    # 1. Pop result
+    # 2. Pop old_fp, restore it
+    # 3. Pop return_addr, jump to it
+    # 4. Push result
+    $ result = vm_pop(vm)
+    $ fp_result = vm_pop(result.vm)
+    $ vm2 = vm_with_fp(fp_result.vm, fp_result.val)
+    $ addr_result = vm_pop(vm2)
+    $ vm3 = vm_with_pc(addr_result.vm, addr_result.val)
+    $ vm4 = vm_push(vm3, result.val)
+    > { vm: vm4 }
   }
   
   if op == OP_HALT {
@@ -707,13 +743,15 @@ const OP_HALT          = 255  # 0xFF
 }
 
 ! test_recursive_factorial() -> bool {
-  # Test CALL/RETURN with simple function
+  # Test CALL/RETURN with FP-relative access
   # double(5) = 10
   # 
-  # Stack layout:
-  # After CALL: [5, return_addr]
-  # Function: [5, return_addr] -> [return_addr, 10]
-  # Then RETURN: [return_addr, 10] -> [10] + jump
+  # Stack layout after CALL:
+  # [5, return_addr, old_fp]
+  #  ↑              ↑         ↑
+  #  0              1         2 (FP = 3, stack length)
+  # 
+  # To access arg (5): idx = 0, so offset = 0 - FP = -3
   
   $ code = [
     OP_PUSH, 0,           # 0-1: PUSH 5
@@ -722,19 +760,19 @@ const OP_HALT          = 255  # 0xFF
     OP_POP,               # 8: (padding)
     
     # double function (offset 9):
-    OP_SWAP,              # 9: [return_addr, 5]
-    OP_DUP,               # 10: [return_addr, 5, 5]
-    OP_ADD,               # 11: [return_addr, 10]
-    OP_RETURN             # 12: [10] + jump to return_addr
+    OP_LOAD_FP, -3,       # 9: Load arg from FP-3 (stack: [5, ret, fp, 5])
+    OP_DUP,               # 10: [5, ret, fp, 5, 5]
+    OP_ADD,               # 11: [5, ret, fp, 10]
+    OP_RETURN             # 12: pops 10, pops fp, pops ret, pushes 10, jumps
   ]
   $ constants = [5]
   $ result = exec(code, constants)
   
   if result == 10 {
-    print("✅ test_recursive_factorial: double(5) = 10 (CALL/RETURN works!)")
+    print("✅ test_recursive_factorial: double(5) = 10 (FP-relative access works!)")
     > true
   }
-  print("❌ test_recursive_factorial: expected 10, got " + result)
+  print("❌ test_recursive_factorial: expected 10")
   > false
 }
 
