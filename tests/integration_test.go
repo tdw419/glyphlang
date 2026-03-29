@@ -363,7 +363,7 @@ func TestValueTypes(t *testing.T) {
 
 	// Test StringValue
 	strVal := vm.StringValue{Val: "test"}
-	helper.AssertEqual(strVal.Type(), "string", "String type")
+	helper.AssertEqual(strVal.Type(), "str", "String type")
 
 	// Test BoolValue
 	boolVal := vm.BoolValue{Val: true}

@@ -469,14 +469,16 @@ func TestExecuteAssign_RedeclarationError(t *testing.T) {
 	_, err := interp.ExecuteStatement(stmt1, env)
 	require.NoError(t, err)
 
-	// Second assignment to same variable in same scope should fail
+	// Second assignment to same variable in same scope should update it
 	stmt2 := AssignStatement{
 		Target: "x",
 		Value:  LiteralExpr{Value: IntLiteral{Value: 2}},
 	}
 	_, err = interp.ExecuteStatement(stmt2, env)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot redeclare variable 'x' in the same scope")
+	require.NoError(t, err)
+	val, err := env.Get("x")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), val)
 }
 
 func TestExecuteAssign_UpdateParentScope(t *testing.T) {

@@ -2101,7 +2101,7 @@ func TestValueTypes(t *testing.T) {
 		{NullValue{}, "null"},
 		{IntValue{Val: 42}, "int"},
 		{FloatValue{Val: 3.14}, "float"},
-		{StringValue{Val: "hello"}, "string"},
+		{StringValue{Val: "hello"}, "str"},
 		{BoolValue{Val: true}, "bool"},
 		{ArrayValue{Val: []Value{}}, "array"},
 		{ObjectValue{Val: map[string]Value{}}, "object"},
