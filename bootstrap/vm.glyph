@@ -1,6 +1,6 @@
 # bootstrap/vm.glyph
 # Self-hosted VM for GlyphLang bytecode execution.
-# v0.9.7 - Object & Array Opcodes
+# v0.9.8 - Index Operations
 # Functional style - immutable structs, returns new states.
 
 # ─── Opcodes (Matching pkg/vm/vm.go) ────────────────────────────────
@@ -38,6 +38,8 @@ const OP_GET_FIELD     = 113  # 0x71
 const OP_SET_FIELD     = 114  # 0x72
 const OP_DEF_FUNC      = 115  # 0x73
 const OP_BUILD_ARRAY   = 128  # 0x80
+const OP_GET_INDEX     = 86   # 0x56 - arr[i] / str[i]
+const OP_SET_INDEX     = 87   # 0x57 - arr[i] = val
 const OP_HALT          = 255  # 0xFF
 
 # ─── Heap Constants ─────────────────────────────────────────────────
@@ -587,6 +589,68 @@ const HEAP_BASE = 2000000
     > { vm: vm2 }
   }
   
+  # ─── Index Operations (v0.9.8) ─────────────────────────────────────
+  
+  # OP_GET_INDEX: pop index, pop array/object ref, push element at index
+  # Array layout: [count, elem0, elem1, ...]
+  if op == OP_GET_INDEX {
+    $ idx_pop = vm_pop(vm)
+    $ arr_pop = vm_pop(idx_pop.vm)
+    $ idx = idx_pop.val
+    $ ref = arr_pop.val
+    
+    # Convert ref to heap offset
+    $ offset = ref_to_offset(ref)
+    
+    # Array layout: [count, elem0, elem1, ...]
+    # Element at index i is at offset + 1 + i
+    $ count = arr_pop.vm.heap[offset]
+    
+    if idx < 0 || idx >= count {
+      print("Array index out of bounds!")
+      print("  index:")
+      print(idx)
+      print("  count:")
+      print(count)
+      > { vm: vm_halted(arr_pop.vm) }
+    }
+    
+    $ val = arr_pop.vm.heap[offset + 1 + idx]
+    $ vm2 = vm_push(arr_pop.vm, val)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  # OP_SET_INDEX: pop value, pop index, pop array ref, update heap, push array ref
+  if op == OP_SET_INDEX {
+    $ val_pop = vm_pop(vm)
+    $ idx_pop = vm_pop(val_pop.vm)
+    $ arr_pop = vm_pop(idx_pop.vm)
+    
+    $ idx = idx_pop.val
+    $ ref = arr_pop.val
+    $ val = val_pop.val
+    
+    $ offset = ref_to_offset(ref)
+    $ count = arr_pop.vm.heap[offset]
+    
+    if idx < 0 || idx >= count {
+      print("Array index out of bounds for set!")
+      print("  index:")
+      print(idx)
+      print("  count:")
+      print(count)
+      > { vm: vm_halted(arr_pop.vm) }
+    }
+    
+    $ elem_offset = offset + 1 + idx
+    $ new_heap = heap_set_at(arr_pop.vm.heap, elem_offset, val)
+    $ vm2 = { stack: arr_pop.vm.stack, pc: arr_pop.vm.pc, fp: arr_pop.vm.fp, halted: arr_pop.vm.halted, heap: new_heap }
+    $ vm3 = vm_push(vm2, ref)
+    $ vm4 = vm_with_pc(vm3, vm.pc + 1)
+    > { vm: vm4 }
+  }
+  
   if op == OP_HALT {
     > { vm: vm_halted(vm) }
   }
@@ -933,8 +997,59 @@ const HEAP_BASE = 2000000
   > false
 }
 
+# ─── v0.9.8 Tests: Index Operations ──────────────────────────────────
+
+! test_get_index() -> bool {
+  # Build array [10, 20, 30], get index 1 -> should return 20
+  $ code = [
+    OP_PUSH, 0,         # push 10
+    OP_PUSH, 1,         # push 20
+    OP_PUSH, 2,         # push 30
+    OP_BUILD_ARRAY, 3,  # build array [10, 20, 30]
+    OP_PUSH, 3,         # push index 1
+    OP_GET_INDEX,       # get arr[1] = 20
+    OP_HALT
+  ]
+  $ constants = [10, 20, 30, 1]
+  $ result = exec(code, constants)
+  if result == 20 {
+    print("✅ test_get_index: arr[1] = 20")
+    > true
+  }
+  print("❌ test_get_index: expected 20, got ")
+  print(result)
+  > false
+}
+
+! test_set_index() -> bool {
+  # Build array [10, 20, 30], set index 1 to 99, get index 1 -> 99
+  $ code = [
+    OP_PUSH, 0,         # push 10
+    OP_PUSH, 1,         # push 20
+    OP_PUSH, 2,         # push 30
+    OP_BUILD_ARRAY, 3,  # build array [10, 20, 30]
+    # SET_INDEX: stack needs [arr, index, value]
+    OP_PUSH, 3,         # push index 1
+    OP_PUSH, 4,         # push value 99
+    OP_SET_INDEX,       # arr[1] = 99
+    # GET_INDEX to verify
+    OP_PUSH, 3,         # push index 1
+    OP_GET_INDEX,       # get arr[1] = 99
+    OP_HALT
+  ]
+  $ constants = [10, 20, 30, 1, 99]
+  $ result = exec(code, constants)
+  if result == 99 {
+    print("✅ test_set_index: arr[1] = 20 -> set 99 -> get 99")
+    > true
+  }
+  print("❌ test_set_index: expected 99, got ")
+  print(result)
+  > false
+}
+
 @ command run {
-  print("=== Bootstrap VM Tests v0.9.7 ===")
+  print("=== Bootstrap VM Tests v0.9.8 ===")
   print("")
   
   $ passed = 0
@@ -959,13 +1074,17 @@ const HEAP_BASE = 2000000
   if test_set_field() { $ passed = passed + 1 }
   if test_def_func() { $ passed = passed + 1 }
   
-  print("")
-  if passed == 16 { print("Results: 16/16 passed") }
-  if passed == 15 { print("Results: 15/16 passed") }
-  if passed < 15 { print("Results: < 15/16 passed") }
+  # v0.9.8 tests
+  if test_get_index() { $ passed = passed + 1 }
+  if test_set_index() { $ passed = passed + 1 }
   
-  if passed == 16 {
-    print("🎉🎉🎉 ALL 16 TESTS PASSED! v0.9.7 Object & Array Opcodes complete! 🎉🎉🎉")
+  print("")
+  print("Results: ")
+  print(passed)
+  print("/18 passed")
+  
+  if passed == 18 {
+    print("🎉🎉🎉 ALL 18 TESTS PASSED! v0.9.8 Index Operations complete! 🎉🎉🎉")
   }
   
   > { ok: true }
