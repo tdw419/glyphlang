@@ -268,7 +268,8 @@ const OP_HALT          = 255
     # Emit parameter name constant indices
     $ pi = 0
     while pi < length(item.func_params) {
-      $ pidx = add_constant(c, item.func_params[pi].name)
+      $ param = item.func_params[pi]
+      $ pidx = add_constant(c, param.name)
       emit_bytes4(c, pidx)
       pi = pi + 1
     }
