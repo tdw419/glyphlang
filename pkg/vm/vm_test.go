@@ -3,6 +3,7 @@ package vm
 import (
 	"encoding/binary"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -1251,5 +1252,293 @@ func TestOpSetField(t *testing.T) {
 
 	if val, ok := result.(IntValue); !ok || val.Val != 42 {
 		t.Errorf("Expected 42, got %v", result)
+	}
+}
+
+func TestOpMod(t *testing.T) {
+	constants := []Value{IntValue{Val: 10}, IntValue{Val: 3}}
+	bytecode := createBytecodeHeader(constants)
+	c0, c1 := uint32(0), uint32(1)
+	bytecode = addInstruction(bytecode, OpPush, &c0)
+	bytecode = addInstruction(bytecode, OpPush, &c1)
+	bytecode = addInstruction(bytecode, OpMod, nil)
+	bytecode = addInstruction(bytecode, OpHalt, nil)
+
+	vm := NewVM()
+	result, err := vm.Execute(bytecode)
+	if err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if intVal, ok := result.(IntValue); !ok || intVal.Val != 1 {
+		t.Errorf("Expected 1, got %v", result)
+	}
+}
+
+func TestOpSetIndex(t *testing.T) {
+	constants := []Value{IntValue{Val: 1}, IntValue{Val: 2}, IntValue{Val: 3}, IntValue{Val: 42}, IntValue{Val: 1}}
+	bytecode := createBytecodeHeader(constants)
+	c0, c1, c2, c3, c4 := uint32(0), uint32(1), uint32(2), uint32(3), uint32(4)
+	
+	bytecode = addInstruction(bytecode, OpPush, &c0)
+	bytecode = addInstruction(bytecode, OpPush, &c1)
+	bytecode = addInstruction(bytecode, OpPush, &c2)
+	count := uint32(3)
+	bytecode = addInstruction(bytecode, OpBuildArray, &count)
+	
+	bytecode = addInstruction(bytecode, OpPush, &c4) // index 1
+	bytecode = addInstruction(bytecode, OpPush, &c3) // value 42
+	bytecode = addInstruction(bytecode, OpSetIndex, nil)
+	
+	bytecode = addInstruction(bytecode, OpHalt, nil)
+
+	vm := NewVM()
+	result, err := vm.Execute(bytecode)
+	if err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	arrVal, ok := result.(ArrayValue)
+	if !ok || arrVal.Val[1].(IntValue).Val != 42 {
+		t.Errorf("Expected element at index 1 to be 42, got %v", result)
+	}
+}
+
+func TestOpDefFunc(t *testing.T) {
+	constants := []Value{
+		StringValue{Val: "myFunc"},
+		StringValue{Val: "a"},
+	}
+	bytecode := createBytecodeHeader(constants)
+
+	bytecode = append(bytecode, byte(OpDefFunc))
+	
+	nameIdx := make([]byte, 4)
+	binary.LittleEndian.PutUint32(nameIdx, 0)
+	bytecode = append(bytecode, nameIdx...)
+	
+	paramCount := make([]byte, 4)
+	binary.LittleEndian.PutUint32(paramCount, 1)
+	bytecode = append(bytecode, paramCount...)
+	
+	bodyLength := make([]byte, 4)
+	binary.LittleEndian.PutUint32(bodyLength, 2)
+	bytecode = append(bytecode, bodyLength...)
+	
+	param1Idx := make([]byte, 4)
+	binary.LittleEndian.PutUint32(param1Idx, 1)
+	bytecode = append(bytecode, param1Idx...)
+	
+	bytecode = append(bytecode, byte(OpPop), byte(OpReturn))
+
+	bytecode = addInstruction(bytecode, OpHalt, nil)
+
+	vm := NewVM()
+	_, err := vm.Execute(bytecode)
+	if err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+
+	fn, exists := vm.functions["myFunc"]
+	if !exists {
+		t.Errorf("Function 'myFunc' not registered")
+	}
+	if len(fn.ParamNames) != 1 || fn.ParamNames[0] != "a" {
+		t.Errorf("Unexpected param names: %v", fn.ParamNames)
+	}
+}
+
+func TestOpSetIndexObject(t *testing.T) {
+	constants := []Value{StringValue{Val: "x"}, IntValue{Val: 10}, IntValue{Val: 42}}
+	bytecode := createBytecodeHeader(constants)
+	c0, c1, c2 := uint32(0), uint32(1), uint32(2)
+	
+	bytecode = addInstruction(bytecode, OpPush, &c0)
+	bytecode = addInstruction(bytecode, OpPush, &c1)
+	count := uint32(1)
+	bytecode = addInstruction(bytecode, OpBuildObject, &count)
+	
+	bytecode = addInstruction(bytecode, OpPush, &c0) // key "x"
+	bytecode = addInstruction(bytecode, OpPush, &c2) // value 42
+	bytecode = addInstruction(bytecode, OpSetIndex, nil)
+	
+	bytecode = addInstruction(bytecode, OpHalt, nil)
+
+	vm := NewVM()
+	result, err := vm.Execute(bytecode)
+	if err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	objVal, ok := result.(ObjectValue)
+	if !ok || objVal.Val["x"].(IntValue).Val != 42 {
+		t.Errorf("Expected field 'x' to be 42, got %v", result)
+	}
+}
+
+func TestOpDefFuncErrors(t *testing.T) {
+	// Test constant index out of bounds for name
+	constants := []Value{StringValue{Val: "myFunc"}}
+	bytecode := createBytecodeHeader(constants)
+	bytecode = append(bytecode, byte(OpDefFunc))
+	nameIdx := make([]byte, 4)
+	binary.LittleEndian.PutUint32(nameIdx, 99) // Out of bounds
+	bytecode = append(bytecode, nameIdx...)
+	
+	vm := NewVM()
+	_, err := vm.Execute(bytecode)
+	if err == nil {
+		t.Error("Expected error for name index out of bounds")
+	}
+}
+
+func TestOpDefFuncTypeErrors(t *testing.T) {
+	// 1. Name is not a string
+	constants := []Value{IntValue{Val: 123}}
+	bytecode := createBytecodeHeader(constants)
+	bytecode = append(bytecode, byte(OpDefFunc))
+	nameIdx := make([]byte, 4)
+	binary.LittleEndian.PutUint32(nameIdx, 0) // Index 0 is IntValue
+	bytecode = append(bytecode, nameIdx...)
+	
+	vm := NewVM()
+	_, err := vm.Execute(bytecode)
+	if err == nil || err.Error() != "function name must be a string" {
+		t.Errorf("Expected 'function name must be a string' error, got %v", err)
+	}
+}
+
+func TestOpSetIndexErrors(t *testing.T) {
+	// Cannot set index on integer
+	constants := []Value{IntValue{Val: 123}, IntValue{Val: 0}, IntValue{Val: 42}}
+	bytecode := createBytecodeHeader(constants)
+	c0, c1, c2 := uint32(0), uint32(1), uint32(2)
+	
+	bytecode = addInstruction(bytecode, OpPush, &c0) // obj (int)
+	bytecode = addInstruction(bytecode, OpPush, &c1) // index
+	bytecode = addInstruction(bytecode, OpPush, &c2) // value
+	bytecode = addInstruction(bytecode, OpSetIndex, nil)
+	
+	vm := NewVM()
+	_, err := vm.Execute(bytecode)
+	if err == nil {
+		t.Error("Expected error for setting index on non-collection")
+	}
+}
+
+func TestOpBuildObjectKeyError(t *testing.T) {
+	constants := []Value{IntValue{Val: 123}, IntValue{Val: 456}}
+	bytecode := createBytecodeHeader(constants)
+	c0, c1 := uint32(0), uint32(1)
+	bytecode = addInstruction(bytecode, OpPush, &c0) // key (int)
+	bytecode = addInstruction(bytecode, OpPush, &c1) // value
+	count := uint32(1)
+	bytecode = addInstruction(bytecode, OpBuildObject, &count)
+	
+	vm := NewVM()
+	_, err := vm.Execute(bytecode)
+	if err == nil || err.Error() != "object key must be a string" {
+		t.Errorf("Expected 'object key must be a string' error, got %v", err)
+	}
+}
+
+func TestOpGetFieldErrors(t *testing.T) {
+	// 1. Key is not a string
+	constants := []Value{StringValue{Val: "x"}, IntValue{Val: 10}, IntValue{Val: 123}}
+	bytecode := createBytecodeHeader(constants)
+	c0, c1, c2 := uint32(0), uint32(1), uint32(2)
+	
+	bytecode = addInstruction(bytecode, OpPush, &c0) // key
+	bytecode = addInstruction(bytecode, OpPush, &c1) // value
+	count := uint32(1)
+	bytecode = addInstruction(bytecode, OpBuildObject, &count)
+	
+	bytecode = addInstruction(bytecode, OpPush, &c2) // key (int)
+	bytecode = addInstruction(bytecode, OpGetField, nil)
+	
+	vm := NewVM()
+	_, err := vm.Execute(bytecode)
+	if err == nil || err.Error() != "type error: field name must be a string" {
+		t.Errorf("Expected 'type error: field name must be a string' error, got %v", err)
+	}
+
+	// 2. Not an object
+	constants = []Value{StringValue{Val: "x"}, IntValue{Val: 123}}
+	bytecode = createBytecodeHeader(constants)
+	c0, c1 = uint32(0), uint32(1)
+	bytecode = addInstruction(bytecode, OpPush, &c1) // obj (int)
+	bytecode = addInstruction(bytecode, OpPush, &c0) // key
+	bytecode = addInstruction(bytecode, OpGetField, nil)
+	
+	vm = NewVM()
+	_, err = vm.Execute(bytecode)
+	if err == nil || err.Error() != "type error: can only get field from object" {
+		t.Errorf("Expected 'type error: can only get field from object' error, got %v", err)
+	}
+}
+
+func TestIssue7FinalCoverage(t *testing.T) {
+	// 1. execSetField: key not string
+	{
+		constants := []Value{StringValue{Val: "x"}, IntValue{Val: 10}, IntValue{Val: 42}, IntValue{Val: 99}}
+		bytecode := createBytecodeHeader(constants)
+		c0, c1, c2, c3 := uint32(0), uint32(1), uint32(2), uint32(3)
+		bytecode = addInstruction(bytecode, OpPush, &c0) // key
+		bytecode = addInstruction(bytecode, OpPush, &c1) // value
+		count := uint32(1)
+		bytecode = addInstruction(bytecode, OpBuildObject, &count)
+		bytecode = addInstruction(bytecode, OpPush, &c3) // key (int)
+		bytecode = addInstruction(bytecode, OpPush, &c2) // value
+		bytecode = addInstruction(bytecode, OpSetField, nil)
+		vm := NewVM()
+		_, err := vm.Execute(bytecode)
+		if err == nil || !strings.Contains(err.Error(), "field name must be a string") {
+			t.Errorf("Expected 'field name must be a string' error, got %v", err)
+		}
+	}
+	// 2. execSetField: not an object
+	{
+		constants := []Value{StringValue{Val: "x"}, IntValue{Val: 42}, IntValue{Val: 123}}
+		bytecode := createBytecodeHeader(constants)
+		c0, c1, c2 := uint32(0), uint32(1), uint32(2)
+		bytecode = addInstruction(bytecode, OpPush, &c2) // obj (int)
+		bytecode = addInstruction(bytecode, OpPush, &c0) // key
+		bytecode = addInstruction(bytecode, OpPush, &c1) // value
+		bytecode = addInstruction(bytecode, OpSetField, nil)
+		vm := NewVM()
+		_, err := vm.Execute(bytecode)
+		if err == nil || !strings.Contains(err.Error(), "can only set field on object") {
+			t.Errorf("Expected 'can only set field on object' error, got %v", err)
+		}
+	}
+}
+
+func TestOpDefFuncParamErrors(t *testing.T) {
+	// 1. Param name constant out of bounds
+	{
+		constants := []Value{StringValue{Val: "myFunc"}}
+		bytecode := createBytecodeHeader(constants)
+		bytecode = append(bytecode, byte(OpDefFunc))
+		nameIdx := make([]byte, 4); binary.LittleEndian.PutUint32(nameIdx, 0); bytecode = append(bytecode, nameIdx...)
+		paramCount := make([]byte, 4); binary.LittleEndian.PutUint32(paramCount, 1); bytecode = append(bytecode, paramCount...)
+		bodyLength := make([]byte, 4); binary.LittleEndian.PutUint32(bodyLength, 0); bytecode = append(bytecode, bodyLength...)
+		param1Idx := make([]byte, 4); binary.LittleEndian.PutUint32(param1Idx, 99); bytecode = append(bytecode, param1Idx...)
+		vm := NewVM()
+		_, err := vm.Execute(bytecode)
+		if err == nil || !strings.Contains(err.Error(), "param name constant out of bounds") {
+			t.Errorf("Expected 'param name constant out of bounds' error, got %v", err)
+		}
+	}
+	// 2. Param name is not a string
+	{
+		constants := []Value{StringValue{Val: "myFunc"}, IntValue{Val: 123}}
+		bytecode := createBytecodeHeader(constants)
+		bytecode = append(bytecode, byte(OpDefFunc))
+		nameIdx := make([]byte, 4); binary.LittleEndian.PutUint32(nameIdx, 0); bytecode = append(bytecode, nameIdx...)
+		paramCount := make([]byte, 4); binary.LittleEndian.PutUint32(paramCount, 1); bytecode = append(bytecode, paramCount...)
+		bodyLength := make([]byte, 4); binary.LittleEndian.PutUint32(bodyLength, 0); bytecode = append(bytecode, bodyLength...)
+		param1Idx := make([]byte, 4); binary.LittleEndian.PutUint32(param1Idx, 1); bytecode = append(bytecode, param1Idx...)
+		vm := NewVM()
+		_, err := vm.Execute(bytecode)
+		if err == nil || !strings.Contains(err.Error(), "param name must be a string") {
+			t.Errorf("Expected 'param name must be a string' error, got %v", err)
+		}
 	}
 }
