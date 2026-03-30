@@ -221,6 +221,15 @@ import "./parser"
     > { value: null, error: "" }
   }
 
+  if name == "args" {
+    > { value: args(), error: "" }
+  }
+
+  if name == "exists" {
+    if length(args) == 0 { > { value: false, error: "" } }
+    > { value: exists(args[0]), error: "" }
+  }
+
   if name == "keys" {
     if length(args) == 0 { > { value: [], error: "" } }
     > { value: keys(args[0]), error: "" }

@@ -1,6 +1,9 @@
 package interpreter
 
 import (
+	"os"
+	"path/filepath"
+
 	. "github.com/glyphlang/glyph/pkg/ast"
 
 	"testing"
@@ -5065,4 +5068,134 @@ func TestInterpreter_AllThreeInjections(t *testing.T) {
 	assert.Equal(t, "postgres", resultMap["db_type"])
 	assert.Equal(t, "redis", resultMap["cache_type"])
 	assert.Equal(t, "mongodb", resultMap["docs_type"])
+}
+
+// ─── File I/O and CLI Builtins (Issue #10) ────────────────────────
+
+func TestBuiltinFunction_WriteFile_ReadFile(t *testing.T) {
+	interp := NewInterpreter()
+	env := NewEnvironment()
+
+	t.Run("write_then_read", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "test_io.txt")
+		content := "hello from glyphlang!"
+
+		// Write file
+		writeExpr := FunctionCallExpr{
+			Name: "writeFile",
+			Args: []Expr{
+				LiteralExpr{Value: StringLiteral{Value: filePath}},
+				LiteralExpr{Value: StringLiteral{Value: content}},
+			},
+		}
+		result, err := interp.evaluateFunctionCall(writeExpr, env)
+		require.NoError(t, err)
+		assert.Nil(t, result)
+
+		// Verify file exists on disk
+		data, err := os.ReadFile(filePath)
+		require.NoError(t, err)
+		assert.Equal(t, content, string(data))
+
+		// Read file back through interpreter
+		readExpr := FunctionCallExpr{
+			Name: "readFile",
+			Args: []Expr{
+				LiteralExpr{Value: StringLiteral{Value: filePath}},
+			},
+		}
+		result, err = interp.evaluateFunctionCall(readExpr, env)
+		require.NoError(t, err)
+		assert.Equal(t, content, result)
+	})
+
+	t.Run("read_nonexistent_returns_empty", func(t *testing.T) {
+		expr := FunctionCallExpr{
+			Name: "readFile",
+			Args: []Expr{
+				LiteralExpr{Value: StringLiteral{Value: "/tmp/glyphlang_nonexistent_test_file.txt"}},
+			},
+		}
+		result, err := interp.evaluateFunctionCall(expr, env)
+		require.NoError(t, err)
+		assert.Equal(t, "", result)
+	})
+}
+
+func TestBuiltinFunction_Exists(t *testing.T) {
+	interp := NewInterpreter()
+	env := NewEnvironment()
+
+	t.Run("existing_file", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "exists_test.txt")
+		err := os.WriteFile(tmpFile, []byte("data"), 0644)
+		require.NoError(t, err)
+
+		expr := FunctionCallExpr{
+			Name: "exists",
+			Args: []Expr{
+				LiteralExpr{Value: StringLiteral{Value: tmpFile}},
+			},
+		}
+		result, err := interp.evaluateFunctionCall(expr, env)
+		require.NoError(t, err)
+		assert.Equal(t, true, result)
+	})
+
+	t.Run("nonexistent_file", func(t *testing.T) {
+		expr := FunctionCallExpr{
+			Name: "exists",
+			Args: []Expr{
+				LiteralExpr{Value: StringLiteral{Value: "/tmp/glyphlang_no_such_file.xyz"}},
+			},
+		}
+		result, err := interp.evaluateFunctionCall(expr, env)
+		require.NoError(t, err)
+		assert.Equal(t, false, result)
+	})
+}
+
+func TestBuiltinFunction_Args(t *testing.T) {
+	interp := NewInterpreter()
+	env := NewEnvironment()
+
+	t.Run("returns_cli_args", func(t *testing.T) {
+		// Save and restore os.Args
+		origArgs := os.Args
+		os.Args = []string{"glyph", "run", "test.glyph", "arg1", "arg2"}
+		defer func() { os.Args = origArgs }()
+
+		expr := FunctionCallExpr{
+			Name: "args",
+			Args: []Expr{},
+		}
+		result, err := interp.evaluateFunctionCall(expr, env)
+		require.NoError(t, err)
+
+		arr, ok := result.([]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "glyph", arr[0])
+		assert.Equal(t, "run", arr[1])
+		assert.Equal(t, "test.glyph", arr[2])
+		assert.Equal(t, "arg1", arr[3])
+		assert.Equal(t, "arg2", arr[4])
+	})
+
+	t.Run("no_extra_args", func(t *testing.T) {
+		origArgs := os.Args
+		os.Args = []string{"glyph", "test.glyph"}
+		defer func() { os.Args = origArgs }()
+
+		expr := FunctionCallExpr{
+			Name: "args",
+			Args: []Expr{},
+		}
+		result, err := interp.evaluateFunctionCall(expr, env)
+		require.NoError(t, err)
+
+		arr, ok := result.([]interface{})
+		require.True(t, ok)
+		assert.Len(t, arr, 2)
+	})
 }

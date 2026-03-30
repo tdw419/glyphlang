@@ -82,6 +82,8 @@ func init() {
 		"vmExec":      builtinVMExec,
 		"gpuExec":     builtinGPUExec,
 		"telemetry":   builtinTelemetry,
+		"args":        builtinArgs,
+		"exists":      builtinExists,
 	}
 }
 
@@ -1626,6 +1628,33 @@ func builtinGPUExec(interp *Interpreter, args []Expr, env *Environment) (interfa
 		}
 	}
 	return out, nil
+}
+
+func builtinArgs(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	result := make([]interface{}, len(os.Args))
+	for idx, arg := range os.Args {
+		result[idx] = arg
+	}
+	return result, nil
+}
+
+func builtinExists(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("exists() expects 1 argument (path), got %d", len(args))
+	}
+	pathVal, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	path, ok := pathVal.(string)
+	if !ok {
+		return nil, fmt.Errorf("exists() expects argument to be a string path, got %T", pathVal)
+	}
+	_, err = os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	return false, nil
 }
 
 func gpuResultToInterface(r gpuPkg.Result) interface{} {
