@@ -879,6 +879,26 @@ import "./parser"
   $ t40_src = "! make_pair(a: int, b: int) -> any { > { a: a, b: b } }\n! sum_pair(p: any) -> int { > p.a + p.b }\n$ p1 = make_pair(15, 27)\n$ p2 = make_pair(50, 50)\n$ result = sum_pair(p1) + sum_pair(p2)"
   if run_test("object composition from function returns", t40_src, 142) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
+  # ── Test 41: mutable closure counter — 3 calls ──
+  $ t41_src = "! make_counter() -> any {\n  $ count = 0\n  ! inc() -> int {\n    $ count = count + 1\n    > count\n  }\n  > inc\n}\n$ f = make_counter()\n$ a = f()\n$ b = f()\n$ c = f()\n$ result = a + b + c"
+  if run_test("mutable closure (3 calls, sum=6)", t41_src, 6) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 42: recursive fibonacci ──
+  $ t42_src = "! fib(n: int) -> int {\n  if n <= 1 { > n }\n  > fib(n - 1) + fib(n - 2)\n}\n$ result = fib(10)"
+  if run_test("recursive fibonacci(10)=55", t42_src, 55) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 43: nested closures (triple nesting) ──
+  $ t43_src = "! outer(a: int) -> any {\n  ! middle(b: int) -> any {\n    ! inner(c: int) -> int {\n      > a * b * c\n    }\n    > inner\n  }\n  > middle\n}\n$ m = outer(2)\n$ i = m(3)\n$ result = i(7)"
+  if run_test("nested closures (2*3*7=42)", t43_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 44: closure with multiple enclosing vars ──
+  $ t44_src = "! make_addmul(x: int, y: int) -> any {\n  ! compute(z: int) -> int {\n    > (x + z) * y\n  }\n  > compute\n}\n$ f = make_addmul(3, 5)\n$ result = f(5)"
+  if run_test("closure with multiple enclosing vars ((3+5)*5=40)", t44_src, 40) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 45: GCD via Euclidean algorithm ──
+  $ t45_src = "! gcd(a: int, b: int) -> int {\n  while b != 0 {\n    $ temp = b\n    $ b = a % b\n    $ a = temp\n  }\n  > a\n}\n$ result = gcd(48, 18)"
+  if run_test("GCD(48,18)=6", t45_src, 6) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   # ── Summary ──
   print("")
   print("========================================")
