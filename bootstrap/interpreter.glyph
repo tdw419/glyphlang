@@ -815,10 +815,9 @@ import "./parser"
   $ t25a_src = "! make_counter() -> any {\n  $ count = 5\n  ! get_count() -> int {\n    > count\n  }\n  > get_count\n}\n$ f = make_counter()\n$ result = f()"
   if run_test("closure reads enclosing var (count=5)", t25a_src, 5) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
-  # ── Test 25b: mutable closure counter (KNOWN ISSUE: env_update across scope chain) ──
-  # Skip: requires investigation into Go VM map mutation across recursive interpreter calls
-  # $ t25b_src = "! make_counter() -> any {\n  $ count = 0\n  ! inc() -> int {\n    $ count = count + 1\n    > count\n  }\n  > inc\n}\n$ f = make_counter()\n$ result = f()"
-  # if run_test("mutable closure (1 call=1)", t25b_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+  # ── Test 25b: mutable closure counter ──
+  $ t25b_src = "! make_counter() -> any {\n  $ count = 0\n  ! inc() -> int {\n    $ count = count + 1\n    > count\n  }\n  > inc\n}\n$ f = make_counter()\n$ result = f()"
+  if run_test("mutable closure (1 call=1)", t25b_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Test 26: break in for_in loop ──
   $ t26_src = "! find_val(items: any, target: int) -> int {\n  $ found = -1\n  for item in items {\n    if item == target {\n      $ found = item\n      break\n    }\n  }\n  > found\n}\n$ result = find_val([10, 20, 30], 20)"
