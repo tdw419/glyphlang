@@ -1,5 +1,5 @@
 # bootstrap/interpreter.glyph
-# v0.16.0 Tree-walking interpreter for GlyphLang
+# v0.17.0 Tree-walking interpreter for GlyphLang
 # Evaluates AST nodes directly — no bytecode, no int-only limitation.
 # This is the path to self-hosting: the Go `glyph exec` uses the same approach.
 
@@ -1022,7 +1022,7 @@ import "./parser"
 
 @ command run {
   print("========================================")
-  print("  GlyphLang Bootstrap Interpreter v0.20")
+  print("  GlyphLang Bootstrap Interpreter v0.21")
   print("========================================")
 
   $ passed = 0
@@ -1573,142 +1573,174 @@ import "./parser"
   $ t119_src = "! sum_until(items: any, limit: int) -> int {\n  $ total = 0\n  for item in items {\n    $ total = total + item\n    if total >= limit { break }\n  }\n  > total\n}\n$ result = sum_until([5, 10, 15, 20], 20)"
   if run_test("for_in with break on threshold (30)", t119_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
-  # ── Test 120: self-hosting — eval_source with while loop ──
-  $ sh120_env = env_new()
-  $ sh120_src = "$ total = 0\n$ i = 1\nwhile i <= 10 {\n  $ total = total + i\n  $ i = i + 1\n}\n$ result = total"
-  $ sh120_r = eval_source(sh120_src, sh120_env, "bootstrap/")
+  # ── Test 120: inline object literal as function argument ──
+  $ t120_src = "! get_x(o: any) -> int { > o.x }\n$ result = get_x({ x: 42 })"
+  if run_test("inline object literal as function arg", t120_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 121: object with boolean fields + logical NOT ──
+  $ t121_src = "$ flags = { a: true, b: false }\n$ result = 0\nif flags.a && !flags.b { $ result = 1 }"
+  if run_test("object boolean fields + NOT (1)", t121_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 122: object literal in array, field accessed per element ──
+  $ t122_src = "$ pts = [{ x: 1, y: 10 }, { x: 2, y: 20 }, { x: 3, y: 30 }]\n$ sx = 0\n$ sy = 0\nfor p in pts {\n  $ sx = sx + p.x\n  $ sy = sy + p.y\n}\n$ result = sx * 100 + sy"
+  if run_test("object array field sum (660=6*100+60)", t122_src, 660) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 123: object field used as loop bound ──
+  $ t123_src = "$ cfg = { limit: 5 }\n$ total = 0\n$ i = 0\nwhile i < cfg.limit {\n  $ total = total + i\n  $ i = i + 1\n}\n$ result = total"
+  if run_test("object field as loop bound (sum 0..4=10)", t123_src, 10) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 124: object returned from function, field accessed inline ──
+  $ t124_src = "! pair(a: int, b: int) -> any { > { first: a, second: b } }\n$ result = pair(11, 31).first + pair(11, 31).second"
+  if run_test("function return field access inline (42)", t124_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 125: object literal with nested expressions ──
+  $ t125_src = "$ a = 3\n$ b = 4\n$ obj = { sq_sum: a * a + b * b, product: a * b }\n$ result = obj.sq_sum + obj.product"
+  if run_test("object literal nested expressions (25+12=37)", t125_src, 37) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 126: object with field that shadows variable ──
+  $ t126_src = "$ x = 100\n$ obj = { x: 1, y: 2 }\n$ result = obj.x + x"
+  if run_test("object field shadows variable (1+100=101)", t126_src, 101) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 127: object field passed through two functions ──
+  $ t127_src = "! double_val(p: any) -> int { > p.val * 2 }\n! add_and_wrap(p: any, n: int) -> any { > { val: p.val + n } }\n$ start = { val: 10 }\n$ next = add_and_wrap(start, 11)\n$ result = double_val(next)"
+  if run_test("object through two functions (42)", t127_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 128: self-hosting — eval_source with while loop ──
+  $ sh128_env = env_new()
+  $ sh128_src = "$ total = 0\n$ i = 1\nwhile i <= 10 {\n  $ total = total + i\n  $ i = i + 1\n}\n$ result = total"
+  $ sh128_r = eval_source(sh128_src, sh128_env, "bootstrap/")
   print("")
   print("TEST: self-hosting eval_source while loop (sum 1..10=55)")
-  if sh120_r.error != "" {
-    print("  FAIL: " + sh120_r.error)
+  if sh128_r.error != "" {
+    print("  FAIL: " + sh128_r.error)
     $ failed = failed + 1
   } else {
-    $ rv120 = env_get(sh120_env, "result")
-    if rv120.value != 55 {
-      print("  FAIL: got " + toString(rv120.value) + " expected 55")
+    $ rv128 = env_get(sh128_env, "result")
+    if rv128.value != 55 {
+      print("  FAIL: got " + toString(rv128.value) + " expected 55")
       $ failed = failed + 1
     } else {
-      print("  PASS: result = " + toString(rv120.value))
+      print("  PASS: result = " + toString(rv128.value))
       $ passed = passed + 1
     }
   }
 
-  # ── Test 121: self-hosting — eval_source with recursive function ──
-  $ sh121_env = env_new()
-  $ sh121_src = "! fib(n: int) -> int {\n  if n <= 1 { > n }\n  > fib(n - 1) + fib(n - 2)\n}\n$ result = fib(8)"
-  $ sh121_r = eval_source(sh121_src, sh121_env, "bootstrap/")
+  # ── Test 129: self-hosting — eval_source with recursive function ──
+  $ sh129_env = env_new()
+  $ sh129_src = "! fib(n: int) -> int {\n  if n <= 1 { > n }\n  > fib(n - 1) + fib(n - 2)\n}\n$ result = fib(8)"
+  $ sh129_r = eval_source(sh129_src, sh129_env, "bootstrap/")
   print("")
   print("TEST: self-hosting eval_source recursive fib(8)=21")
-  if sh121_r.error != "" {
-    print("  FAIL: " + sh121_r.error)
+  if sh129_r.error != "" {
+    print("  FAIL: " + sh129_r.error)
     $ failed = failed + 1
   } else {
-    $ rv121 = env_get(sh121_env, "result")
-    if rv121.value != 21 {
-      print("  FAIL: got " + toString(rv121.value) + " expected 21")
+    $ rv129 = env_get(sh129_env, "result")
+    if rv129.value != 21 {
+      print("  FAIL: got " + toString(rv129.value) + " expected 21")
       $ failed = failed + 1
     } else {
-      print("  PASS: result = " + toString(rv121.value))
+      print("  PASS: result = " + toString(rv129.value))
       $ passed = passed + 1
     }
   }
 
-  # ── Test 122: self-hosting — eval_source with closures ──
-  $ sh122_env = env_new()
-  $ sh122_src = "! make_adder(n: int) -> any {\n  ! add(x: int) -> int { > x + n }\n  > add\n}\n$ f = make_adder(15)\n$ result = f(27)"
-  $ sh122_r = eval_source(sh122_src, sh122_env, "bootstrap/")
+  # ── Test 130: self-hosting — eval_source with closures ──
+  $ sh130_env = env_new()
+  $ sh130_src = "! make_adder(n: int) -> any {\n  ! add(x: int) -> int { > x + n }\n  > add\n}\n$ f = make_adder(15)\n$ result = f(27)"
+  $ sh130_r = eval_source(sh130_src, sh130_env, "bootstrap/")
   print("")
   print("TEST: self-hosting eval_source closures (15+27=42)")
-  if sh122_r.error != "" {
-    print("  FAIL: " + sh122_r.error)
+  if sh130_r.error != "" {
+    print("  FAIL: " + sh130_r.error)
     $ failed = failed + 1
   } else {
-    $ rv122 = env_get(sh122_env, "result")
-    if rv122.value != 42 {
-      print("  FAIL: got " + toString(rv122.value) + " expected 42")
+    $ rv130 = env_get(sh130_env, "result")
+    if rv130.value != 42 {
+      print("  FAIL: got " + toString(rv130.value) + " expected 42")
       $ failed = failed + 1
     } else {
-      print("  PASS: result = " + toString(rv122.value))
+      print("  PASS: result = " + toString(rv130.value))
       $ passed = passed + 1
     }
   }
 
-  # ── Test 123: self-hosting — eval_source with object manipulation ──
-  $ sh123_env = env_new()
-  $ sh123_src = "! make_point(x: int, y: int) -> any {\n  > { x: x, y: y, sum: x + y }\n}\n$ p = make_point(17, 25)\n$ result = p.sum"
-  $ sh123_r = eval_source(sh123_src, sh123_env, "bootstrap/")
+  # ── Test 131: self-hosting — eval_source with object manipulation ──
+  $ sh131_env = env_new()
+  $ sh131_src = "! make_point(x: int, y: int) -> any {\n  > { x: x, y: y, sum: x + y }\n}\n$ p = make_point(17, 25)\n$ result = p.sum"
+  $ sh131_r = eval_source(sh131_src, sh131_env, "bootstrap/")
   print("")
   print("TEST: self-hosting eval_source objects (17+25=42)")
-  if sh123_r.error != "" {
-    print("  FAIL: " + sh123_r.error)
+  if sh131_r.error != "" {
+    print("  FAIL: " + sh131_r.error)
     $ failed = failed + 1
   } else {
-    $ rv123 = env_get(sh123_env, "result")
-    if rv123.value != 42 {
-      print("  FAIL: got " + toString(rv123.value) + " expected 42")
+    $ rv131 = env_get(sh131_env, "result")
+    if rv131.value != 42 {
+      print("  FAIL: got " + toString(rv131.value) + " expected 42")
       $ failed = failed + 1
     } else {
-      print("  PASS: result = " + toString(rv123.value))
+      print("  PASS: result = " + toString(rv131.value))
       $ passed = passed + 1
     }
   }
 
-  # ── Test 124: self-hosting — eval_source with for-in + higher-order functions ──
-  $ sh124_env = env_new()
-  $ sh124_src = "! apply_all(fns: any, val: int) -> int {\n  $ result = val\n  for fn in fns {\n    $ result = fn(result)\n  }\n  > result\n}\n! double(x: int) -> int { > x * 2 }\n! add_one(x: int) -> int { > x + 1 }\n! square(x: int) -> int { > x * x }\n$ result = apply_all([double, add_one, square], 3)"
-  $ sh124_r = eval_source(sh124_src, sh124_env, "bootstrap/")
+  # ── Test 132: self-hosting — eval_source with for-in + higher-order functions ──
+  $ sh132_env = env_new()
+  $ sh132_src = "! apply_all(fns: any, val: int) -> int {\n  $ result = val\n  for fn in fns {\n    $ result = fn(result)\n  }\n  > result\n}\n! double(x: int) -> int { > x * 2 }\n! add_one(x: int) -> int { > x + 1 }\n! square(x: int) -> int { > x * x }\n$ result = apply_all([double, add_one, square], 3)"
+  $ sh132_r = eval_source(sh132_src, sh132_env, "bootstrap/")
   print("")
   print("TEST: self-hosting eval_source HOF pipeline (double(3)+1=7,square(7)=49)")
-  if sh124_r.error != "" {
-    print("  FAIL: " + sh124_r.error)
+  if sh132_r.error != "" {
+    print("  FAIL: " + sh132_r.error)
     $ failed = failed + 1
   } else {
-    $ rv124 = env_get(sh124_env, "result")
-    if rv124.value != 49 {
-      print("  FAIL: got " + toString(rv124.value) + " expected 49")
+    $ rv132 = env_get(sh132_env, "result")
+    if rv132.value != 49 {
+      print("  FAIL: got " + toString(rv132.value) + " expected 49")
       $ failed = failed + 1
     } else {
-      print("  PASS: result = " + toString(rv124.value))
+      print("  PASS: result = " + toString(rv132.value))
       $ passed = passed + 1
     }
   }
 
-  # ── Test 125: self-hosting — eval_source with mutable closure counter ──
-  $ sh125_env = env_new()
-  $ sh125_src = "! make_counter() -> any {\n  $ count = 0\n  ! inc() -> int {\n    $ count = count + 1\n    > count\n  }\n  > inc\n}\n$ c = make_counter()\n$ a = c()\n$ b = c()\n$ d = c()\n$ result = a + b + d"
-  $ sh125_r = eval_source(sh125_src, sh125_env, "bootstrap/")
+  # ── Test 133: self-hosting — eval_source with mutable closure counter ──
+  $ sh133_env = env_new()
+  $ sh133_src = "! make_counter() -> any {\n  $ count = 0\n  ! inc() -> int {\n    $ count = count + 1\n    > count\n  }\n  > inc\n}\n$ c = make_counter()\n$ a = c()\n$ b = c()\n$ d = c()\n$ result = a + b + d"
+  $ sh133_r = eval_source(sh133_src, sh133_env, "bootstrap/")
   print("")
   print("TEST: self-hosting eval_source mutable closure (1+2+3=6)")
-  if sh125_r.error != "" {
-    print("  FAIL: " + sh125_r.error)
+  if sh133_r.error != "" {
+    print("  FAIL: " + sh133_r.error)
     $ failed = failed + 1
   } else {
-    $ rv125 = env_get(sh125_env, "result")
-    if rv125.value != 6 {
-      print("  FAIL: got " + toString(rv125.value) + " expected 6")
+    $ rv133 = env_get(sh133_env, "result")
+    if rv133.value != 6 {
+      print("  FAIL: got " + toString(rv133.value) + " expected 6")
       $ failed = failed + 1
     } else {
-      print("  PASS: result = " + toString(rv125.value))
+      print("  PASS: result = " + toString(rv133.value))
       $ passed = passed + 1
     }
   }
 
-  # ── Test 126: self-hosting — eval_source with string processing (parser-like pattern) ──
-  $ sh126_env = env_new()
-  $ sh126_src = "! tokenize_char(src: str) -> any {\n  $ tokens = []\n  $ i = 0\n  while i < length(src) {\n    $ ch = charAt(src, i)\n    if ch == \" \" || ch == \"\\n\" {\n      $ i = i + 1\n    } else {\n      $ tokens = tokens + [ch]\n      $ i = i + 1\n    }\n  }\n  > tokens\n}\n$ ts = tokenize_char(\"a + b\")\n$ result = length(ts)"
-  $ sh126_r = eval_source(sh126_src, sh126_env, "bootstrap/")
+  # ── Test 134: self-hosting — eval_source with string processing (parser-like pattern) ──
+  $ sh134_env = env_new()
+  $ sh134_src = "! tokenize_char(src: str) -> any {\n  $ tokens = []\n  $ i = 0\n  while i < length(src) {\n    $ ch = charAt(src, i)\n    if ch == \" \" || ch == \"\\n\" {\n      $ i = i + 1\n    } else {\n      $ tokens = tokens + [ch]\n      $ i = i + 1\n    }\n  }\n  > tokens\n}\n$ ts = tokenize_char(\"a + b\")\n$ result = length(ts)"
+  $ sh134_r = eval_source(sh134_src, sh134_env, "bootstrap/")
   print("")
   print("TEST: self-hosting eval_source mini tokenizer (3 tokens from 'a + b')")
-  if sh126_r.error != "" {
-    print("  FAIL: " + sh126_r.error)
+  if sh134_r.error != "" {
+    print("  FAIL: " + sh134_r.error)
     $ failed = failed + 1
   } else {
-    $ rv126 = env_get(sh126_env, "result")
-    if rv126.value != 3 {
-      print("  FAIL: got " + toString(rv126.value) + " expected 3")
+    $ rv134 = env_get(sh134_env, "result")
+    if rv134.value != 3 {
+      print("  FAIL: got " + toString(rv134.value) + " expected 3")
       $ failed = failed + 1
     } else {
-      print("  PASS: result = " + toString(rv126.value))
+      print("  PASS: result = " + toString(rv134.value))
       $ passed = passed + 1
     }
   }
