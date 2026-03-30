@@ -1,0 +1,12 @@
+! set_field(obj: any, field: str, val: int) -> int {
+  $ wrapper = { value: obj, error: "" }
+  $ wrapper.value[field] = val
+  > obj.x
+}
+
+@ command run {
+  $ pt = { x: 10, y: 5 }
+  $ r = set_field(pt, "x", 99)
+  print("r = " + toString(r) + " pt.x = " + toString(pt.x))
+  > r
+}

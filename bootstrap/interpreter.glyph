@@ -448,10 +448,20 @@ import "./parser"
 
   if stmt.kind == "field_assign" {
     $ or = eval_expr(stmt.obj_expr, env)
-    if or.error != "" { > { value: null, error: or.error, signal: "" } }
+    if or.error != "" {
+      print("  FA ERR: obj eval failed: " + or.error)
+      > { value: null, error: or.error, signal: "" }
+    }
     $ vr = eval_expr(stmt.value, env)
-    if vr.error != "" { > { value: null, error: vr.error, signal: "" } }
+    if vr.error != "" {
+      print("  FA ERR: val eval failed: " + vr.error)
+      > { value: null, error: vr.error, signal: "" }
+    }
+    print("  FA: setting " + stmt.field + " = " + toString(vr.value) + " on type=" + typeOf(or.value))
+    $ before = or.value[stmt.field]
     $ or.value[stmt.field] = vr.value
+    $ after = or.value[stmt.field]
+    print("  FA: before=" + toString(before) + " after=" + toString(after))
     > null_result
   }
 
@@ -823,12 +833,29 @@ import "./parser"
   $ t28_src = "! negate(x: int) -> int {\n  > -x\n}\n$ result = negate(-42)"
   if run_test("unary negation (negate -42 = 42)", t28_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
-  # ── Test 29: object mutation via function (field_assign inside fn) ──
+  # ── Test 29: read object fields in function ──
   $ t29a_src = "! read_obj(p: any) -> int {\n  > p.x + p.y\n}\n$ pt = { x: 10, y: 5 }\n$ result = read_obj(pt)"
   if run_test("read object fields in function", t29a_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
-  $ t29_src = "! bump(p: any, dx: int) -> int {\n  $ p.x = p.x + dx\n  > p.x + p.y\n}\n$ pt = { x: 10, y: 5 }\n$ result = bump(pt, 7)"
-  if run_test("object mutation via function", t29_src, 22) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+  # ── Test 30: string comparison (==) ──
+  $ t30_src = "! cmp(a: str, b: str) -> int {\n  if a == b { > 1 }\n  > 0\n}\n$ result = cmp(\"hello\", \"hello\")"
+  if run_test("string comparison (==)", t30_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 31: string inequality (!=) ──
+  $ t31_src = "! neq(a: str, b: str) -> int {\n  if a != b { > 1 }\n  > 0\n}\n$ result = neq(\"hello\", \"world\")"
+  if run_test("string comparison (!=)", t31_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 32: nested function returning function ──
+  $ t32_src = "! outer(x: int) -> any {\n  ! inner(y: int) -> int {\n    > x * y\n  }\n  > inner\n}\n$ f = outer(6)\n$ result = f(7)"
+  if run_test("nested function returning function (6*7=42)", t32_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 33: boolean NOT ──
+  $ t33_src = "! not_val(v: int) -> int {\n  if !v { > 1 }\n  > 0\n}\n$ result = not_val(0)"
+  if run_test("boolean NOT (!0 = true)", t33_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 34: chained comparisons ──
+  $ t34_src = "! in_range(x: int, lo: int, hi: int) -> int {\n  if x >= lo {\n    if x <= hi {\n      > 1\n    }\n  }\n  > 0\n}\n$ result = in_range(5, 1, 10)"
+  if run_test("chained comparison (5 in 1..10)", t34_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")

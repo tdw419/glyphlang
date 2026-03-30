@@ -1,0 +1,17 @@
+@ command run {
+  $ obj = { x: 10, y: 5 }
+  print("typeOf(obj) = " + typeOf(obj))
+  print("typeOf(obj.x) = " + typeOf(obj.x))
+  
+  $ arr = [1, 2, 3]
+  print("typeOf(arr) = " + typeOf(arr))
+  
+  $ s = "hello"
+  print("typeOf(s) = " + typeOf(s))
+  
+  $ n = 42
+  print("typeOf(n) = " + typeOf(n))
+  
+  $ b = true
+  print("typeOf(b) = " + typeOf(b))
+}
