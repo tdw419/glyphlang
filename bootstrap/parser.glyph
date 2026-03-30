@@ -881,7 +881,7 @@ import "./ast"
         if rp.error != "" { > { parser: p, expr: _expr(), error: rp.error } }
         p = rp.parser
         expr = _call_expr(fn_name, args)
-      } else if expr.kind == "field" || expr.kind == "index" || expr.kind == "call" {
+      } else if expr.kind == "field" || expr.kind == "index" || expr.kind == "call" || expr.kind == "method_call" {
         # Method call: obj.method(args) or arr[i](args)
         $ callee = expr
         $ adv = advance(p)

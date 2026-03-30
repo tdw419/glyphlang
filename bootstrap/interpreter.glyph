@@ -1965,6 +1965,46 @@ import "./parser"
   $ t178_src = "! fib_pair() -> any {\n  $ a = 0\n  $ b = 1\n  ! next() -> int {\n    $ tmp = a + b\n    $ a = b\n    $ b = tmp\n    > a\n  }\n  > next\n}\n$ f = fib_pair()\n$ r1 = f()\n$ r2 = f()\n$ r3 = f()\n$ r4 = f()\n$ r5 = f()\n$ result = f()"
   if run_test("fibonacci closure — 6th call (8)", t178_src, 8) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
+  # ── Test 179: GCD via recursive function ──
+  $ t179_src = "! gcd(a: int, b: int) -> int {\n  if b == 0 { > a }\n  > gcd(b, a % b)\n}\n$ result = gcd(48, 18)"
+  if run_test("GCD recursive — gcd(48,18)=6", t179_src, 6) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 180: triple-nested closure ──
+  $ t180_src = "! outer(x: int) -> any {\n  ! middle(y: int) -> any {\n    ! inner(z: int) -> int {\n      > x + y + z\n    }\n    > inner\n  }\n  > middle\n}\n$ result = outer(10)(20)(12)"
+  if run_test("triple-nested closure — 10+20+12=42", t180_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 181: string comparison < ──
+  $ t181_src = "$ result = 0\nif \"apple\" < \"banana\" {\n  $ result = 1\n}"
+  if run_test("string comparison — apple < banana (1)", t181_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 182: string comparison > ──
+  $ t182_src = "$ result = 0\nif \"zebra\" > \"apple\" {\n  $ result = 1\n}"
+  if run_test("string comparison — zebra > apple (1)", t182_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 183: string equality ──
+  $ t183_src = "$ result = 0\nif \"hello\" == \"hello\" {\n  $ result = 1\n}"
+  if run_test("string equality — hello == hello (1)", t183_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 184: string inequality ──
+  $ t184_src = "$ result = 0\nif \"hello\" != \"world\" {\n  $ result = 1\n}"
+  if run_test("string inequality — hello != world (1)", t184_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 185: boolean AND with comparisons ──
+  $ t185_src = "$ x = 5\n$ result = 0\nif x > 0 && x < 10 {\n  $ result = 1\n}"
+  if run_test("boolean AND with chained comparison (1)", t185_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 186: boolean OR ──
+  $ t186_src = "$ x = 15\n$ result = 0\nif x < 0 || x > 10 {\n  $ result = 1\n}"
+  if run_test("boolean OR — 15>10 (1)", t186_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 187: GCD of large numbers ──
+  $ t187_src = "! gcd(a: int, b: int) -> int {\n  if b == 0 { > a }\n  > gcd(b, a % b)\n}\n$ result = gcd(270, 192)"
+  if run_test("GCD recursive — gcd(270,192)=6", t187_src, 6) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 188: typeOf builtin ──
+  $ t188_src = "$ result = 0\nif typeOf(42) == \"int\" {\n  if typeOf(\"hello\") == \"str\" {\n    if typeOf(true) == \"bool\" {\n      $ result = 1\n    }\n  }\n}"
+  if run_test("typeOf builtin — int/str/bool (1)", t188_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   # ── Summary ──
   print("")
   print("========================================")
