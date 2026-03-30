@@ -4,3 +4,7 @@ test_command: go test ./...
 test_parser: go
 health_threshold: 3
 pi_model: zai/glm-5.1
+skills:
+  - github-issues
+  - test-driven-development
+  - systematic-debugging

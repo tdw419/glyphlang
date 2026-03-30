@@ -472,19 +472,7 @@ func TestCompileArrayOpsInRoute(t *testing.T) {
 				},
 			},
 		},
-		{
-			name:     "reverse in route",
-			funcName: "reverse",
-			args: []ast.Expr{
-				&ast.ArrayExpr{
-					Elements: []ast.Expr{
-						&ast.LiteralExpr{Value: ast.IntLiteral{Value: 1}},
-						&ast.LiteralExpr{Value: ast.IntLiteral{Value: 2}},
-						&ast.LiteralExpr{Value: ast.IntLiteral{Value: 3}},
-					},
-				},
-			},
-		},
+		// reverse is now a VM builtin (string+array), tested separately
 		{
 			name:     "some in route",
 			funcName: "some",

@@ -1897,6 +1897,80 @@ func (vm *VM) registerBuiltins() {
 		return StringValue{Val: strings.ReplaceAll(str.Val, old.Val, new.Val)}, nil
 	}
 
+	// startsWith() - check if string starts with prefix
+	vm.builtins["startsWith"] = func(args []Value) (Value, error) {
+		if len(args) != 2 {
+			return nil, fmt.Errorf("startsWith() takes exactly 2 arguments, got %d", len(args))
+		}
+		str, ok := args[0].(StringValue)
+		if !ok {
+			return nil, fmt.Errorf("startsWith() first argument must be a string, got %T", args[0])
+		}
+		prefix, ok := args[1].(StringValue)
+		if !ok {
+			return nil, fmt.Errorf("startsWith() second argument must be a string, got %T", args[1])
+		}
+		return BoolValue{Val: strings.HasPrefix(str.Val, prefix.Val)}, nil
+	}
+
+	// endsWith() - check if string ends with suffix
+	vm.builtins["endsWith"] = func(args []Value) (Value, error) {
+		if len(args) != 2 {
+			return nil, fmt.Errorf("endsWith() takes exactly 2 arguments, got %d", len(args))
+		}
+		str, ok := args[0].(StringValue)
+		if !ok {
+			return nil, fmt.Errorf("endsWith() first argument must be a string, got %T", args[0])
+		}
+		suffix, ok := args[1].(StringValue)
+		if !ok {
+			return nil, fmt.Errorf("endsWith() second argument must be a string, got %T", args[1])
+		}
+		return BoolValue{Val: strings.HasSuffix(str.Val, suffix.Val)}, nil
+	}
+
+	// repeat() - repeat string n times
+	vm.builtins["repeat"] = func(args []Value) (Value, error) {
+		if len(args) != 2 {
+			return nil, fmt.Errorf("repeat() takes exactly 2 arguments, got %d", len(args))
+		}
+		str, ok := args[0].(StringValue)
+		if !ok {
+			return nil, fmt.Errorf("repeat() first argument must be a string, got %T", args[0])
+		}
+		count, ok := args[1].(IntValue)
+		if !ok {
+			return nil, fmt.Errorf("repeat() second argument must be an integer, got %T", args[1])
+		}
+		if count.Val < 0 {
+			return nil, fmt.Errorf("repeat() count must be non-negative, got %d", count.Val)
+		}
+		return StringValue{Val: strings.Repeat(str.Val, int(count.Val))}, nil
+	}
+
+	// reverse() - reverse a string or array
+	vm.builtins["reverse"] = func(args []Value) (Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("reverse() takes exactly 1 argument, got %d", len(args))
+		}
+		switch v := args[0].(type) {
+		case StringValue:
+			runes := []rune(v.Val)
+			for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+				runes[i], runes[j] = runes[j], runes[i]
+			}
+			return StringValue{Val: string(runes)}, nil
+		case ArrayValue:
+			reversed := make([]Value, len(v.Val))
+			for i, j := 0, len(v.Val)-1; j >= 0; i, j = i+1, j-1 {
+				reversed[i] = v.Val[j]
+			}
+			return ArrayValue{Val: reversed}, nil
+		default:
+			return nil, fmt.Errorf("reverse() argument must be a string or array, got %T", args[0])
+		}
+	}
+
 	// substring() - get substring
 	vm.builtins["substring"] = func(args []Value) (Value, error) {
 		if len(args) != 3 {

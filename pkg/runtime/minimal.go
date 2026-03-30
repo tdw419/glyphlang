@@ -778,6 +778,132 @@ var builtins = map[string]func(*VM){
 		}
 		vm.push(Value{Type: TypeString, Str: t})
 	},
+	"startsWith": func(vm *VM) {
+		prefix := vm.pop()
+		str := vm.pop()
+		if str.Type == TypeString && prefix.Type == TypeString {
+			if len(str.Str) >= len(prefix.Str) && str.Str[:len(prefix.Str)] == prefix.Str {
+				vm.push(Value{Type: TypeInt, Int: 1})
+			} else {
+				vm.push(Value{Type: TypeInt, Int: 0})
+			}
+		} else {
+			vm.push(Value{Type: TypeInt, Int: 0})
+		}
+	},
+	"endsWith": func(vm *VM) {
+		suffix := vm.pop()
+		str := vm.pop()
+		if str.Type == TypeString && suffix.Type == TypeString {
+			if len(str.Str) >= len(suffix.Str) && str.Str[len(str.Str)-len(suffix.Str):] == suffix.Str {
+				vm.push(Value{Type: TypeInt, Int: 1})
+			} else {
+				vm.push(Value{Type: TypeInt, Int: 0})
+			}
+		} else {
+			vm.push(Value{Type: TypeInt, Int: 0})
+		}
+	},
+	"repeat": func(vm *VM) {
+		count := vm.pop()
+		str := vm.pop()
+		if str.Type == TypeString && count.Type == TypeInt {
+			result := ""
+			for i := int64(0); i < count.Int; i++ {
+				result += str.Str
+			}
+			vm.push(Value{Type: TypeString, Str: result})
+		} else {
+			vm.push(Value{Type: TypeString, Str: ""})
+		}
+	},
+	"reverse": func(vm *VM) {
+		str := vm.pop()
+		if str.Type == TypeString {
+			runes := []rune(str.Str)
+			for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+				runes[i], runes[j] = runes[j], runes[i]
+			}
+			vm.push(Value{Type: TypeString, Str: string(runes)})
+		} else {
+			vm.push(Value{Type: TypeString, Str: ""})
+		}
+	},
+	"upper": func(vm *VM) {
+		str := vm.pop()
+		if str.Type == TypeString {
+			result := make([]byte, len(str.Str))
+			for i := 0; i < len(str.Str); i++ {
+				c := str.Str[i]
+				if c >= 'a' && c <= 'z' {
+					c -= 32
+				}
+				result[i] = c
+			}
+			vm.push(Value{Type: TypeString, Str: string(result)})
+		} else {
+			vm.push(Value{Type: TypeString, Str: ""})
+		}
+	},
+	"lower": func(vm *VM) {
+		str := vm.pop()
+		if str.Type == TypeString {
+			result := make([]byte, len(str.Str))
+			for i := 0; i < len(str.Str); i++ {
+				c := str.Str[i]
+				if c >= 'A' && c <= 'Z' {
+					c += 32
+				}
+				result[i] = c
+			}
+			vm.push(Value{Type: TypeString, Str: string(result)})
+		} else {
+			vm.push(Value{Type: TypeString, Str: ""})
+		}
+	},
+	"trim": func(vm *VM) {
+		str := vm.pop()
+		if str.Type == TypeString {
+			s := str.Str
+			start := 0
+			for start < len(s) && (s[start] == ' ' || s[start] == '\t' || s[start] == '\n' || s[start] == '\r') {
+				start++
+			}
+			end := len(s)
+			for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\n' || s[end-1] == '\r') {
+				end--
+			}
+			vm.push(Value{Type: TypeString, Str: s[start:end]})
+		} else {
+			vm.push(Value{Type: TypeString, Str: ""})
+		}
+	},
+	"replace": func(vm *VM) {
+		newStr := vm.pop()
+		oldStr := vm.pop()
+		str := vm.pop()
+		if str.Type == TypeString && oldStr.Type == TypeString && newStr.Type == TypeString {
+			result := ""
+			s := str.Str
+			old := oldStr.Str
+			if old == "" {
+				vm.push(Value{Type: TypeString, Str: s})
+				return
+			}
+			for i := 0; i < len(s); {
+				if i+len(old) <= len(s) && s[i:i+len(old)] == old {
+					result += newStr.Str
+					i += len(old)
+				} else {
+					result += string(s[i])
+					i++
+				}
+			}
+			vm.push(Value{Type: TypeString, Str: result})
+		} else {
+			vm.push(Value{Type: TypeString, Str: ""})
+		}
+	},
 	"intToBytes4": func(vm *VM) {
 		v := vm.pop()
 		b := make([]Value, 4)

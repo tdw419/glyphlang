@@ -1086,6 +1086,93 @@ func TestBuiltinString_Replace(t *testing.T) {
 	}
 }
 
+func TestBuiltinString_StartsWith(t *testing.T) {
+	tests := []struct {
+		name     string
+		str      string
+		prefix   string
+		expected bool
+	}{
+		{"starts_yes", "hello world", "hello", true},
+		{"starts_no", "hello world", "world", false},
+		{"starts_empty", "hello", "", true},
+		{"starts_exact", "test", "test", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vm := NewVM()
+			result, err := vm.builtins["startsWith"]([]Value{
+				StringValue{Val: tt.str},
+				StringValue{Val: tt.prefix},
+			})
+			if err != nil {
+				t.Fatalf("startsWith() error: %v", err)
+			}
+			if boolVal, ok := result.(BoolValue); !ok || boolVal.Val != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestBuiltinString_EndsWith(t *testing.T) {
+	tests := []struct {
+		name     string
+		str      string
+		suffix   string
+		expected bool
+	}{
+		{"ends_yes", "hello world", "world", true},
+		{"ends_no", "hello world", "hello", false},
+		{"ends_empty", "hello", "", true},
+		{"ends_exact", "test", "test", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vm := NewVM()
+			result, err := vm.builtins["endsWith"]([]Value{
+				StringValue{Val: tt.str},
+				StringValue{Val: tt.suffix},
+			})
+			if err != nil {
+				t.Fatalf("endsWith() error: %v", err)
+			}
+			if boolVal, ok := result.(BoolValue); !ok || boolVal.Val != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestBuiltinString_Repeat(t *testing.T) {
+	vm := NewVM()
+	result, err := vm.builtins["repeat"]([]Value{
+		StringValue{Val: "ab"},
+		IntValue{Val: 3},
+	})
+	if err != nil {
+		t.Fatalf("repeat() error: %v", err)
+	}
+	if strVal, ok := result.(StringValue); !ok || strVal.Val != "ababab" {
+		t.Errorf("Expected 'ababab', got %v", result)
+	}
+}
+
+func TestBuiltinString_Reverse(t *testing.T) {
+	vm := NewVM()
+	result, err := vm.builtins["reverse"]([]Value{
+		StringValue{Val: "hello"},
+	})
+	if err != nil {
+		t.Fatalf("reverse() error: %v", err)
+	}
+	if strVal, ok := result.(StringValue); !ok || strVal.Val != "olleh" {
+		t.Errorf("Expected 'olleh', got %v", result)
+	}
+}
+
 func TestBuiltinString_Substring(t *testing.T) {
 	tests := []struct {
 		name     string
