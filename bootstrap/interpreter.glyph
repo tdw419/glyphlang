@@ -1,5 +1,5 @@
 # bootstrap/interpreter.glyph
-# v0.23.0 Tree-walking interpreter for GlyphLang
+# v0.24.0 Tree-walking interpreter for GlyphLang
 # Evaluates AST nodes directly — no bytecode, no int-only limitation.
 # This is the path to self-hosting: the Go `glyph exec` uses the same approach.
 
@@ -1326,7 +1326,7 @@ import "./parser"
 
 @ command run {
   print("========================================")
-  print("  GlyphLang Bootstrap Interpreter v0.23")
+  print("  GlyphLang Bootstrap Interpreter v0.24")
   print("========================================")
 
   $ passed = 0
