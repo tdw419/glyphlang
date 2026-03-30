@@ -68,6 +68,30 @@ import "./parser"
   $ env.bindings = keys
 }
 
+# env_update walks up the scope chain to update an existing variable.
+# Returns true if found and updated, false otherwise.
+! env_update(env: Environment, name: str, val: any) -> bool {
+  $ ks = keys(env.bindings)
+  $ found = false
+  $ i = 0
+  while i < length(ks) {
+    if ks[i] == name {
+      $ found = true
+    }
+    $ i = i + 1
+  }
+  if found {
+    $ b = env.bindings
+    $ b[name] = val
+    $ env.bindings = b
+    > true
+  }
+  if env.parent != null {
+    > env_update(env.parent, name, val)
+  }
+  > false
+}
+
 # ─── Truthiness ────────────────────────────────────────────────────
 
 ! is_truthy(val: any) -> bool {
@@ -324,7 +348,11 @@ import "./parser"
   if stmt.kind == "assign" {
     $ vr = eval_expr(stmt.value, env)
     if vr.error != "" { > { value: null, error: vr.error, signal: "" } }
-    env_set(env, stmt.target, vr.value)
+    # Try to update in enclosing scope first (mutable closures)
+    $ updated = env_update(env, stmt.target, vr.value)
+    if !updated {
+      env_set(env, stmt.target, vr.value)
+    }
     > null_result
   }
 
@@ -411,13 +439,22 @@ import "./parser"
   }
 
   if stmt.kind == "index_assign" {
-    $ cr = eval_expr(stmt.obj_expr, env)
-    if cr.error != "" { > { value: null, error: cr.error, signal: "" } }
+    # obj_expr may be nil for top-level array index assign; fall back to target variable
+    $ obj_val = null
+    if stmt.obj_expr != null {
+      $ cr = eval_expr(stmt.obj_expr, env)
+      if cr.error != "" { > { value: null, error: cr.error, signal: "" } }
+      $ obj_val = cr.value
+    } else {
+      $ tr = env_get(env, stmt.target)
+      if tr.error != "" { > { value: null, error: tr.error, signal: "" } }
+      $ obj_val = tr.value
+    }
     $ ir = eval_expr(stmt.index_expr, env)
     if ir.error != "" { > { value: null, error: ir.error, signal: "" } }
     $ vr = eval_expr(stmt.value, env)
     if vr.error != "" { > { value: null, error: vr.error, signal: "" } }
-    $ cr.value[to_int(ir.value)] = vr.value
+    $ obj_val[to_int(ir.value)] = vr.value
     > null_result
   }
 
@@ -618,11 +655,19 @@ import "./parser"
   $ t15_src = "! get_area(rect: any) -> int {\n  > rect.w * rect.h\n}\n$ r = { w: 6, h: 7 }\n$ result = get_area(r)"
   if run_test("object as function argument", t15_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
-  # ── Test 16: array literal + index ──
-  $ t16_src = "$ arr = [10, 20, 30]\n$ result = arr[0] + arr[2]"
-  if run_test("array literal + index", t16_src, 40) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+  # ── Test 16: object with string fields + concatenation ──
+  $ t16_src = "$ person = { first: \"Ada\", last: \"Lovelace\" }\n$ result = person.first + \" \" + person.last"
+  if run_test("object string fields", t16_src, "Ada Lovelace") { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
-  # ── Test 17: self-hosting seed — dynamic eval of arithmetic ──
+  # ── Test 17: array of objects + field access in loop ──
+  $ t17_src = "$ items = [{ v: 1 }, { v: 2 }, { v: 3 }]\n$ total = 0\nfor item in items {\n  $ total = total + item.v\n}\n$ result = total"
+  if run_test("array of objects + field in loop", t17_src, 6) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 18: array literal + index ──
+  $ t19_src = "$ arr = [10, 20, 30]\n$ result = arr[0] + arr[2]"
+  if run_test("array literal + index", t19_src, 40) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 19: self-hosting seed — dynamic eval of arithmetic ──
   # Use eval_source to parse and execute a source string at runtime
   $ seed_env = env_new()
   $ seed_src = "const A = 10 + 20\nconst B = A * 2"
@@ -648,7 +693,7 @@ import "./parser"
     }
   }
 
-  # ── Test 18: self-hosting seed — dynamic eval with function ──
+  # ── Test 20: self-hosting seed — dynamic eval with function ──
   # Use eval_source to define and call a function dynamically
   $ seed2_env = env_new()
   $ seed2_src = "! triple(x: int) -> int { > x * 3 }\n$ result = triple(14)"
@@ -674,7 +719,7 @@ import "./parser"
     }
   }
 
-  # ── Test 19: dynamic eval with field assignment ──
+  # ── Test 21: dynamic eval with field assignment ──
   $ seed3_env = env_new()
   $ seed3_src = "$ obj = { x: 1, y: 2 }\n$ obj.x = 10\n$ result = obj.x + obj.y"
   $ seed3_r = eval_source(seed3_src, seed3_env)
@@ -698,6 +743,18 @@ import "./parser"
       }
     }
   }
+
+  # ── Test 22: closure with enclosing param (nested fn) ──
+  $ t22_src = "! make_accum(start: int) -> any {\n  ! add(x: int, y: int) -> int {\n    > x + y + start\n  }\n  > add\n}\n$ f = make_accum(10)\n$ result = f(20, 12)"
+  if run_test("closure with enclosing param", t22_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 23: boolean OR ──
+  $ t23_src = "! test_or(a: int, b: int) -> bool {\n  > a > 0 || b > 0\n}\n$ r1 = test_or(0, 5)\n$ result = 0\nif r1 { $ result = 1 }"
+  if run_test("boolean OR", t23_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 24: index assignment in arrays ──
+  $ t24_src = "$ arr = [10, 20, 30]\n$ arr[1] = 99\n$ result = arr[0] + arr[1] + arr[2]"
+  if run_test("index assignment in arrays", t24_src, 139) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
