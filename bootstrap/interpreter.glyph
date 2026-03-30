@@ -823,6 +823,13 @@ import "./parser"
   $ t28_src = "! negate(x: int) -> int {\n  > -x\n}\n$ result = negate(-42)"
   if run_test("unary negation (negate -42 = 42)", t28_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
+  # ── Test 29: object mutation via function (field_assign inside fn) ──
+  $ t29a_src = "! read_obj(p: any) -> int {\n  > p.x + p.y\n}\n$ pt = { x: 10, y: 5 }\n$ result = read_obj(pt)"
+  if run_test("read object fields in function", t29a_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t29_src = "! bump(p: any, dx: int) -> int {\n  $ p.x = p.x + dx\n  > p.x + p.y\n}\n$ pt = { x: 10, y: 5 }\n$ result = bump(pt, 7)"
+  if run_test("object mutation via function", t29_src, 22) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   # ── Summary ──
   print("")
   print("========================================")

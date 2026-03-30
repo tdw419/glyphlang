@@ -769,7 +769,21 @@ import "./ast"
   $ expr = res.expr
 
   $ t = cur_type(p)
-  if t == token.EQ_EQ || t == token.NOT_EQ || t == token.GREATER || t == token.LESS || t == token.GREATER_EQ || t == token.LESS_EQ {
+
+  # Disambiguate bare >: if > is on a different line than the previous token,
+  # it's a return statement, not a comparison operator
+  $ gt_is_comparison = true
+  if t == token.GREATER {
+    if p.pos > 0 {
+      $ prev = p.tokens[p.pos - 1]
+      $ cur = current(p)
+      if cur.line != prev.line {
+        $ gt_is_comparison = false
+      }
+    }
+  }
+
+  if gt_is_comparison && (t == token.EQ_EQ || t == token.NOT_EQ || t == token.GREATER || t == token.LESS || t == token.GREATER_EQ || t == token.LESS_EQ) {
     $ op = cur_literal(p)
     $ adv = advance(p)
     p = adv.parser
