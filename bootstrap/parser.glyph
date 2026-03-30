@@ -497,6 +497,7 @@ import "./ast"
   if tok.type == token.IDENT {
     if tok.literal == "if" { > parse_if(p) }
     if tok.literal == "while" { > parse_while(p) }
+    if tok.literal == "for" { > parse_for_in(p) }
     if tok.literal == "break" {
       $ adv = advance(p)
       > { parser: adv.parser, stmt: _stmt("break"), error: "" }
@@ -657,6 +658,59 @@ import "./ast"
   p = br.parser
 
   > { parser: p, stmt: _while_stmt(cr.expr, br.stmts), error: "" }
+}
+
+# Parse: for value in iterable { ... } or for key, value in iterable { ... }
+! parse_for_in(p: Parser) -> StmtResult {
+  $ adv = advance(p)  # consume "for"
+  p = adv.parser
+
+  # First token must be IDENT (value var, or key var)
+  $ val_tok = current(p)
+  if val_tok.type != token.IDENT {
+    > { parser: p, stmt: _stmt("illegal"), error: "for-in: expected variable name" }
+  }
+  $ adv2 = advance(p)
+  p = adv2.parser
+
+  $ key_var = ""
+  $ value_var = val_tok.literal
+
+  # Check for comma → key, value pattern
+  $ comma_tok = current(p)
+  if comma_tok.type == token.COMMA {
+    $ adv3 = advance(p)
+    p = adv3.parser
+    # Next is the actual value variable
+    $ val2 = current(p)
+    if val2.type != token.IDENT {
+      > { parser: p, stmt: _stmt("illegal"), error: "for-in: expected value variable after comma" }
+    }
+    $ key_var = val_tok.literal
+    $ value_var = val2.literal
+    $ adv4 = advance(p)
+    p = adv4.parser
+  }
+
+  # Expect "in" keyword
+  $ in_tok = current(p)
+  if in_tok.type != token.IDENT || in_tok.literal != "in" {
+    > { parser: p, stmt: _stmt("illegal"), error: "for-in: expected 'in' keyword" }
+  }
+  $ adv5 = advance(p)
+  p = adv5.parser
+
+  # Parse iterable expression
+  $ ir = parse_expression(p)
+  if ir.error != "" { > { parser: p, stmt: _stmt("illegal"), error: ir.error } }
+  p = ir.parser
+
+  # Parse block
+  $ br = parse_block(p)
+  if br.error != "" { > { parser: p, stmt: _stmt("illegal"), error: br.error } }
+  p = br.parser
+
+  > { parser: p, stmt: _for_in_stmt(key_var, value_var, ir.expr, br.stmts), error: "" }
 }
 
 # ─── Expression Parsing ───────────────────────────────────────────
@@ -1146,6 +1200,20 @@ import "./ast"
 ! _while_stmt(cond: ast.Expr, body: [ast.Statement]) -> ast.Statement {
   $ s = _stmt("while")
   $ s.while_condition = cond
+  $ s.body = body
+  > s
+}
+
+# for-in statement: reuses _stmt fields
+#   target = value variable name
+#   field = key variable name ("" if no key)
+#   while_condition = iterable expression
+#   body = loop body statements
+! _for_in_stmt(key: str, value: str, iterable: ast.Expr, body: [ast.Statement]) -> ast.Statement {
+  $ s = _stmt("for_in")
+  $ s.target = value
+  $ s.field = key
+  $ s.while_condition = iterable
   $ s.body = body
   > s
 }
