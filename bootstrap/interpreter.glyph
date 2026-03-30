@@ -1933,6 +1933,38 @@ import "./parser"
     }
   }
 
+  # ── Test 171: chained function call — call returned function directly ──
+  $ t171_src = "! make_adder(n: int) -> any {\n  ! add(x: int) -> int { > x + n }\n  > add\n}\n$ result = make_adder(10)(32)"
+  if run_test("chained function call — make_adder(10)(32) = 42", t171_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 172: triple chained call ──
+  $ t172_src = "! wrap(x: int) -> any {\n  > { val: x }\n}\n! get_val(o: any) -> int {\n  > o.val\n}\n$ result = get_val(wrap(99))"
+  if run_test("chained call through function returning object (99)", t172_src, 99) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 173: else if chain ──
+  $ t173_src = "$ x = 2\n$ result = 0\nif x == 1 {\n  $ result = 10\n} else if x == 2 {\n  $ result = 20\n} else {\n  $ result = 30\n}"
+  if run_test("else if chain — x==2 hits middle branch (20)", t173_src, 20) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 174: else if chain — first branch ──
+  $ t174_src = "$ x = 1\n$ result = 0\nif x == 1 {\n  $ result = 10\n} else if x == 2 {\n  $ result = 20\n} else {\n  $ result = 30\n}"
+  if run_test("else if chain — x==1 hits first branch (10)", t174_src, 10) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 175: else if chain — else fallback ──
+  $ t175_src = "$ x = 99\n$ result = 0\nif x == 1 {\n  $ result = 10\n} else if x == 2 {\n  $ result = 20\n} else {\n  $ result = 30\n}"
+  if run_test("else if chain — x==99 hits else branch (30)", t175_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 176: null comparison with == ──
+  $ t176_src = "$ x = null\n$ result = 0\nif x == null {\n  $ result = 1\n}"
+  if run_test("null == null comparison (1)", t176_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 177: chained call returning closure that mutates state ──
+  $ t177_src = "! counter(start: int) -> any {\n  $ count = start\n  ! inc(n: int) -> int {\n    $ count = count + n\n    > count\n  }\n  > inc\n}\n$ f = counter(100)\n$ a = f(5)\n$ b = f(10)\n$ result = f(0)"
+  if run_test("chained call — closure state mutation (100+5+10+0=115)", t177_src, 115) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 178: fibonacci via closure — iterate with assignments ──
+  $ t178_src = "! fib_pair() -> any {\n  $ a = 0\n  $ b = 1\n  ! next() -> int {\n    $ tmp = a + b\n    $ a = b\n    $ b = tmp\n    > a\n  }\n  > next\n}\n$ f = fib_pair()\n$ r1 = f()\n$ r2 = f()\n$ r3 = f()\n$ r4 = f()\n$ r5 = f()\n$ result = f()"
+  if run_test("fibonacci closure — 6th call (8)", t178_src, 8) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   # ── Summary ──
   print("")
   print("========================================")
