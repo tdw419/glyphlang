@@ -515,6 +515,14 @@ import "./ast"
   if tok.type == token.FOR {
     > parse_for_in(p)
   }
+  if tok.type == token.BREAK {
+    $ adv = advance(p)
+    > { parser: adv.parser, stmt: _stmt("break"), error: "" }
+  }
+  if tok.type == token.CONTINUE {
+    $ adv = advance(p)
+    > { parser: adv.parser, stmt: _stmt("continue"), error: "" }
+  }
   if tok.type == token.BANG {
     $ fr = parse_function(p)
     if fr.error != "" { > { parser: p, stmt: _stmt("illegal"), error: fr.error } }
@@ -523,14 +531,6 @@ import "./ast"
   if tok.type == token.IDENT {
     if tok.literal == "if" { > parse_if(p) }
     if tok.literal == "while" { > parse_while(p) }
-    if tok.literal == "break" {
-      $ adv = advance(p)
-      > { parser: adv.parser, stmt: _stmt("break"), error: "" }
-    }
-    if tok.literal == "continue" {
-      $ adv = advance(p)
-      > { parser: adv.parser, stmt: _stmt("continue"), error: "" }
-    }
     # Check for bare reassignment: IDENT = ...
     $ next = peek_tok(p)
     if next.type == token.EQUALS {
