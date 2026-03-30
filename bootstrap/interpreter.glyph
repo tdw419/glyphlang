@@ -421,6 +421,18 @@ import "./parser"
     > null_result
   }
 
+  if stmt.kind == "function" {
+    $ fn = {
+      kind: "func_def",
+      name: stmt.func_name,
+      params: stmt.func_params,
+      body: stmt.func_body,
+      closure: env
+    }
+    env_set(env, stmt.func_name, fn)
+    > null_result
+  }
+
   if stmt.kind == "break" { > { value: null, error: "", signal: "break" } }
   if stmt.kind == "continue" { > { value: null, error: "", signal: "continue" } }
 
@@ -555,10 +567,9 @@ import "./parser"
   $ t6_src = "! fact(n: int) -> int {\n  if n <= 1 { > 1 }\n  > n * fact(n - 1)\n}\n$ result = fact(5)"
   if run_test("recursive factorial(5)=120", t6_src, 120) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
-  # ── Test 7: closures need inner function defs in blocks (parser limitation)
-  # For now, test that functions can return values based on closure scope
-  $ t7_src = "! make_adder(n: int) -> int {\n> n + 10\n}\n$ result = make_adder(32)"
-  if run_test("function closure scope", t7_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+  # ── Test 7: closures (make_adder returns inner function) ──
+  $ t7_src = "! make_adder(n: int) -> any {\n  ! add(x: int) -> int { > x + n }\n  > add\n}\n$ f = make_adder(10)\n$ result = f(32)"
+  if run_test("closure: make_adder(10)(32)=42", t7_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Test 8: for_in loop ──
   $ t8_src = "! sum_list(items: any) -> int {\n$ total = 0\nfor i in items {\n$ total = total + i\n}\n> total\n}\n$ result = sum_list([1, 2, 3, 4, 5])"
@@ -571,6 +582,14 @@ import "./parser"
   # ── Test 10: boolean operators ──
   $ t10_src = "! test_and(a: int, b: int) -> bool {\n> a > 0 && b > 0\n}\n$ r1 = test_and(1, 2)\n$ result = 0\nif r1 { $ result = 1 }"
   if run_test("boolean AND", t10_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 11: object literal + field access ──
+  $ t11_src = "$ obj = { x: 10, y: 20 }\n$ result = obj.x + obj.y"
+  if run_test("object literal + field access", t11_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 12: array literal + index ──
+  $ t12_src = "$ arr = [10, 20, 30]\n$ result = arr[0] + arr[2]"
+  if run_test("array literal + index", t12_src, 40) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")

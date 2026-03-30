@@ -503,6 +503,11 @@ import "./ast"
   if tok.type == token.FOR {
     > parse_for_in(p)
   }
+  if tok.type == token.BANG {
+    $ fr = parse_function(p)
+    if fr.error != "" { > { parser: p, stmt: _stmt("illegal"), error: fr.error } }
+    > { parser: fr.parser, stmt: fr.item, error: "" }
+  }
   if tok.type == token.IDENT {
     if tok.literal == "if" { > parse_if(p) }
     if tok.literal == "while" { > parse_while(p) }
@@ -851,7 +856,7 @@ import "./ast"
         p = rp.parser
         expr = _call_expr(fn_name, args)
       } else {
-        done = true
+        _done = true
       }
     } else if t == token.LBRACKET {
       $ adv = advance(p)
