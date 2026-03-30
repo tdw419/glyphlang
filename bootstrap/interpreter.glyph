@@ -1184,43 +1184,95 @@ import "./parser"
   > { value: null, error: "unsupported stmt: " + stmt.kind, signal: "" }
 }
 
+# ─── Path Helpers ──────────────────────────────────────────────────
+
+# has_key checks if an object contains a given key string.
+! has_key(obj: any, key: str) -> bool {
+  $ ks = keys(obj)
+  $ i = 0
+  while i < length(ks) {
+    if ks[i] == key { > true }
+    $ i = i + 1
+  }
+  > false
+}
+
+# resolve_import_path computes the full file path and new base directory
+# for an import relative to the current base_path.
+! resolve_import_path(raw_path: str, base_path: str) -> any {
+  # Strip leading "./" from raw_path
+  $ clean = raw_path
+  if startsWith(raw_path, "./") {
+    $ clean = substring(raw_path, 2, length(raw_path))
+  }
+  $ resolved = base_path + clean + ".glyph"
+  # new_base = directory portion of resolved file
+  $ new_base = base_path
+  $ last_slash = 0
+  $ j = length(resolved) - 1
+  while j >= 0 {
+    if substring(resolved, j, j + 1) == "/" {
+      $ last_slash = j + 1
+      $ j = -1
+    }
+    $ j = j - 1
+  }
+  if last_slash > 0 {
+    $ new_base = substring(resolved, 0, last_slash)
+  }
+  > { file_path: resolved, new_base: new_base }
+}
+
 # ─── Module Loading ────────────────────────────────────────────────
 
-! exec_module(mod: any, env: Environment, base_path: str) -> EvalResult {
+! exec_module(mod: any, env: Environment, base_path: str, visited: any) -> EvalResult {
+  if visited == null {
+    $ visited = {}
+  }
   $ items = mod.items
   $ i = 0
   while i < length(items) {
     $ item = items[i]
 
     if item.kind == "import" {
-      $ raw_path = item.import_path
-      $ file_path = base_path + raw_path + ".glyph"
-      $ src = readFile(file_path)
+      $ rp = resolve_import_path(item.import_path, base_path)
+      $ resolved_path = rp.file_path
+      $ new_base = rp.new_base
+      if has_key(visited, resolved_path) {
+        > { value: null, error: "circular import detected: " + resolved_path }
+      }
+      $ visited[resolved_path] = true
+      $ src = readFile(resolved_path)
       if length(src) == 0 {
-        > { value: null, error: "import not found: " + file_path }
+        > { value: null, error: "import not found: " + resolved_path }
       }
       $ ip = parser.new_parser(src)
       $ ipr = parser.parse(ip)
       if ipr.error != "" {
-        > { value: null, error: "import parse error (" + file_path + "): " + ipr.error }
+        > { value: null, error: "import parse error (" + resolved_path + "): " + ipr.error }
       }
-      $ imr = exec_module(ipr.mod, env, base_path)
+      $ imr = exec_module(ipr.mod, env, new_base, visited)
       if imr.error != "" { > imr }
     }
 
     if item.kind == "from_import" {
-      $ raw_path = item.from_path
-      $ file_path = base_path + raw_path + ".glyph"
-      $ src = readFile(file_path)
+      $ rp = resolve_import_path(item.from_path, base_path)
+      $ resolved_path = rp.file_path
+      $ new_base = rp.new_base
+      if has_key(visited, resolved_path) {
+        > { value: null, error: "circular import detected: " + resolved_path }
+      }
+      $ visited[resolved_path] = true
+      $ src = readFile(resolved_path)
       if length(src) == 0 {
-        > { value: null, error: "import not found: " + file_path }
+        > { value: null, error: "import not found: " + resolved_path }
       }
       $ ip = parser.new_parser(src)
       $ ipr = parser.parse(ip)
       if ipr.error != "" {
-        > { value: null, error: "import parse error (" + file_path + "): " + ipr.error }
+        > { value: null, error: "import parse error (" + resolved_path + "): " + ipr.error }
       }
-      $ imr = exec_module(ipr.mod, env, base_path)
+      $ imr = exec_module(ipr.mod, env, new_base, visited)
       if imr.error != "" { > imr }
     }
 
@@ -1280,7 +1332,7 @@ import "./parser"
   if pr.error != "" {
     > { value: null, error: "parse error: " + pr.error }
   }
-  $ mr = exec_module(pr.mod, env, base_path)
+  $ mr = exec_module(pr.mod, env, base_path, null)
   if mr.error != "" {
     > { value: null, error: "exec error: " + mr.error }
   }
@@ -1300,7 +1352,7 @@ import "./parser"
   }
 
   $ env = env_new()
-  $ mr = exec_module(pr.mod, env, "bootstrap/")
+  $ mr = exec_module(pr.mod, env, "bootstrap/", null)
   if mr.error != "" {
     print("  EXEC ERROR: " + mr.error)
     > false
@@ -2437,6 +2489,44 @@ import "./parser"
   $ t223_src = "$ result = toInt(\"0\") + toInt(99)"
   if run_test("toInt edge cases (\"0\"→0 + 99=99)", t223_src, 99) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
+  # ── Tests 224-226: Module import system ──
+
+  # Test 224: import module and call exported function
+  $ t224_src = "import \"./test_module\"\n$ result = add(10, 32)"
+  if run_test("import module — call add(10,32)=42", t224_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # Test 225: import module and call multiple exported functions
+  $ t225_src = "import \"./test_module\"\n$ r1 = multiply(6, 7)\n$ r2 = greet(\"world\")\n$ result = r1"
+  if run_test("import module — call multiply(6,7)=42", t225_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # Test 226: circular import detection
+  print("")
+  print("TEST: circular import detection")
+  $ circ_env = env_new()
+  $ circ_src = "import \"./test_circular_a\"\n$ result = 0"
+  $ circ_p = parser.new_parser(circ_src)
+  $ circ_pr = parser.parse(circ_p)
+  $ circ_ok = false
+  if circ_pr.error != "" {
+    print("  FAIL: parse error: " + circ_pr.error)
+    $ failed = failed + 1
+  } else {
+    $ circ_mr = exec_module(circ_pr.mod, circ_env, "bootstrap/", null)
+    if circ_mr.error != "" {
+      if contains(circ_mr.error, "circular") {
+        print("  PASS: circular import detected — " + circ_mr.error)
+        $ passed = passed + 1
+        $ circ_ok = true
+      } else {
+        print("  FAIL: unexpected error: " + circ_mr.error)
+        $ failed = failed + 1
+      }
+    } else {
+      print("  FAIL: expected circular import error but got none")
+      $ failed = failed + 1
+    }
+  }
+
   # ── Summary ──
   print("")
   print("========================================")
@@ -2448,5 +2538,44 @@ import "./parser"
     > { ok: true, passed: passed, failed: failed }
   }
   print("SOME TESTS FAILED")
+  > { ok: false, passed: passed, failed: failed }
+}
+
+# ─── @ command test: Run a quick assertion subset ────────────────
+
+@ command test {
+  print("========================================")
+  print("  GlyphLang Bootstrap — Quick Test")
+  print("========================================")
+
+  $ passed = 0
+  $ failed = 0
+
+  $ t1_src = "const X = 42\nconst Y = X + 3\n$ result = Y"
+  if run_test("const + arithmetic", t1_src, 45) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t2_src = "! double(x: int) -> int { > x * 2 }\n$ result = double(21)"
+  if run_test("function call", t2_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t3_src = "! sum_to(n: int) -> int {\n  $ total = 0\n  $ i = 1\n  while i <= n {\n    $ total = total + i\n    $ i = i + 1\n  }\n  > total\n}\n$ result = sum_to(5)"
+  if run_test("while loop (sum 1..5=15)", t3_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t4_src = "! check(x: int) -> int {\n  if x > 5 {\n    > 100\n  } else {\n    > 200\n  }\n}\n$ result = check(10)"
+  if run_test("if/else (true branch)", t4_src, 100) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t5_src = "! fact(n: int) -> int {\n  if n <= 1 { > 1 }\n  > n * fact(n - 1)\n}\n$ result = fact(5)"
+  if run_test("recursive factorial(5)=120", t5_src, 120) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t6_src = "$ obj = { x: 10, y: 20 }\n$ result = obj.x + obj.y"
+  if run_test("object literal + field access", t6_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  print("")
+  print("========================================")
+  print("  QUICK TEST — PASSED: " + toString(passed) + "  FAILED: " + toString(failed))
+  print("========================================")
+
+  if failed == 0 {
+    > { ok: true, passed: passed, failed: failed }
+  }
   > { ok: false, passed: passed, failed: failed }
 }

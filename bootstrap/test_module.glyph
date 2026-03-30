@@ -1,0 +1,14 @@
+# bootstrap/test_module.glyph
+# Test module for import system tests
+
+! add(a: int, b: int) -> int {
+  > a + b
+}
+
+! multiply(a: int, b: int) -> int {
+  > a * b
+}
+
+! greet(name: str) -> str {
+  > "hello " + name
+}

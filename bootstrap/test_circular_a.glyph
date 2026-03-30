@@ -1,0 +1,3 @@
+# bootstrap/test_circular_a.glyph
+# Module A that imports B (which imports A = circular)
+import "./test_circular_b"
