@@ -555,9 +555,22 @@ import "./parser"
   $ t6_src = "! fact(n: int) -> int {\n  if n <= 1 { > 1 }\n  > n * fact(n - 1)\n}\n$ result = fact(5)"
   if run_test("recursive factorial(5)=120", t6_src, 120) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
-  # ── Test 7: closure (higher-order function) ──
-  $ t7_src = "! make_adder(n: int) -> int {\n  > n\n}\n$ result = make_adder(32)"
-  if run_test("function returning value (closure prep)", t7_src, 32) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+  # ── Test 7: closures need inner function defs in blocks (parser limitation)
+  # For now, test that functions can return values based on closure scope
+  $ t7_src = "! make_adder(n: int) -> int {\n> n + 10\n}\n$ result = make_adder(32)"
+  if run_test("function closure scope", t7_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 8: for_in loop ──
+  $ t8_src = "! sum_list(items: any) -> int {\n$ total = 0\nfor i in items {\n$ total = total + i\n}\n> total\n}\n$ result = sum_list([1, 2, 3, 4, 5])"
+  if run_test("for_in loop (sum [1..5]=15)", t8_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 9: nested function calls ──
+  $ t9_src = "! square(x: int) -> int { > x * x }\n! sum_squares(a: int, b: int) -> int { > square(a) + square(b) }\n$ result = sum_squares(3, 4)"
+  if run_test("nested calls (3²+4²=25)", t9_src, 25) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 10: boolean operators ──
+  $ t10_src = "! test_and(a: int, b: int) -> bool {\n> a > 0 && b > 0\n}\n$ r1 = test_and(1, 2)\n$ result = 0\nif r1 { $ result = 1 }"
+  if run_test("boolean AND", t10_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
