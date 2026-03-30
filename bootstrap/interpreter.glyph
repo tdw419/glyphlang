@@ -740,7 +740,7 @@ import "./parser"
 ! exec_stmt(stmt: any, env: Environment) -> ExecResult {
   $ null_result = { value: null, error: "", signal: "" }
 
-  if stmt.kind == "assign" {
+  if stmt.kind == "assign" || stmt.kind == "reassign" {
     $ vr = eval_expr(stmt.value, env)
     if vr.error != "" { > { value: null, error: vr.error, signal: "" } }
     # Try to update in enclosing scope first (mutable closures)
@@ -1492,6 +1492,30 @@ import "./parser"
   # ── Test 99: object as accumulator in recursive function ──
   $ t99_src = "! sum_obj(acc: any, n: int) -> int {\n  if n == 0 { > acc.total }\n  $ acc.total = acc.total + n\n  > sum_obj(acc, n - 1)\n}\n$ obj = { total: 0 }\n$ result = sum_obj(obj, 5)"
   if run_test("object accumulator in recursion (sum 1..5=15)", t99_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 100: nested array index (matrix[i][j]) ──
+  $ t100_src = "$ matrix = [[1,2],[3,4]]\n$ result = matrix[1][0] + matrix[0][1]"
+  if run_test("nested array index (matrix[i][j])", t100_src, 5) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 101: nested index assign via temp var ──
+  $ t101_src = "$ grid = [[0,0],[0,0]]\n$ row = grid[1]\n$ row[0] = 42\n$ result = grid[1][0]"
+  if run_test("nested index assign via temp var", t101_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 102: nested index in function ──
+  $ t102_src = "! get_cell(m: any, i: int, j: int) -> int { > m[i][j] }\n$ board = [[10,20],[30,40]]\n$ result = get_cell(board, 0, 1) + get_cell(board, 1, 0)"
+  if run_test("nested index in function (20+30=50)", t102_src, 50) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 103: sum of nested array via loop ──
+  $ t103_src = "$ matrix = [[1,2,3],[4,5,6]]\n$ total = 0\nfor row in matrix {\n  for val in row {\n    $ total = total + val\n  }\n}\n$ result = total"
+  if run_test("nested for_in sum of 2D array (sum=21)", t103_src, 21) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 104: array of strings + join in loop ──
+  $ t104_src = "$ words = [\"hello\", \"beautiful\", \"world\"]\n$ out = \"\"\n$ i = 0\nwhile i < length(words) {\n  if i > 0 { out = out + \" \" }\n  out = out + words[i]\n  i = i + 1\n}\n$ result = out"
+  if run_test("array of strings joined (hello beautiful world)", t104_src, "hello beautiful world") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 105: function returning array, used in index ──
+  $ t105_src = "! make_arr() -> any { > [100, 200, 300] }\n$ result = make_arr()[1]"
+  if run_test("function returning array + index (200)", t105_src, 200) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
