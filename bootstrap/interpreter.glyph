@@ -1605,6 +1605,38 @@ import "./parser"
   $ t127_src = "! double_val(p: any) -> int { > p.val * 2 }\n! add_and_wrap(p: any, n: int) -> any { > { val: p.val + n } }\n$ start = { val: 10 }\n$ next = add_and_wrap(start, 11)\n$ result = double_val(next)"
   if run_test("object through two functions (42)", t127_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
+  # ── Test 135: inline nested object literal (object inside object) ──
+  $ t135_src = "$ obj = { outer: { inner: 42 } }\n$ result = obj.outer.inner"
+  if run_test("inline nested object literal (42)", t135_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 136: empty object then progressive field addition ──
+  $ t136_src = "$ obj = {}\n$ obj.x = 10\n$ obj.y = 20\n$ obj.z = 12\n$ result = obj.x + obj.y + obj.z"
+  if run_test("empty object + progressive field add (42)", t136_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 137: object field in string concatenation ──
+  $ t137_src = "$ p = { first: \"Grace\", last: \"Hopper\" }\n$ result = p.first + \" \" + p.last"
+  if run_test("object fields in string concat", t137_src, "Grace Hopper") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 138: object created inside while loop, accumulated ──
+  $ t138_src = "$ total = 0\n$ i = 0\nwhile i < 3 {\n  $ pt = { val: i * 10 }\n  $ total = total + pt.val\n  $ i = i + 1\n}\n$ result = total"
+  if run_test("object created in while loop (0+10+20=30)", t138_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 139: object field comparison in if condition ──
+  $ t139_src = "! classify(pt: any) -> str {\n  if pt.x > pt.y {\n    > \"x wins\"\n  } else {\n    > \"y wins\"\n  }\n}\n$ result = classify({ x: 100, y: 50 }) + \" \" + classify({ x: 10, y: 20 })"
+  if run_test("object field comparison in if", t139_src, "x wins y wins") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 140: function that builds object from arguments ──
+  $ t140_src = "! make_point(x: int, y: int, z: int) -> any {\n  > { x: x, y: y, z: z, sum: x + y + z, product: x * y * z }\n}\n$ p = make_point(2, 3, 7)\n$ result = p.sum + p.product"
+  if run_test("object builder function (sum=12 prod=42 total=54)", t140_src, 54) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 141: object field used as for-in collection ──
+  $ t141_src = "$ cfg = { items: [10, 20, 30] }\n$ total = 0\nfor item in cfg.items {\n  $ total = total + item\n}\n$ result = total"
+  if run_test("object field as for-in collection (60)", t141_src, 60) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 142: object with field updated based on its current value ──
+  $ t142_src = "$ counter = { n: 0 }\n$ counter.n = counter.n + 10\n$ counter.n = counter.n + 20\n$ counter.n = counter.n + 12\n$ result = counter.n"
+  if run_test("object field self-update (0+10+20+12=42)", t142_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   # ── Test 128: self-hosting — eval_source with while loop ──
   $ sh128_env = env_new()
   $ sh128_src = "$ total = 0\n$ i = 1\nwhile i <= 10 {\n  $ total = total + i\n  $ i = i + 1\n}\n$ result = total"
