@@ -301,10 +301,50 @@ const OP_HALT          = 255
     > ""
   }
 
+  if item.kind == "command" {
+    # Commands compile identically to functions using OP_DEF_FUNC.
+    # This allows command dispatch via normal function call by name.
+    $ name_idx = add_constant(c, item.command_name)
+    emit_byte(c, OP_DEF_FUNC)
+    emit_bytes4(c, name_idx)
+    emit_bytes4(c, length(item.command_params))
+    # Placeholder for body length
+    $ body_len_pos = length(c.instructions)
+    emit_bytes4(c, 0)
+    # Emit parameter name constant indices
+    $ pi = 0
+    while pi < length(item.command_params) {
+      $ param = item.command_params[pi]
+      $ pidx = add_constant(c, param.name)
+      emit_bytes4(c, pidx)
+      pi = pi + 1
+    }
+    # Compile command body
+    $ body_start = length(c.instructions)
+    $ bi = 0
+    while bi < length(item.command_body) {
+      $ serr = compile_statement(c, item.command_body[bi])
+      if serr != "" { > serr }
+      bi = bi + 1
+    }
+    # Ensure command ends with a return
+    emit_byte(c, OP_PUSH)
+    $ null_idx = add_constant(c, null)
+    emit_bytes4(c, null_idx)
+    emit_byte(c, OP_RETURN)
+    # Patch body length
+    $ body_len = length(c.instructions) - body_start
+    $ bl = intToBytes4(body_len)
+    $ c.instructions[body_len_pos] = bl[0]
+    $ c.instructions[body_len_pos + 1] = bl[1]
+    $ c.instructions[body_len_pos + 2] = bl[2]
+    $ c.instructions[body_len_pos + 3] = bl[3]
+    > ""
+  }
+
   if item.kind == "type_def" { > "" }
   if item.kind == "import" { > "" }
   if item.kind == "from_import" { > "" }
-  if item.kind == "command" { > "" }
 
   # Try compiling as a statement for top-level script-like code
   if item.kind == "for_in" || item.kind == "if" || item.kind == "while" || item.kind == "assign" || item.kind == "expression" {

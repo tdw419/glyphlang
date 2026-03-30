@@ -1,0 +1,180 @@
+# bootstrap/test_command_dispatch.glyph
+# Test Issue #9: Command dispatch in bootstrap interpreter
+# Verifies @ command definitions parse and compile correctly
+
+import "./parser"
+import "./compiler"
+
+@ command run {
+    print("=== Command Dispatch Tests (Issue #9) ===")
+    print("")
+
+    $ passed = 0
+    $ failed = 0
+
+    # Test 1: Simple command parses and compiles
+    $ t1_src = "@ command greet(name: str!) {\n  > \"Hello, \" + name + \"!\"\n}"
+    print("Test 1: command with param parses and compiles")
+    $ p1 = parser.new_parser(t1_src)
+    $ res1 = parser.parse(p1)
+    if res1.error != "" {
+        print("  FAIL: parse error: " + res1.error)
+        $ failed = failed + 1
+    } else {
+        $ c1 = compiler.new_compiler()
+        $ cres1 = compiler.compile(c1, res1.mod)
+        if cres1.error != "" {
+            print("  FAIL: compile error: " + cres1.error)
+            $ failed = failed + 1
+        } else {
+            if length(cres1.bytecode) > 0 {
+                print("  PASS: compiled to " + toString(length(cres1.bytecode)) + " bytes")
+                $ passed = passed + 1
+            } else {
+                print("  FAIL: empty bytecode")
+                $ failed = failed + 1
+            }
+        }
+    }
+    print("")
+
+    # Test 2: Multiple commands parse and compile
+    $ t2_src = "@ command alpha() {\n  > \"a\"\n}\n\n@ command beta() {\n  > \"b\"\n}"
+    print("Test 2: multiple commands parse and compile")
+    $ p2 = parser.new_parser(t2_src)
+    $ res2 = parser.parse(p2)
+    if res2.error != "" {
+        print("  FAIL: parse error: " + res2.error)
+        $ failed = failed + 1
+    } else {
+        $ c2 = compiler.new_compiler()
+        $ cres2 = compiler.compile(c2, res2.mod)
+        if cres2.error != "" {
+            print("  FAIL: compile error: " + cres2.error)
+            $ failed = failed + 1
+        } else {
+            if length(cres2.bytecode) > 0 {
+                print("  PASS: compiled to " + toString(length(cres2.bytecode)) + " bytes")
+                $ passed = passed + 1
+            } else {
+                print("  FAIL: empty bytecode")
+                $ failed = failed + 1
+            }
+        }
+    }
+    print("")
+
+    # Test 3: Command with multiple params
+    $ t3_src = "@ command add(a: int!, b: int!) {\n  > a + b\n}"
+    print("Test 3: command with multiple params")
+    $ p3 = parser.new_parser(t3_src)
+    $ res3 = parser.parse(p3)
+    if res3.error != "" {
+        print("  FAIL: parse error: " + res3.error)
+        $ failed = failed + 1
+    } else {
+        $ c3 = compiler.new_compiler()
+        $ cres3 = compiler.compile(c3, res3.mod)
+        if cres3.error != "" {
+            print("  FAIL: compile error: " + cres3.error)
+            $ failed = failed + 1
+        } else {
+            if length(cres3.bytecode) > 0 {
+                print("  PASS: compiled to " + toString(length(cres3.bytecode)) + " bytes")
+                $ passed = passed + 1
+            } else {
+                print("  FAIL: empty bytecode")
+                $ failed = failed + 1
+            }
+        }
+    }
+    print("")
+
+    # Test 4: Bare command (no params)
+    $ t4_src = "@ command ping() {\n  > \"pong\"\n}"
+    print("Test 4: bare command (no params)")
+    $ p4 = parser.new_parser(t4_src)
+    $ res4 = parser.parse(p4)
+    if res4.error != "" {
+        print("  FAIL: parse error: " + res4.error)
+        $ failed = failed + 1
+    } else {
+        $ c4 = compiler.new_compiler()
+        $ cres4 = compiler.compile(c4, res4.mod)
+        if cres4.error != "" {
+            print("  FAIL: compile error: " + cres4.error)
+            $ failed = failed + 1
+        } else {
+            if length(cres4.bytecode) > 0 {
+                print("  PASS: compiled to " + toString(length(cres4.bytecode)) + " bytes")
+                $ passed = passed + 1
+            } else {
+                print("  FAIL: empty bytecode")
+                $ failed = failed + 1
+            }
+        }
+    }
+    print("")
+
+    # Test 5: Command with complex body
+    $ t5_src = "@ command compute(n: int!) {\n  $ result = 0\n  $ i = 1\n  while i <= n {\n    $ result = result + i\n    $ i = i + 1\n  }\n  > result\n}"
+    print("Test 5: command with complex body (while loop)")
+    $ p5 = parser.new_parser(t5_src)
+    $ res5 = parser.parse(p5)
+    if res5.error != "" {
+        print("  FAIL: parse error: " + res5.error)
+        $ failed = failed + 1
+    } else {
+        $ c5 = compiler.new_compiler()
+        $ cres5 = compiler.compile(c5, res5.mod)
+        if cres5.error != "" {
+            print("  FAIL: compile error: " + cres5.error)
+            $ failed = failed + 1
+        } else {
+            if length(cres5.bytecode) > 0 {
+                print("  PASS: compiled to " + toString(length(cres5.bytecode)) + " bytes")
+                $ passed = passed + 1
+            } else {
+                print("  FAIL: empty bytecode")
+                $ failed = failed + 1
+            }
+        }
+    }
+    print("")
+
+    # Test 6: Command alongside functions
+    $ t6_src = "! helper(x: int) -> int {\n  > x + 1\n}\n\n@ command run() {\n  > helper(41)\n}"
+    print("Test 6: command alongside function definitions")
+    $ p6 = parser.new_parser(t6_src)
+    $ res6 = parser.parse(p6)
+    if res6.error != "" {
+        print("  FAIL: parse error: " + res6.error)
+        $ failed = failed + 1
+    } else {
+        $ c6 = compiler.new_compiler()
+        $ cres6 = compiler.compile(c6, res6.mod)
+        if cres6.error != "" {
+            print("  FAIL: compile error: " + cres6.error)
+            $ failed = failed + 1
+        } else {
+            if length(cres6.bytecode) > 0 {
+                print("  PASS: compiled to " + toString(length(cres6.bytecode)) + " bytes")
+                $ passed = passed + 1
+            } else {
+                print("  FAIL: empty bytecode")
+                $ failed = failed + 1
+            }
+        }
+    }
+    print("")
+
+    # Summary
+    print("========================================")
+    print("  Results: " + toString(passed) + " passed, " + toString(failed) + " failed")
+    if failed == 0 {
+        print("  ALL TESTS PASSED")
+    } else {
+        print("  SOME TESTS FAILED")
+    }
+    print("========================================")
+}
