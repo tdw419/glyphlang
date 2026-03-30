@@ -1,0 +1,515 @@
+# bootstrap/interpreter.glyph
+# v0.11.0 Tree-walking interpreter for GlyphLang
+# Evaluates AST nodes directly — no bytecode, no int-only limitation.
+# This is the path to self-hosting: the Go `glyph exec` uses the same approach.
+
+import "./parser"
+
+# ─── Result Types ──────────────────────────────────────────────────
+
+: EvalResult {
+  value: any!
+  error: str!
+}
+
+: ExecResult {
+  value: any!
+  error: str!
+  signal: str!
+}
+
+: FuncDef {
+  name: str!
+  params: [any]!
+  body: [any]!
+  closure: any!
+}
+
+# ─── Environment ───────────────────────────────────────────────────
+
+: Environment {
+  bindings: any!
+  parent: any!
+}
+
+! env_new() -> any {
+  > { bindings: {}, parent: null }
+}
+
+! env_new_child(parent: any) -> any {
+  > { bindings: {}, parent: parent }
+}
+
+! env_get(env: Environment, name: str) -> EvalResult {
+  if env.bindings[name] != null {
+    > { value: env.bindings[name], error: "" }
+  }
+  if env.parent != null {
+    > env_get(env.parent, name)
+  }
+  > { value: null, error: "undefined variable: " + name }
+}
+
+! env_set(env: Environment, name: str, val: any) {
+  $ keys = env.bindings
+  $ keys[name] = val
+  $ env.bindings = keys
+}
+
+# ─── Truthiness ────────────────────────────────────────────────────
+
+! is_truthy(val: any) -> bool {
+  if val == null { > false }
+  if val == 0 { > false }
+  if val == "" { > false }
+  if val == false { > false }
+  if typeOf(val) == "object" {
+    if val.kind == "bool" && val.value == false { > false }
+  }
+  > true
+}
+
+# ─── Type Coercion Helpers ─────────────────────────────────────────
+
+! to_int(val: any) -> int {
+  if typeOf(val) == "int" { > val }
+  if val == true { > 1 }
+  if val == false { > 0 }
+  > 0
+}
+
+! to_bool(val: any) -> bool {
+  > is_truthy(val)
+}
+
+! to_string(val: any) -> str {
+  if val == null { > "null" }
+  if typeOf(val) == "int" { > toString(val) }
+  if typeOf(val) == "str" { > val }
+  if typeOf(val) == "bool" {
+    if val { > "true" }
+    > "false"
+  }
+  > toString(val)
+}
+
+# ─── Value Comparison ──────────────────────────────────────────────
+
+! compare_values(a: any, b: any) -> int {
+  if typeOf(a) == "int" && typeOf(b) == "int" {
+    if a < b { > -1 }
+    if a > b { > 1 }
+    > 0
+  }
+  $ sa = to_string(a)
+  $ sb = to_string(b)
+  if sa < sb { > -1 }
+  if sa > sb { > 1 }
+  > 0
+}
+
+# ─── Builtins ──────────────────────────────────────────────────────
+
+! call_builtin(name: str, args: [any]) -> EvalResult {
+  if name == "print" {
+    $ out = ""
+    $ i = 0
+    while i < length(args) {
+      if i > 0 { out = out + " " }
+      $ out = out + to_string(args[i])
+      $ i = i + 1
+    }
+    print(out)
+    > { value: null, error: "" }
+  }
+
+  if name == "toString" {
+    if length(args) == 0 { > { value: "", error: "" } }
+    > { value: to_string(args[0]), error: "" }
+  }
+
+  if name == "length" {
+    if length(args) == 0 { > { value: 0, error: "" } }
+    > { value: length(args[0]), error: "" }
+  }
+
+  if name == "typeOf" {
+    if length(args) == 0 { > { value: "null", error: "" } }
+    $ v = args[0]
+    if v == null { > { value: "null", error: "" } }
+    > { value: typeOf(v), error: "" }
+  }
+
+  if name == "toInt" {
+    if length(args) == 0 { > { value: 0, error: "" } }
+    > { value: to_int(args[0]), error: "" }
+  }
+
+  > { value: null, error: "not_builtin:" + name }
+}
+
+# ─── Expression Evaluation ────────────────────────────────────────
+
+! eval_expr(expr: any, env: Environment) -> EvalResult {
+
+  if expr.kind == "literal" {
+    if expr.literal_type == "int" { > { value: toInt(expr.literal_value), error: "" } }
+    if expr.literal_type == "str" { > { value: expr.literal_value, error: "" } }
+    if expr.literal_type == "bool" {
+      if expr.literal_value == "true" { > { value: true, error: "" } }
+      > { value: false, error: "" }
+    }
+    if expr.literal_type == "null" { > { value: null, error: "" } }
+    > { value: expr.literal_value, error: "" }
+  }
+
+  if expr.kind == "variable" {
+    > env_get(env, expr.var_name)
+  }
+
+  if expr.kind == "binary" {
+    $ lr = eval_expr(expr.left, env)
+    if lr.error != "" { > lr }
+    $ rr = eval_expr(expr.right, env)
+    if rr.error != "" { > rr }
+    $ l = lr.value
+    $ r = rr.value
+    $ op = expr.op
+
+    if op == "+" {
+      if typeOf(l) == "str" || typeOf(r) == "str" {
+        > { value: to_string(l) + to_string(r), error: "" }
+      }
+      > { value: to_int(l) + to_int(r), error: "" }
+    }
+    if op == "-" { > { value: to_int(l) - to_int(r), error: "" } }
+    if op == "*" { > { value: to_int(l) * to_int(r), error: "" } }
+    if op == "/" {
+      if to_int(r) == 0 { > { value: null, error: "division by zero" } }
+      > { value: to_int(l) / to_int(r), error: "" }
+    }
+    if op == "%" {
+      if to_int(r) == 0 { > { value: null, error: "modulo by zero" } }
+      > { value: to_int(l) % to_int(r), error: "" }
+    }
+    if op == "==" { > { value: l == r, error: "" } }
+    if op == "!=" { > { value: l != r, error: "" } }
+    if op == "<" { > { value: compare_values(l, r) < 0, error: "" } }
+    if op == ">" { > { value: compare_values(l, r) > 0, error: "" } }
+    if op == "<=" { > { value: compare_values(l, r) <= 0, error: "" } }
+    if op == ">=" { > { value: compare_values(l, r) >= 0, error: "" } }
+    if op == "&&" { > { value: is_truthy(l) && is_truthy(r), error: "" } }
+    if op == "||" { > { value: is_truthy(l) || is_truthy(r), error: "" } }
+    > { value: null, error: "unknown operator: " + op }
+  }
+
+  if expr.kind == "unary" {
+    $ or = eval_expr(expr.operand, env)
+    if or.error != "" { > or }
+    if expr.op == "!" { > { value: !is_truthy(or.value), error: "" } }
+    if expr.op == "-" { > { value: 0 - to_int(or.value), error: "" } }
+    > { value: null, error: "unknown unary op: " + expr.op }
+  }
+
+  if expr.kind == "call" {
+    $ arg_vals = []
+    $ i = 0
+    while i < length(expr.args) {
+      $ ar = eval_expr(expr.args[i], env)
+      if ar.error != "" { > ar }
+      $ arg_vals = arg_vals + [ar.value]
+      $ i = i + 1
+    }
+
+    $ br = call_builtin(expr.func_name, arg_vals)
+    if br.error == "" { > br }
+    if br.error != "not_builtin:" + expr.func_name { > br }
+
+    $ fr = env_get(env, expr.func_name)
+    if fr.error != "" {
+      > { value: null, error: "undefined function: " + expr.func_name }
+    }
+    $ fn = fr.value
+    if typeOf(fn) != "object" || fn.kind != "func_def" {
+      > { value: null, error: expr.func_name + " is not a function" }
+    }
+
+    $ fn_env = env_new_child(fn.closure)
+    $ pi = 0
+    while pi < length(fn.params) {
+      $ pname = fn.params[pi].name
+      $ pval = null
+      if pi < length(arg_vals) { pval = arg_vals[pi] }
+      env_set(fn_env, pname, pval)
+      $ pi = pi + 1
+    }
+
+    $ bi = 0
+    while bi < length(fn.body) {
+      $ sr = exec_stmt(fn.body[bi], fn_env)
+      if sr.error != "" { > { value: null, error: sr.error } }
+      if sr.signal == "return" { > { value: sr.value, error: "" } }
+      $ bi = bi + 1
+    }
+    > { value: null, error: "" }
+  }
+
+  if expr.kind == "field" {
+    $ or = eval_expr(expr.object, env)
+    if or.error != "" { > or }
+    $ obj = or.value
+    if typeOf(obj) != "object" {
+      > { value: null, error: "field access on non-object" }
+    }
+    > { value: obj[expr.field_name], error: "" }
+  }
+
+  if expr.kind == "object" {
+    $ obj = {}
+    $ i = 0
+    while i < length(expr.fields) {
+      $ f = expr.fields[i]
+      $ vr = eval_expr(f.value, env)
+      if vr.error != "" { > vr }
+      $ obj[f.key] = vr.value
+      $ i = i + 1
+    }
+    > { value: obj, error: "" }
+  }
+
+  if expr.kind == "array" {
+    $ arr = []
+    $ i = 0
+    while i < length(expr.elements) {
+      $ er = eval_expr(expr.elements[i], env)
+      if er.error != "" { > er }
+      $ arr = arr + [er.value]
+      $ i = i + 1
+    }
+    > { value: arr, error: "" }
+  }
+
+  if expr.kind == "index" {
+    $ cr = eval_expr(expr.array_expr, env)
+    if cr.error != "" { > cr }
+    $ ir = eval_expr(expr.index_expr, env)
+    if ir.error != "" { > ir }
+    $ ci = to_int(ir.value)
+    if ci >= 0 && ci < length(cr.value) {
+      > { value: cr.value[ci], error: "" }
+    }
+    > { value: null, error: "index out of bounds: " + toString(ci) }
+  }
+
+  > { value: null, error: "unsupported expression: " + expr.kind }
+}
+
+# ─── Statement Execution ──────────────────────────────────────────
+
+! exec_stmt(stmt: any, env: Environment) -> ExecResult {
+  $ null_result = { value: null, error: "", signal: "" }
+
+  if stmt.kind == "assign" {
+    $ vr = eval_expr(stmt.value, env)
+    if vr.error != "" { > { value: null, error: vr.error, signal: "" } }
+    env_set(env, stmt.target, vr.value)
+    > null_result
+  }
+
+  if stmt.kind == "return" {
+    $ vr = eval_expr(stmt.return_value, env)
+    if vr.error != "" { > { value: null, error: vr.error, signal: "return" } }
+    > { value: vr.value, error: "", signal: "return" }
+  }
+
+  if stmt.kind == "if" {
+    $ cr = eval_expr(stmt.condition, env)
+    if cr.error != "" { > { value: null, error: cr.error, signal: "" } }
+    if is_truthy(cr.value) {
+      $ i = 0
+      while i < length(stmt.then_block) {
+        $ sr = exec_stmt(stmt.then_block[i], env)
+        if sr.error != "" || sr.signal != "" { > sr }
+        $ i = i + 1
+      }
+    } else {
+      $ i = 0
+      while i < length(stmt.else_block) {
+        $ sr = exec_stmt(stmt.else_block[i], env)
+        if sr.error != "" || sr.signal != "" { > sr }
+        $ i = i + 1
+      }
+    }
+    > null_result
+  }
+
+  if stmt.kind == "while" {
+    while true {
+      $ cr = eval_expr(stmt.while_condition, env)
+      if cr.error != "" { > { value: null, error: cr.error, signal: "" } }
+      if !is_truthy(cr.value) { > null_result }
+      $ i = 0
+      while i < length(stmt.body) {
+        $ sr = exec_stmt(stmt.body[i], env)
+        if sr.error != "" { > sr }
+        if sr.signal == "break" { > null_result }
+        if sr.signal == "return" { > sr }
+        $ i = i + 1
+      }
+    }
+    > null_result
+  }
+
+  if stmt.kind == "for_in" {
+    $ ir = eval_expr(stmt.while_condition, env)
+    if ir.error != "" { > { value: null, error: ir.error, signal: "" } }
+    $ iterable = ir.value
+    $ idx = 0
+    while idx < length(iterable) {
+      if stmt.field != "" {
+        env_set(env, stmt.field, idx)
+      }
+      env_set(env, stmt.target, iterable[idx])
+      $ i = 0
+      while i < length(stmt.body) {
+        $ sr = exec_stmt(stmt.body[i], env)
+        if sr.error != "" { > sr }
+        if sr.signal == "break" { > null_result }
+        if sr.signal == "return" { > sr }
+        $ i = i + 1
+      }
+      $ idx = idx + 1
+    }
+    > null_result
+  }
+
+  if stmt.kind == "expression" {
+    $ er = eval_expr(stmt.expr, env)
+    if er.error != "" { > { value: null, error: er.error, signal: "" } }
+    > null_result
+  }
+
+  if stmt.kind == "field_assign" {
+    $ or = eval_expr(stmt.obj_expr, env)
+    if or.error != "" { > { value: null, error: or.error, signal: "" } }
+    $ vr = eval_expr(stmt.value, env)
+    if vr.error != "" { > { value: null, error: vr.error, signal: "" } }
+    $ or.value[stmt.field] = vr.value
+    > null_result
+  }
+
+  if stmt.kind == "index_assign" {
+    $ cr = eval_expr(stmt.obj_expr, env)
+    if cr.error != "" { > { value: null, error: cr.error, signal: "" } }
+    $ ir = eval_expr(stmt.index_expr, env)
+    if ir.error != "" { > { value: null, error: ir.error, signal: "" } }
+    $ vr = eval_expr(stmt.value, env)
+    if vr.error != "" { > { value: null, error: vr.error, signal: "" } }
+    $ cr.value[to_int(ir.value)] = vr.value
+    > null_result
+  }
+
+  if stmt.kind == "break" { > { value: null, error: "", signal: "break" } }
+  if stmt.kind == "continue" { > { value: null, error: "", signal: "continue" } }
+
+  > { value: null, error: "unsupported stmt: " + stmt.kind, signal: "" }
+}
+
+# ─── Module Loading ────────────────────────────────────────────────
+
+! exec_module(mod: any, env: Environment) -> EvalResult {
+  $ items = mod.items
+  $ i = 0
+  while i < length(items) {
+    $ item = items[i]
+
+    if item.kind == "import" || item.kind == "from_import" {
+    }
+
+    if item.kind == "const" {
+      $ vr = eval_expr(item.const_value, env)
+      if vr.error != "" { > vr }
+      env_set(env, item.const_name, vr.value)
+    }
+
+    if item.kind == "var_decl" {
+      $ vr = eval_expr(item.var_value, env)
+      if vr.error != "" { > vr }
+      env_set(env, item.var_name, vr.value)
+    }
+
+    if item.kind == "type_def" {
+    }
+
+    if item.kind == "function" {
+      $ fn = {
+        kind: "func_def",
+        name: item.func_name,
+        params: item.func_params,
+        body: item.func_body,
+        closure: env
+      }
+      env_set(env, item.func_name, fn)
+    }
+
+    if item.kind == "command" {
+      $ fn = {
+        kind: "func_def",
+        name: item.command_name,
+        params: item.command_params,
+        body: item.command_body,
+        closure: env
+      }
+      env_set(env, "@cmd_" + item.command_name, fn)
+    }
+
+    if item.kind == "for_in" || item.kind == "if" || item.kind == "while" || item.kind == "assign" || item.kind == "expression" || item.kind == "return" {
+      $ sr = exec_stmt(item, env)
+      if sr.error != "" { > { value: null, error: sr.error } }
+    }
+
+    $ i = i + 1
+  }
+  > { value: null, error: "" }
+}
+
+# ─── Entry Point ───────────────────────────────────────────────────
+
+@ command run {
+  print("========================================")
+  print("  GlyphLang Bootstrap Interpreter v0.11")
+  print("========================================")
+  print("")
+
+  # Self-test: parse and evaluate a simple module
+  $ src = "const X = 42\nconst Y = X + 3"
+  print("Parsing: " + src)
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" {
+    print("Parse error: " + pr.error)
+    > { ok: false }
+  }
+
+  print("Executing...")
+  $ env = env_new()
+  $ mr = exec_module(pr.mod, env)
+
+  if mr.error != "" {
+    print("Error: " + mr.error)
+    > { ok: false }
+  }
+
+  $ x_val = env.bindings["X"]
+  $ y_val = env.bindings["Y"]
+  print("X = " + toString(x_val))
+  print("Y = " + toString(y_val))
+
+  if x_val == 42 && y_val == 45 {
+    print("")
+    print("SELF-TEST PASSED")
+    > { ok: true, X: x_val, Y: y_val }
+  }
+  print("SELF-TEST FAILED")
+  > { ok: false }
+}

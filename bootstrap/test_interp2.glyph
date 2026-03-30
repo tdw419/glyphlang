@@ -1,0 +1,10 @@
+import "./parser"
+
+@ command run {
+  $ src = "$ x = 6 * 7\n$ result = x + 3\nprint(result)"
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  print("error: " + pr.error)
+  print("items: " + toString(length(pr.mod.items)))
+  > { ok: true }
+}

@@ -96,6 +96,11 @@ func (tc *TypeChecker) CheckType(value interface{}, expectedType Type) error {
 		return nil // No type constraint
 	}
 
+	// nil values are compatible with any type (null/optional semantics)
+	if value == nil {
+		return nil
+	}
+
 	// Service types (Database, Redis, MongoDB, LLM) are injected by the
 	// runtime's dependency injection system which already guarantees the
 	// correct type. Skip runtime type checking for these because the

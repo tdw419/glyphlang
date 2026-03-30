@@ -1,0 +1,14 @@
+import "./parser"
+
+@ command run {
+  $ src = "$ x = 6 * 7"
+  print("Parsing: " + src)
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" {
+    print("Parse error: " + pr.error)
+    > { ok: false }
+  }
+  print("Parsed OK: " + toString(length(pr.mod.items)) + " items")
+  > { ok: true }
+}
