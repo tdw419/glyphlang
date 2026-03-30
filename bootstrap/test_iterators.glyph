@@ -1,0 +1,107 @@
+# bootstrap/test_iterators.glyph
+# v0.10.0 Iterator tests: OP_GET_ITER, OP_ITER_HAS_NEXT, OP_ITER_NEXT
+import "./vm"
+
+@ command run {
+    print("=== Iterator Tests ===")
+    $ passed = 0
+    $ total = 0
+
+    # Test 1: Iterate array [10, 20], get first element
+    $ total = total + 1
+    print("Test 1: get first element of [10, 20]")
+    $ code1 = [
+        OP_PUSH, 0,            # 0-1: push 10
+        OP_PUSH, 1,            # 2-3: push 20
+        OP_BUILD_ARRAY, 2,     # 4: array ref on stack
+        OP_GET_ITER,           # 5: iter ref on stack
+        OP_DUP,                # 6: dup iter ref
+        OP_ITER_NEXT, 0,       # 7-8: push first value (no key)
+        OP_HALT                # 9: done, top of stack = 10
+    ]
+    $ r1 = vm.exec(code1, [10, 20])
+    if r1 == 10 {
+        print("  PASS: first = " + toString(r1))
+        $ passed = passed + 1
+    } else {
+        print("  FAIL: expected 10, got " + toString(r1))
+    }
+
+    # Test 2: Iterate with key (index) and value
+    $ total = total + 1
+    print("Test 2: iterate with key [100, 200], get first index")
+    $ code2 = [
+        OP_PUSH, 0,            # 0-1: 100
+        OP_PUSH, 1,            # 2-3: 200
+        OP_BUILD_ARRAY, 2,     # 4: array
+        OP_GET_ITER,           # 5: iter
+        OP_DUP,                # 6: dup iter
+        OP_ITER_NEXT, 1,       # 7-8: push index(0), then value(100)
+        OP_POP,                # 9: discard value
+        OP_HALT                # 10: top = index = 0
+    ]
+    $ r2 = vm.exec(code2, [100, 200])
+    if r2 == 0 {
+        print("  PASS: first index = " + toString(r2))
+        $ passed = passed + 1
+    } else {
+        print("  FAIL: expected 0, got " + toString(r2))
+    }
+
+    # Test 3: Has_next returns 0 on exhausted iterator
+    $ total = total + 1
+    print("Test 3: exhausted iterator has_next = 0")
+    $ code3 = [
+        OP_PUSH, 0,            # 0-1: 42
+        OP_BUILD_ARRAY, 1,     # 2: [42]
+        OP_GET_ITER,           # 3: iter
+        # Consume the one element
+        OP_DUP,                # 4: dup iter
+        OP_ITER_NEXT, 0,       # 5-6: get value
+        OP_POP,                # 7: discard value
+        # Now check has_next
+        OP_ITER_HAS_NEXT,      # 8: should be 0
+        OP_HALT                # 9
+    ]
+    $ r3 = vm.exec(code3, [42])
+    if r3 == 0 {
+        print("  PASS: exhausted has_next = " + toString(r3))
+        $ passed = passed + 1
+    } else {
+        print("  FAIL: expected 0, got " + toString(r3))
+    }
+
+    # Test 4: Iterate all elements and sum
+    $ total = total + 1
+    print("Test 4: sum [10, 20] via full iteration")
+    # Unrolled: get elem0, get elem1, add. Keep iter ref alive with SWAP.
+    $ code4b = [
+        OP_PUSH, 0,            # 0-1: push 10
+        OP_PUSH, 1,            # 2-3: push 20
+        OP_BUILD_ARRAY, 2,     # 4-5: array ref         stack: [arr]
+        OP_GET_ITER,           # 6: iter ref             stack: [iter]
+        # Get elem0: dup iter, next, swap result below iter
+        OP_DUP,                # 7: dup iter             stack: [iter, iter]
+        OP_ITER_NEXT, 0,       # 8-9: get first val     stack: [iter, 10]
+        OP_SWAP,               # 10: bring iter up       stack: [10, iter]
+        # Get elem1: dup iter, next, discard iter
+        OP_DUP,                # 11: dup iter            stack: [10, iter, iter]
+        OP_ITER_NEXT, 0,       # 12-13: get second val  stack: [10, iter, 20]
+        OP_SWAP,               # 14: bring iter up       stack: [10, 20, iter]
+        OP_POP,                # 15: discard iter        stack: [10, 20]
+        OP_ADD,                # 16: 10 + 20 = 30       stack: [30]
+        OP_HALT                # 17
+    ]
+    $ r4 = vm.exec(code4b, [10, 20])
+    if r4 == 30 {
+        print("  PASS: sum = " + toString(r4))
+        $ passed = passed + 1
+    } else {
+        print("  FAIL: expected 30, got " + toString(r4))
+    }
+
+    print("")
+    print("Iterator: " + toString(passed) + "/" + toString(total))
+    if passed == total { print("ALL ITERATOR TESTS PASSED") }
+    > {ok: passed == total, passed: passed, total: total}
+}

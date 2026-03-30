@@ -31,6 +31,9 @@ const OP_LOAD_FP       = 66   # 0x42 - Load from FP-relative offset
 const OP_JUMP          = 80   # 0x50
 const OP_JUMP_IF_FALSE = 81   # 0x51
 const OP_JUMP_IF_TRUE  = 82   # 0x52
+const OP_GET_ITER      = 83   # 0x53 - Create iterator from collection
+const OP_ITER_NEXT     = 84   # 0x54 - Advance iterator, push value (opt: key)
+const OP_ITER_HAS_NEXT = 85   # 0x55 - Check iterator has more elements
 const OP_RETURN        = 97   # 0x61
 const OP_CALL          = 98   # 0x62
 const OP_BUILD_OBJECT  = 112  # 0x70
@@ -45,6 +48,7 @@ const OP_HALT          = 255  # 0xFF
 # ─── Heap Constants ─────────────────────────────────────────────────
 
 const HEAP_BASE = 2000000
+const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 
 # ─── VM State ────────────────────────────────────────────────────────
 
@@ -658,6 +662,65 @@ const HEAP_BASE = 2000000
     > { vm: vm4 }
   }
   
+  # OP_GET_ITER: pop collection ref, create iterator in heap, push iter ref
+  # Heap layout: [HEAP_ITER_TAG(3), collection_ref, current_index(0), element_count]
+  if op == OP_GET_ITER {
+    $ coll_pop = vm_pop(vm)
+    $ coll_ref = coll_pop.val
+    $ offset = ref_to_offset(coll_ref)
+    $ elem_count = coll_pop.vm.heap[offset]
+    $ iter_data = [HEAP_ITER_TAG, coll_ref, 0, elem_count]
+    $ iter_ref = 0 - (HEAP_BASE + length(coll_pop.vm.heap))
+    $ new_heap = coll_pop.vm.heap + iter_data
+    $ vm2 = { stack: coll_pop.vm.stack, pc: coll_pop.vm.pc, fp: coll_pop.vm.fp, halted: coll_pop.vm.halted, heap: new_heap }
+    $ vm3 = vm_push(vm2, iter_ref)
+    $ vm4 = vm_with_pc(vm3, vm.pc + 1)
+    > { vm: vm4 }
+  }
+  
+  # OP_ITER_HAS_NEXT: pop iter ref, push 1 if has next, 0 if exhausted
+  # Iterator heap: [ITER_TAG, coll_ref, current_index, element_count]
+  if op == OP_ITER_HAS_NEXT {
+    $ iter_pop = vm_pop(vm)
+    $ iter_ref = iter_pop.val
+    $ iter_offset = ref_to_offset(iter_ref)
+    $ current_idx = iter_pop.vm.heap[iter_offset + 2]
+    $ elem_count = iter_pop.vm.heap[iter_offset + 3]
+    $ has_next = 0
+    if current_idx < elem_count {
+      $ has_next = 1
+    }
+    $ vm2 = vm_push(iter_pop.vm, has_next)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 1)
+    > { vm: vm3 }
+  }
+  
+  # OP_ITER_NEXT: operand = hasKey (0 or 1)
+  # Pop iter ref, advance iterator, push value (and key if hasKey)
+  # For arrays: key = index, value = element
+  if op == OP_ITER_NEXT {
+    $ has_key = code[vm.pc + 1]
+    $ iter_pop = vm_pop(vm)
+    $ iter_ref = iter_pop.val
+    $ iter_offset = ref_to_offset(iter_ref)
+    $ coll_ref = iter_pop.vm.heap[iter_offset + 1]
+    $ current_idx = iter_pop.vm.heap[iter_offset + 2]
+    # Read value from collection
+    $ coll_offset = ref_to_offset(coll_ref)
+    $ val = iter_pop.vm.heap[coll_offset + 1 + current_idx]
+    # Advance iterator index in heap
+    $ new_heap = heap_set_at(iter_pop.vm.heap, iter_offset + 2, current_idx + 1)
+    $ vm2 = { stack: iter_pop.vm.stack, pc: iter_pop.vm.pc, fp: iter_pop.vm.fp, halted: iter_pop.vm.halted, heap: new_heap }
+    # Push key then value (if hasKey), or just value
+    $ vm3 = vm2
+    if has_key != 0 {
+      $ vm3 = vm_push(vm2, current_idx)
+    }
+    $ vm4 = vm_push(vm3, val)
+    $ vm5 = vm_with_pc(vm4, vm.pc + 2)
+    > { vm: vm5 }
+  }
+  
   if op == OP_HALT {
     > { vm: vm_halted(vm) }
   }
@@ -675,6 +738,12 @@ const HEAP_BASE = 2000000
 ! exec(code: [int], constants: [int]) -> int {
   $ vm = new_vm()
   > vm_exec(vm, code, constants)
+}
+
+# Single-step execution: run one opcode, return new VM state
+! step(code: [int], constants: [int], state: VM) -> StepResult {
+  $ op = code[state.pc]
+  > vm_step(state, op, code, constants)
 }
 
 # ─── Tests ───────────────────────────────────────────────────────────

@@ -1,0 +1,232 @@
+# bootstrap/visual_trace.glyph
+# v0.10.0 Visual Trace — Maps VM stack frames to pxOS pixel grid
+# Streams execution state to ASCII World's HEATMAP for live visualization.
+#
+# The screen IS the memory. Each stack slot = one grid cell.
+# Frame headers glow dim. Active computation glows bright.
+# CALL = new row lights up. RETURN = row collapses.
+
+import "./vm"
+
+# ─── pxOS Integration ──────────────────────────────────────────────
+
+# Push VM state as cells to pxOS HEATMAP
+# Grid: 10 columns x 10 rows = 100 cells (matching stack capacity)
+# Cell naming: "stack_R_C" where R=row, C=column
+# Values: 0=empty, 1-100=data (normalized), -1=frame header
+
+! build_cell_payload(vm_state: any, step: int) -> any {
+  $ cells = {}
+
+  # Map stack slots to grid cells
+  $ i = 0
+  $ sp = length(vm_state.stack)
+  while i < 100 {
+    $ row = i / 10
+    $ col = i % 10
+    $ key = "stack_" + toString(row) + "_" + toString(col)
+    if i < sp {
+      $ val = vm_state.stack[i]
+      # Normalize: heap refs → negative (frame), regular values → positive
+      if val < -1000000 {
+        # Heap reference — show as distinct intensity
+        $ cells[key] = 75
+      } else if val < 0 {
+        # Negative value (possibly FP-relative or frame)
+        $ cells[key] = 25
+      } else {
+        # Regular value — clamp to 1-100 range for heatmap
+        $ clamped = val
+        if clamped > 100 { $ clamped = 100 }
+        if clamped < 1 { $ clamped = 1 }
+        $ cells[key] = clamped
+      }
+    } else {
+      $ cells[key] = 0
+    }
+    $ i = i + 1
+  }
+
+  # Add metadata cells
+  $ cells["vm_pc"] = vm_state.pc
+  $ cells["vm_sp"] = sp
+  $ cells["vm_fp"] = vm_state.fp
+  $ cells["vm_step"] = step
+  $ cells["vm_halted"] = 0
+  if vm_state.halted { $ cells["vm_halted"] = 1 }
+
+  > cells
+}
+
+# ─── Step-by-Step Executor ─────────────────────────────────────────
+
+# Execute one opcode and return new VM state (wraps vm.step)
+! trace_step(code: [int], constants: [int], vm_state: any) -> any {
+  $ result = vm.step(code, constants, vm_state)
+  > result.vm
+}
+
+# ─── ASCII Rendering (Standalone, no pxOS needed) ─────────────────
+
+! render_grid(vm_state: any, step: int) -> string {
+  $ sp = length(vm_state.stack)
+  $ fp = vm_state.fp
+  $ pc = vm_state.pc
+
+  print("╔════════════════════════════════════════════════════╗")
+  print("║  Step " + toString(step) + "  PC=" + toString(pc) + "  SP=" + toString(sp) + "  FP=" + toString(fp))
+  print("╠════╤════╤════╤════╤════╤════╤════╤════╤════╤════╣")
+
+  $ row = 0
+  while row < 10 {
+    $ line = "║"
+    $ col = 0
+    while col < 10 {
+      $ idx = row * 10 + col
+      if idx < sp {
+        $ val = vm_state.stack[idx]
+        # Mark FP position
+        if idx == fp {
+          $ line = line + " FP "
+        } else if idx > fp && idx < fp + 3 && fp > 0 {
+          # Frame header region (old_fp, ret_addr, stack_base)
+          $ line = line + " ░░ "
+        } else {
+          # Data cell
+          $ v = toString(val)
+          # Pad to 3 chars
+          if length(v) == 1 { $ v = "  " + v }
+          if length(v) == 2 { $ v = " " + v }
+          if length(v) >= 4 { $ v = v[0] + v[1] + v[2] }
+          $ line = line + " " + v
+        }
+      } else {
+        $ line = line + "  · "
+      }
+      if col < 9 { $ line = line + "│" }
+      $ col = col + 1
+    }
+    $ line = line + "║"
+    print(line)
+    if row < 9 {
+      print("╟────┼────┼────┼────┼────┼────┼────┼────┼────┼────╢")
+    }
+    $ row = row + 1
+  }
+  print("╚════╧════╧════╧════╧════╧════╧════╧════╧════╧════╝")
+
+  # Stack annotation
+  $ annotation = "  Stack: ["
+  $ j = 0
+  while j < sp {
+    if j > 0 { $ annotation = annotation + ", " }
+    $ annotation = annotation + toString(vm_state.stack[j])
+    $ j = j + 1
+  }
+  $ annotation = annotation + "]"
+  print(annotation)
+  print("")
+
+  > "ok"
+}
+
+# ─── Demo Programs ──────────────────────────────────────────────────
+
+# calc(2, 3, 1) = 2*3+1 = 7
+# Bytecode: push args, call func, halt; func: load args, mul, add, return
+! demo_multiarg() -> any {
+  $ code = [
+    1, 0,               # 0-1:   PUSH const[0] = 2
+    1, 1,               # 2-3:   PUSH const[1] = 3
+    1, 2,               # 4-5:   PUSH const[2] = 1
+    98, 12, 0, 0, 0,    # 6-10:  CALL target=12 (OP_CALL=98)
+    255,                 # 11:    HALT
+    # -- calc(a, b, c) at offset 12 --
+    66, -3,              # 12-13: LOAD_FP -3 (arg a=2)
+    66, -2,              # 14-15: LOAD_FP -2 (arg b=3)
+    18,                  # 16:    MUL → 6
+    66, -1,              # 17-18: LOAD_FP -1 (arg c=1)
+    16,                  # 19:    ADD → 7
+    97                   # 20:    RETURN (OP_RETURN=97)
+  ]
+  $ constants = [2, 3, 1]
+  > { code: code, constants: constants, name: "calc(2,3,1) = 2*3+1" }
+}
+
+# Simple: 10 + 20 = 30
+! demo_simple() -> any {
+  $ code = [
+    1, 0,    # PUSH 10
+    1, 1,    # PUSH 20
+    16,      # ADD
+    255      # HALT
+  ]
+  $ constants = [10, 20]
+  > { code: code, constants: constants, name: "10 + 20" }
+}
+
+# ─── Main Entry Point ─────────────────────────────────────────────
+
+@ command run {
+  print("═══════════════════════════════════════════════════════")
+  print("  GlyphLang Visual Trace v0.10.0")
+  print("  The Screen IS the Memory")
+  print("═══════════════════════════════════════════════════════")
+  print("")
+
+  # Run simple demo
+  $ demo = demo_simple()
+  print("Program: " + demo.name)
+  print("")
+
+  $ state = vm.new_vm()
+  $ step = 0
+
+  # Initial state
+  $ r = render_grid(state, step)
+
+  # Step through execution
+  $ halted = false
+  while !halted {
+    $ state = trace_step(demo.code, demo.constants, state)
+    $ step = step + 1
+    $ r = render_grid(state, step)
+    $ halted = state.halted
+  }
+
+  print("═══════════════════════════════════════════════════════")
+  print("  Result: " + toString(state.stack[length(state.stack) - 1]))
+  print("═══════════════════════════════════════════════════════")
+
+  > { ok: true, result: state.stack[length(state.stack) - 1] }
+}
+
+@ command multiarg {
+  print("═══════════════════════════════════════════════════════")
+  print("  GlyphLang Visual Trace v0.10.0 — Multi-Arg Call")
+  print("  The Screen IS the Memory")
+  print("═══════════════════════════════════════════════════════")
+  print("")
+
+  $ demo = demo_multiarg()
+  print("Program: " + demo.name)
+  print("")
+
+  $ state = vm.new_vm()
+  $ step = 0
+  $ r = render_grid(state, step)
+
+  $ halted = false
+  while !halted {
+    $ state = trace_step(demo.code, demo.constants, state)
+    $ step = step + 1
+    $ r = render_grid(state, step)
+    $ halted = state.halted
+  }
+
+  print("═══════════════════════════════════════════════════════")
+  print("  Result: " + toString(state.stack[length(state.stack) - 1]))
+  print("═══════════════════════════════════════════════════════")
+
+  > { ok: true, result: state.stack[length(state.stack) - 1] }
+}
