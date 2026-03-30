@@ -1235,6 +1235,7 @@ import "./parser"
 # ─── Module Loading ────────────────────────────────────────────────
 
 ! exec_module(mod: any, env: Environment, base_path: str, visited: any) -> EvalResult {
+  $ last_val = null
   if visited == null {
     $ visited = {}
   }
@@ -1289,12 +1290,14 @@ import "./parser"
       $ vr = eval_expr(item.const_value, env)
       if vr.error != "" { > vr }
       env_set(env, item.const_name, vr.value)
+      $ last_val = vr.value
     }
 
     if item.kind == "var_decl" {
       $ vr = eval_expr(item.var_value, env)
       if vr.error != "" { > vr }
       env_set(env, item.var_name, vr.value)
+      $ last_val = vr.value
     }
 
     if item.kind == "type_def" {
@@ -1326,16 +1329,21 @@ import "./parser"
     if item.kind == "for_in" || item.kind == "if" || item.kind == "while" || item.kind == "assign" || item.kind == "expression" || item.kind == "return" || item.kind == "field_assign" || item.kind == "index_assign" {
       $ sr = exec_stmt(item, env)
       if sr.error != "" { > { value: null, error: sr.error } }
+      if sr.value != null {
+        $ last_val = sr.value
+      }
     }
 
     $ i = i + 1
   }
-  > { value: null, error: "" }
+  > { value: last_val, error: "" }
 }
 
 # ─── Dynamic Eval (Self-Hosting Seed) ────────────────────────────
 
-! eval_source(src: str, env: Environment, base_path: str) -> EvalResult {
+! eval_source(src: str, env: any, base_path: any) -> EvalResult {
+  if env == null { $ env = env_new() }
+  if base_path == null { $ base_path = "./" }
   $ p = parser.new_parser(src)
   $ pr = parser.parse(p)
   if pr.error != "" {
@@ -1345,6 +1353,8 @@ import "./parser"
   if mr.error != "" {
     > { value: null, error: "exec error: " + mr.error }
   }
+  $ fr = env_get(env, "result")
+  if fr.error == "" { > { value: fr.value, error: "" } }
   > { value: null, error: "" }
 }
 
