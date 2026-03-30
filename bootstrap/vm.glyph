@@ -428,7 +428,10 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
   if op == OP_LOAD_VAR {
     $ idx = read_addr(code, vm.pc + 1)
     # First try globals (mutable variables), fall back to constants
-    $ val = constants[idx]
+    $ val = 0
+    if idx < length(constants) {
+      $ val = constants[idx]
+    }
     if idx < length(vm.globals) {
       $ g = vm.globals[idx]
       if g != 0 {
@@ -716,39 +719,38 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
     > { vm: vm4 }
   }
   
-  # OP_ITER_HAS_NEXT: pop iter ref, push 1 if has next, 0 if exhausted
+  # OP_ITER_HAS_NEXT: peek iter ref (don't pop), push 1 if has next, 0 if exhausted
+  # Stack: [..., iter_ref] -> [..., iter_ref, has_next]
   # Iterator heap: [ITER_TAG, coll_ref, current_index, element_count]
   if op == OP_ITER_HAS_NEXT {
-    $ iter_pop = vm_pop(vm)
-    $ iter_ref = iter_pop.val
+    $ iter_ref = vm.stack[length(vm.stack) - 1]
     $ iter_offset = ref_to_offset(iter_ref)
-    $ current_idx = iter_pop.vm.heap[iter_offset + 2]
-    $ elem_count = iter_pop.vm.heap[iter_offset + 3]
+    $ current_idx = vm.heap[iter_offset + 2]
+    $ elem_count = vm.heap[iter_offset + 3]
     $ has_next = 0
     if current_idx < elem_count {
       $ has_next = 1
     }
-    $ vm2 = vm_push(iter_pop.vm, has_next)
+    $ vm2 = vm_push(vm, has_next)
     $ vm3 = vm_with_pc(vm2, vm.pc + 1)
     > { vm: vm3 }
   }
   
   # OP_ITER_NEXT: operand = hasKey (0 or 1)
-  # Pop iter ref, advance iterator, push value (and key if hasKey)
-  # For arrays: key = index, value = element
+  # Peek iter ref, advance iterator, push value (and key if hasKey)
+  # Stack: [..., iter_ref] -> [..., iter_ref, value]  (or [..., iter_ref, key, value])
   if op == OP_ITER_NEXT {
     $ has_key = code[vm.pc + 1]
-    $ iter_pop = vm_pop(vm)
-    $ iter_ref = iter_pop.val
+    $ iter_ref = vm.stack[length(vm.stack) - 1]
     $ iter_offset = ref_to_offset(iter_ref)
-    $ coll_ref = iter_pop.vm.heap[iter_offset + 1]
-    $ current_idx = iter_pop.vm.heap[iter_offset + 2]
+    $ coll_ref = vm.heap[iter_offset + 1]
+    $ current_idx = vm.heap[iter_offset + 2]
     # Read value from collection
     $ coll_offset = ref_to_offset(coll_ref)
-    $ val = iter_pop.vm.heap[coll_offset + 1 + current_idx]
+    $ val = vm.heap[coll_offset + 1 + current_idx]
     # Advance iterator index in heap
-    $ new_heap = heap_set_at(iter_pop.vm.heap, iter_offset + 2, current_idx + 1)
-    $ vm2 = { stack: iter_pop.vm.stack, pc: iter_pop.vm.pc, fp: iter_pop.vm.fp, halted: iter_pop.vm.halted, heap: new_heap, globals: iter_pop.vm.globals }
+    $ new_heap = heap_set_at(vm.heap, iter_offset + 2, current_idx + 1)
+    $ vm2 = { stack: vm.stack, pc: vm.pc, fp: vm.fp, halted: vm.halted, heap: new_heap, globals: vm.globals }
     # Push key then value (if hasKey), or just value
     $ vm3 = vm2
     if has_key != 0 {
@@ -847,14 +849,14 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 
 ! test_conditional() -> bool {
   $ code = [
-    OP_PUSH, 0, 0, 0, 0,
-    OP_PUSH, 1, 0, 0, 0,
-    OP_GT,
-    OP_JUMP_IF_FALSE, 14, 0, 0, 0,
-    OP_PUSH, 2, 0, 0, 0,
-    OP_JUMP, 18, 0, 0, 0,
-    OP_PUSH, 3, 0, 0, 0,
-    OP_HALT
+    OP_PUSH, 0, 0, 0, 0,           # [0-4]   PUSH 5
+    OP_PUSH, 1, 0, 0, 0,           # [5-9]   PUSH 3
+    OP_GT,                          # [10]    5 > 3 = 1
+    OP_JUMP_IF_FALSE, 26, 0, 0, 0, # [11-15] if false, goto else at 26
+    OP_PUSH, 2, 0, 0, 0,           # [16-20] PUSH 1 (then branch)
+    OP_JUMP, 31, 0, 0, 0,          # [21-25] goto end
+    OP_PUSH, 3, 0, 0, 0,           # [26-30] PUSH 0 (else branch)
+    OP_HALT                         # [31]
   ]
   $ constants = [5, 3, 1, 0]
   $ result = exec(code, constants)
@@ -1168,6 +1170,43 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
   > false
 }
 
+# ─── v0.9.9 Tests: Array Iteration ─────────────────────────────────
+
+! test_iter_sum() -> bool {
+  # Build array [10, 20, 30], iterate and sum = 60
+  # Uses globals[4] as accumulator (offset 4 to avoid overlap with constants 0-3)
+  $ code = [
+    OP_PUSH, 0, 0, 0, 0,           # [0-4]   PUSH 10
+    OP_PUSH, 1, 0, 0, 0,           # [5-9]   PUSH 20
+    OP_PUSH, 2, 0, 0, 0,           # [10-14] PUSH 30
+    OP_BUILD_ARRAY, 3, 0, 0, 0,    # [15-19] BUILD_ARRAY 3
+    OP_GET_ITER,                    # [20]    GET_ITER -> stack: [iter_ref]
+    OP_PUSH, 3, 0, 0, 0,           # [21-25] PUSH 0 (init acc = 0)
+    OP_STORE_VAR, 4, 0, 0, 0,      # [26-30] globals[4] = 0
+    # loop at 31: stack = [iter_ref]
+    OP_ITER_HAS_NEXT,              # [31]    peek iter_ref, push has_next
+    OP_JUMP_IF_FALSE, 55, 0, 0, 0, # [32-36] if done, goto 55
+    OP_ITER_NEXT, 0,               # [37-38] peek iter_ref, push val
+    OP_LOAD_VAR, 4, 0, 0, 0,       # [39-43] push acc (globals[4])
+    OP_ADD,                         # [44]    val + acc
+    OP_STORE_VAR, 4, 0, 0, 0,      # [45-49] globals[4] = val + acc
+    OP_JUMP, 31, 0, 0, 0,          # [50-54] loop back
+    # end:
+    OP_LOAD_VAR, 4, 0, 0, 0,       # [55-59] push final acc
+    OP_HALT                         # [60]
+  ]
+  # constants[4] doesn't exist, so LOAD_VAR 4 reads purely from globals[4]
+  $ constants = [10, 20, 30, 0]
+  $ result = exec(code, constants)
+  if result == 60 {
+    print("✅ test_iter_sum: sum([10,20,30]) = 60")
+    > true
+  }
+  print("❌ test_iter_sum: expected 60, got ")
+  print(result)
+  > false
+}
+
 @ command run {
   print("=== Bootstrap VM Tests v0.9.8 ===")
   print("")
@@ -1198,13 +1237,16 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
   if test_get_index() { $ passed = passed + 1 }
   if test_set_index() { $ passed = passed + 1 }
   
+  # v0.9.9 tests
+  if test_iter_sum() { $ passed = passed + 1 }
+  
   print("")
   print("Results: ")
   print(passed)
-  print("/18 passed")
+  print("/19 passed")
   
-  if passed == 18 {
-    print("🎉🎉🎉 ALL 18 TESTS PASSED! v0.9.8 Index Operations complete! 🎉🎉🎉")
+  if passed == 19 {
+    print("🎉🎉🎉 ALL 19 TESTS PASSED! v0.9.9 Array Iteration complete! 🎉🎉🎉")
   }
   
   > { ok: true }
