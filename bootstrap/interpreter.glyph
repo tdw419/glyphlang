@@ -111,6 +111,34 @@ import "./parser"
   if typeOf(val) == "int" { > val }
   if val == true { > 1 }
   if val == false { > 0 }
+  if typeOf(val) == "str" {
+    $ result = 0
+    $ neg = false
+    $ i = 0
+    if length(val) > 0 && charAt(val, 0) == "-" {
+      $ neg = true
+      $ i = 1
+    }
+    while i < length(val) {
+      $ ch = charAt(val, i)
+      $ d = -1
+      if ch == "0" { $ d = 0 }
+      if ch == "1" { $ d = 1 }
+      if ch == "2" { $ d = 2 }
+      if ch == "3" { $ d = 3 }
+      if ch == "4" { $ d = 4 }
+      if ch == "5" { $ d = 5 }
+      if ch == "6" { $ d = 6 }
+      if ch == "7" { $ d = 7 }
+      if ch == "8" { $ d = 8 }
+      if ch == "9" { $ d = 9 }
+      if d < 0 { > 0 }
+      $ result = result * 10 + d
+      $ i = i + 1
+    }
+    if neg { > 0 - result }
+    > result
+  }
   > 0
 }
 
@@ -2388,6 +2416,26 @@ import "./parser"
 
   $ t218_src = "! is_neg(x: int) -> bool { > x < 0 }\n$ has_neg = some([1, 5, 10], is_neg)\n$ r = 1\nif !has_neg { $ r = 0 }\n$ result = r"
   if run_test("some builtin — all positive (0)", t218_src, 0) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 219: toInt string conversion ──
+  $ t219_src = "$ result = toInt(\"42\")"
+  if run_test("toInt string conversion (\"42\" → 42)", t219_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 220: toInt negative string ──
+  $ t220_src = "$ x = toInt(\"-7\")\n$ result = 0 - x"
+  if run_test("toInt negative string (\"-7\" → 7, negated)", t220_src, 7) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 221: toInt multi-digit string ──
+  $ t221_src = "$ result = toInt(\"123\") + toInt(\"456\")"
+  if run_test("toInt multi-digit (123+456=579)", t221_src, 579) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 222: toInt in arithmetic ──
+  $ t222_src = "$ result = toInt(\"10\") * toInt(\"4\") + toInt(\"2\")"
+  if run_test("toInt in arithmetic (10*4+2=42)", t222_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 223: toInt edge cases ──
+  $ t223_src = "$ result = toInt(\"0\") + toInt(99)"
+  if run_test("toInt edge cases (\"0\"→0 + 99=99)", t223_src, 99) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
