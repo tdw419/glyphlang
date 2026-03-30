@@ -1873,6 +1873,46 @@ import "./parser"
   $ t166_src = "$ obj = { val: 10 }\n$ obj.val = 20\n$ obj.val = obj.val + 5\n$ result = obj.val"
   if run_test("object field overwrite twice (10→20→25)", t166_src, 25) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
+  # ── Test 167: self-hosting — mini expression evaluator with operator precedence ──
+  $ sh167_env = env_new()
+  $ sh167_src = "! to_digit(ch: str) -> int {\n  $ digits = \"0123456789\"\n  $ i = 0\n  while i < length(digits) {\n    if charAt(digits, i) == ch { > i }\n    $ i = i + 1\n  }\n  > -1\n}\n! tokenize(src: str) -> any {\n  $ tokens = []\n  $ i = 0\n  while i < length(src) {\n    $ ch = charAt(src, i)\n    if ch != \" \" {\n      $ tokens = tokens + [ch]\n    }\n    $ i = i + 1\n  }\n  > tokens\n}\n! parse_num(tokens: any, pos: any) -> int {\n  $ result = 0\n  while pos.val < length(tokens) {\n    $ ch = tokens[pos.val]\n    $ d = to_digit(ch)\n    if d < 0 { > result }\n    $ result = result * 10 + d\n    $ pos.val = pos.val + 1\n  }\n  > result\n}\n! parse_term(tokens: any, pos: any) -> int {\n  $ left = parse_num(tokens, pos)\n  while pos.val < length(tokens) {\n    $ op = tokens[pos.val]\n    if op != \"*\" { > left }\n    $ pos.val = pos.val + 1\n    $ right = parse_num(tokens, pos)\n    $ left = left * right\n  }\n  > left\n}\n! parse_expr(tokens: any, pos: any) -> int {\n  $ left = parse_term(tokens, pos)\n  while pos.val < length(tokens) {\n    $ op = tokens[pos.val]\n    if op != \"+\" { > left }\n    $ pos.val = pos.val + 1\n    $ right = parse_term(tokens, pos)\n    $ left = left + right\n  }\n  > left\n}\n$ tokens = tokenize(\"3+4*2\")\n$ pos = { val: 0 }\n$ result = parse_expr(tokens, pos)"
+  $ sh167_r = eval_source(sh167_src, sh167_env, "bootstrap/")
+  print("")
+  print("TEST: self-hosting mini expression evaluator (3+4*2=11)")
+  if sh167_r.error != "" {
+    print("  FAIL: " + sh167_r.error)
+    $ failed = failed + 1
+  } else {
+    $ rv167 = env_get(sh167_env, "result")
+    if rv167.value != 11 {
+      print("  FAIL: got " + toString(rv167.value) + " expected 11")
+      $ failed = failed + 1
+    } else {
+      print("  PASS: result = " + toString(rv167.value))
+      $ passed = passed + 1
+    }
+  }
+
+  # ── Test 168: self-hosting — expression evaluator with multi-digit numbers ──
+  $ sh168_env = env_new()
+  $ sh168_src = "! to_digit(ch: str) -> int {\n  $ digits = \"0123456789\"\n  $ i = 0\n  while i < length(digits) {\n    if charAt(digits, i) == ch { > i }\n    $ i = i + 1\n  }\n  > -1\n}\n! tokenize(src: str) -> any {\n  $ tokens = []\n  $ i = 0\n  while i < length(src) {\n    $ ch = charAt(src, i)\n    if ch != \" \" {\n      $ tokens = tokens + [ch]\n    }\n    $ i = i + 1\n  }\n  > tokens\n}\n! parse_num(tokens: any, pos: any) -> int {\n  $ result = 0\n  while pos.val < length(tokens) {\n    $ ch = tokens[pos.val]\n    $ d = to_digit(ch)\n    if d < 0 { > result }\n    $ result = result * 10 + d\n    $ pos.val = pos.val + 1\n  }\n  > result\n}\n! parse_term(tokens: any, pos: any) -> int {\n  $ left = parse_num(tokens, pos)\n  while pos.val < length(tokens) {\n    $ op = tokens[pos.val]\n    if op != \"*\" { > left }\n    $ pos.val = pos.val + 1\n    $ right = parse_num(tokens, pos)\n    $ left = left * right\n  }\n  > left\n}\n! parse_expr(tokens: any, pos: any) -> int {\n  $ left = parse_term(tokens, pos)\n  while pos.val < length(tokens) {\n    $ op = tokens[pos.val]\n    if op != \"+\" { > left }\n    $ pos.val = pos.val + 1\n    $ right = parse_term(tokens, pos)\n    $ left = left + right\n  }\n  > left\n}\n$ tokens = tokenize(\"10*2+3\")\n$ pos = { val: 0 }\n$ result = parse_expr(tokens, pos)"
+  $ sh168_r = eval_source(sh168_src, sh168_env, "bootstrap/")
+  print("")
+  print("TEST: self-hosting expression evaluator multi-digit (10*2+3=23)")
+  if sh168_r.error != "" {
+    print("  FAIL: " + sh168_r.error)
+    $ failed = failed + 1
+  } else {
+    $ rv168 = env_get(sh168_env, "result")
+    if rv168.value != 23 {
+      print("  FAIL: got " + toString(rv168.value) + " expected 23")
+      $ failed = failed + 1
+    } else {
+      print("  PASS: result = " + toString(rv168.value))
+      $ passed = passed + 1
+    }
+  }
+
   # ── Summary ──
   print("")
   print("========================================")
