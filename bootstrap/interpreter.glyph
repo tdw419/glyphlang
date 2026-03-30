@@ -1,5 +1,5 @@
 # bootstrap/interpreter.glyph
-# v0.14.0 Tree-walking interpreter for GlyphLang
+# v0.15.0 Tree-walking interpreter for GlyphLang
 # Evaluates AST nodes directly — no bytecode, no int-only limitation.
 # This is the path to self-hosting: the Go `glyph exec` uses the same approach.
 
@@ -347,6 +347,11 @@ import "./parser"
     if cr.error != "" { > cr }
     $ ir = eval_expr(expr.index_expr, env)
     if ir.error != "" { > ir }
+    # String key → object field access: obj["field"]
+    if typeOf(ir.value) == "str" {
+      > { value: cr.value[ir.value], error: "" }
+    }
+    # Integer key → array index access: arr[i]
     $ ci = to_int(ir.value)
     if ci >= 0 && ci < length(cr.value) {
       > { value: cr.value[ci], error: "" }
@@ -639,7 +644,7 @@ import "./parser"
 
 @ command run {
   print("========================================")
-  print("  GlyphLang Bootstrap Interpreter v0.14")
+  print("  GlyphLang Bootstrap Interpreter v0.15")
   print("========================================")
 
   $ passed = 0
@@ -858,6 +863,22 @@ import "./parser"
   # ── Test 36: object field mutation across function calls ──
   $ t36_src = "! bump(p: any) -> int {\n  $ v = p.val\n  $ p.val = v + 1\n  > p.val\n}\n$ obj = { val: 10 }\n$ r1 = bump(obj)\n$ result = r1 + obj.val"
   if run_test("object field mutation across function calls", t36_src, 22) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 37: object with mixed-type fields (int + str + bool) ──
+  $ t37_src = "$ obj = { count: 5, label: \"items\", active: true }\n$ r = 0\nif obj.active { $ r = obj.count }\n$ result = r"
+  if run_test("object with mixed-type fields", t37_src, 5) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 38: object field mutation in while loop (accumulator) ──
+  $ t38_src = "$ obj = { total: 0 }\n$ i = 1\nwhile i <= 5 {\n  $ obj.total = obj.total + i\n  $ i = i + 1\n}\n$ result = obj.total"
+  if run_test("object field mutation in while loop (sum 1..5)", t38_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 39: bracket-access on objects ──
+  $ t39_src = "$ obj = { x: 100, y: 200 }\n$ result = obj[\"x\"] + obj[\"y\"]"
+  if run_test("bracket-access on object fields", t39_src, 300) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 40: object composition from function returns ──
+  $ t40_src = "! make_pair(a: int, b: int) -> any { > { a: a, b: b } }\n! sum_pair(p: any) -> int { > p.a + p.b }\n$ p1 = make_pair(15, 27)\n$ p2 = make_pair(50, 50)\n$ result = sum_pair(p1) + sum_pair(p2)"
+  if run_test("object composition from function returns", t40_src, 142) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
