@@ -1777,6 +1777,38 @@ import "./parser"
     }
   }
 
+  # ── Test 143: object field update inside for-in loop body ──
+  $ t143_src = "$ obj = { sum: 0, count: 0 }\nfor val in [10, 20, 30] {\n  $ obj.sum = obj.sum + val\n  $ obj.count = obj.count + 1\n}\n$ result = obj.sum * obj.count"
+  if run_test("object field update in for-in loop (60*3=180)", t143_src, 180) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 144: object with method accessing sibling fields ──
+  $ t144_src = "! make_ratio(n: int, d: int) -> any {\n  $ num = n\n  $ den = d\n  ! to_decimal() -> int {\n    > (num * 100) / den\n  }\n  > { num: num, den: den, to_decimal: to_decimal }\n}\n$ r = make_ratio(3, 4)\n$ result = r.to_decimal()"
+  if run_test("object method accessing sibling fields (3/4=75%)", t144_src, 75) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 145: object identity — mutation via alias persists ──
+  $ t145_src = "$ original = { val: 10 }\n$ alias = original\n$ alias.val = 42\n$ result = original.val"
+  if run_test("object identity via alias mutation (42)", t145_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 146: object returned from if expression in function ──
+  $ t146_src = "! pick_obj(x: int) -> any {\n  if x > 0 {\n    > { tag: \"pos\", val: x }\n  }\n  > { tag: \"neg\", val: 0 - x }\n}\n$ a = pick_obj(7)\n$ b = pick_obj(-3)\n$ result = a.tag + \" \" + b.tag + \" \" + toString(a.val + b.val)"
+  if run_test("object from conditional branch (pos neg 10)", t146_src, "pos neg 10") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 147: object with array field, iterated then summed ──
+  $ t147_src = "$ data = { nums: [5, 10, 15, 20] }\n$ sum = 0\nfor n in data.nums {\n  $ sum = sum + n\n}\n$ data.total = sum\n$ result = data.total"
+  if run_test("object array field iterated + stored (50)", t147_src, 50) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 148: nested object mutation via function parameter ──
+  $ t148_src = "! set_deep(obj: any, val: int) {\n  $ ref = obj.l1\n  $ ref.l2 = val\n}\n$ root = { l1: { l2: 0 } }\n$ _ = set_deep(root, 99)\n$ result = root.l1.l2"
+  if run_test("nested object mutation via function param (99)", t148_src, 99) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 149: object field as condition with negation ──
+  $ t149_src = "$ obj = { done: false, count: 0 }\nwhile !obj.done {\n  $ obj.count = obj.count + 1\n  if obj.count == 5 {\n    $ obj.done = true\n  }\n}\n$ result = obj.count"
+  if run_test("object field as while condition with negation (5)", t149_src, 5) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 150: multiple objects sharing a function method ──
+  $ t150_src = "! scale(obj: any, factor: int) -> int {\n  > obj.val * factor\n}\n$ a = { val: 3 }\n$ b = { val: 7 }\n$ result = scale(a, 10) + scale(b, 10)"
+  if run_test("shared function on multiple objects (30+70=100)", t150_src, 100) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   # ── Summary ──
   print("")
   print("========================================")
