@@ -1216,3 +1216,40 @@ func TestBuiltinString_Substring(t *testing.T) {
 		}
 	})
 }
+
+func TestOpSetField(t *testing.T) {
+	constants := []Value{
+		StringValue{Val: "x"},
+		IntValue{Val: 10},
+		IntValue{Val: 42},
+	}
+	bytecode := createBytecodeHeader(constants)
+
+	c0, c1, c2 := uint32(0), uint32(1), uint32(2)
+	count := uint32(1)
+
+	// Build object: {x: 10}
+	bytecode = addInstruction(bytecode, OpPush, &c0) // "x"
+	bytecode = addInstruction(bytecode, OpPush, &c1) // 10
+	bytecode = addInstruction(bytecode, OpBuildObject, &count)
+
+	// Set field "x" = 42
+	bytecode = addInstruction(bytecode, OpPush, &c0) // "x"
+	bytecode = addInstruction(bytecode, OpPush, &c2) // 42
+	bytecode = addInstruction(bytecode, OpSetField, nil)
+
+	// Get field "x"
+	bytecode = addInstruction(bytecode, OpPush, &c0) // "x"
+	bytecode = addInstruction(bytecode, OpGetField, nil)
+	bytecode = addInstruction(bytecode, OpHalt, nil)
+
+	vm := NewVM()
+	result, err := vm.Execute(bytecode)
+	if err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+
+	if val, ok := result.(IntValue); !ok || val.Val != 42 {
+		t.Errorf("Expected 42, got %v", result)
+	}
+}
