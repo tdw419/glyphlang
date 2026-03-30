@@ -594,6 +594,56 @@ import "./parser"
     > { value: result, error: "" }
   }
 
+  # count(haystack, needle) — count occurrences of needle in string or array
+  if name == "count" {
+    if length(args) < 2 { > { value: 0, error: "" } }
+    $ haystack = args[0]
+    $ needle = args[1]
+    if typeOf(haystack) == "str" {
+      $ s = toString(haystack)
+      $ sub = toString(needle)
+      $ cnt = 0
+      $ ci = 0
+      while ci <= length(s) - length(sub) {
+        if substring(s, ci, ci + length(sub)) == sub {
+          $ cnt = cnt + 1
+          $ ci = ci + length(sub)
+        } else {
+          $ ci = ci + 1
+        }
+      }
+      > { value: cnt, error: "" }
+    }
+    if typeOf(haystack) == "array" {
+      $ cnt = 0
+      $ ci = 0
+      while ci < length(haystack) {
+        if haystack[ci] == needle {
+          $ cnt = cnt + 1
+        }
+        $ ci = ci + 1
+      }
+      > { value: cnt, error: "" }
+    }
+    > { value: 0, error: "" }
+  }
+
+  # lastIndexOf(haystack, needle) — last occurrence position in string
+  if name == "lastIndexOf" {
+    if length(args) < 2 { > { value: -1, error: "" } }
+    $ s = toString(args[0])
+    $ sub = toString(args[1])
+    $ last = -1
+    $ li = 0
+    while li <= length(s) - length(sub) {
+      if substring(s, li, li + length(sub)) == sub {
+        $ last = li
+      }
+      $ li = li + 1
+    }
+    > { value: last, error: "" }
+  }
+
   > { value: null, error: "not_builtin:" + name }
 }
 
@@ -2181,6 +2231,23 @@ import "./parser"
 
   $ t205_src = "$ s = format(\"no placeholders here\")\n$ result = s"
   if run_test("format builtin — no placeholders (no placeholders here)", t205_src, "no placeholders here") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Tests 206-210: count + lastIndexOf builtins ──
+
+  $ t206_src = "$ c = count(\"hello hello hello\", \"hello\")\n$ result = c"
+  if run_test("count builtin — string 3 occurrences (3)", t206_src, 3) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t207_src = "$ c = count([1, 2, 3, 2, 2, 4], 2)\n$ result = c"
+  if run_test("count builtin — array count 2s (3)", t207_src, 3) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t208_src = "$ c = count(\"abcdef\", \"xyz\")\n$ result = c"
+  if run_test("count builtin — string no match (0)", t208_src, 0) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t209_src = "$ p = lastIndexOf(\"hello world hello\", \"hello\")\n$ result = p"
+  if run_test("lastIndexOf builtin — second occurrence at 12 (12)", t209_src, 12) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t210_src = "$ p = lastIndexOf(\"abcdef\", \"xyz\")\n$ result = p"
+  if run_test("lastIndexOf builtin — not found (-1)", t210_src, -1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
