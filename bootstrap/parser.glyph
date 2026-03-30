@@ -494,10 +494,12 @@ import "./ast"
   if tok.type == token.GREATER {
     > parse_return(p)
   }
+  if tok.type == token.FOR {
+    > parse_for_in(p)
+  }
   if tok.type == token.IDENT {
     if tok.literal == "if" { > parse_if(p) }
     if tok.literal == "while" { > parse_while(p) }
-    if tok.literal == "for" { > parse_for_in(p) }
     if tok.literal == "break" {
       $ adv = advance(p)
       > { parser: adv.parser, stmt: _stmt("break"), error: "" }
@@ -694,7 +696,7 @@ import "./ast"
 
   # Expect "in" keyword
   $ in_tok = current(p)
-  if in_tok.type != token.IDENT || in_tok.literal != "in" {
+  if in_tok.type != token.IN {
     > { parser: p, stmt: _stmt("illegal"), error: "for-in: expected 'in' keyword" }
   }
   $ adv5 = advance(p)
