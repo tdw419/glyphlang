@@ -380,9 +380,34 @@ import "./parser"
     > { value: b, error: "" }
   }
 
+
+  if name == "repeat" {
+    if length(args) < 2 { > { value: "", error: "" } }
+    $ s = toString(args[0])
+    $ n = toInt(args[1])
+    $ out = ""
+    $ ri = 0
+    while ri < n {
+      out = out + s
+      ri = ri + 1
+    }
+    > { value: out, error: "" }
+  }
+
   if name == "reverse" {
-    if length(args) == 0 { > { value: [], error: "" } }
-    $ arr = args[0]
+    if length(args) == 0 { > { value: "", error: "" } }
+    $ val = args[0]
+    if typeOf(val) == "str" {
+      $ s = toString(val)
+      $ out = ""
+      $ ri = length(s) - 1
+      while ri >= 0 {
+        out = out + charAt(s, ri)
+        ri = ri - 1
+      }
+      > { value: out, error: "" }
+    }
+    $ arr = val
     $ out = []
     $ ri = length(arr) - 1
     while ri >= 0 {
@@ -391,7 +416,6 @@ import "./parser"
     }
     > { value: out, error: "" }
   }
-
   if name == "slice" {
     if length(args) < 3 { > { value: args[0], error: "" } }
     $ arr = args[0]
@@ -2307,6 +2331,18 @@ import "./parser"
   $ sh169_src = "! to_digit(ch: str) -> int {\n  $ digits = \"0123456789\"\n  $ i = 0\n  while i < length(digits) {\n    if charAt(digits, i) == ch { > i }\n    $ i = i + 1\n  }\n  > -1\n}\n! tokenize(src: str) -> any {\n  $ tokens = []\n  $ i = 0\n  while i < length(src) {\n    $ ch = charAt(src, i)\n    if ch != \" \" {\n      $ tokens = tokens + [ch]\n    }\n    $ i = i + 1\n  }\n  > tokens\n}\n! parse_num(tokens: any, pos: any) -> int {\n  $ result = 0\n  while pos.val < length(tokens) {\n    $ ch = tokens[pos.val]\n    $ d = to_digit(ch)\n    if d < 0 { > result }\n    $ result = result * 10 + d\n    $ pos.val = pos.val + 1\n  }\n  > result\n}\n! parse_factor(tokens: any, pos: any) -> int {\n  $ ch = tokens[pos.val]\n  if ch == \"(\" {\n    $ pos.val = pos.val + 1\n    $ val = parse_expr(tokens, pos)\n    $ pos.val = pos.val + 1\n    > val\n  }\n  > parse_num(tokens, pos)\n}\n! parse_term(tokens: any, pos: any) -> int {\n  $ left = parse_factor(tokens, pos)\n  while pos.val < length(tokens) {\n    $ op = tokens[pos.val]\n    if op != \"*\" { > left }\n    $ pos.val = pos.val + 1\n    $ right = parse_factor(tokens, pos)\n    $ left = left * right\n  }\n  > left\n}\n! parse_expr(tokens: any, pos: any) -> int {\n  $ left = parse_term(tokens, pos)\n  while pos.val < length(tokens) {\n    $ op = tokens[pos.val]\n    if op == \"+\" {\n      $ pos.val = pos.val + 1\n      $ right = parse_term(tokens, pos)\n      $ left = left + right\n    } else {\n      if op == \"-\" {\n        $ pos.val = pos.val + 1\n        $ right = parse_term(tokens, pos)\n        $ left = left - right\n      } else {\n        > left\n      }\n    }\n  }\n  > left\n}\n$ tokens = tokenize(\"(3+4)*2-1\")\n$ pos = { val: 0 }\n$ result = parse_expr(tokens, pos)"
   $ sh169_r = eval_source(sh169_src, sh169_env, "bootstrap/")
   print("")
+  $ t7_src = "$ result = repeat(\"a\", 3)"
+  if run_test("repeat(\"a\", 3) = \"aaa\"", t7_src, "aaa") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t8_src = "$ result = reverse(\"hello\")"
+  if run_test("reverse(\"hello\") = \"olleh\"", t8_src, "olleh") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t9_src = "$ result = flatten([1, [2, 3], 4])"
+  if run_test("flatten([1, [2, 3], 4])", t9_src, [1, 2, 3, 4]) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t10_src = "$ result = range(3)"
+  if run_test("range(3) = [0, 1, 2]", t10_src, [0, 1, 2]) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   print("TEST: self-hosting expression evaluator with parens + subtract ((3+4)*2-1=13)")
   if sh169_r.error != "" {
     print("  FAIL: " + sh169_r.error)
@@ -2591,6 +2627,15 @@ import "./parser"
   if run_test("function call", t2_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   $ t3_src = "! sum_to(n: int) -> int {\n  $ total = 0\n  $ i = 1\n  while i <= n {\n    $ total = total + i\n    $ i = i + 1\n  }\n  > total\n}\n$ result = sum_to(5)"
+  $ t11_src = "! d(x: int) -> int { > x * 2 }\n$ result = map([1, 2, 3], d)"
+  if run_test("map([1, 2, 3], x*2) = [2, 4, 6]", t11_src, [2, 4, 6]) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t12_src = "! g(x: int) -> bool { > x > 2 }\n$ result = filter([1, 2, 3, 4], g)"
+  if run_test("filter([1..4], x>2) = [3, 4]", t12_src, [3, 4]) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t13_src = "! r(a: int, x: int) -> int { > a + x }\n$ result = reduce([1, 2, 3, 4], r, 0)"
+  if run_test("reduce([1..4], 0, acc+x) = 10", t13_src, 10) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   if run_test("while loop (sum 1..5=15)", t3_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   $ t4_src = "! check(x: int) -> int {\n  if x > 5 {\n    > 100\n  } else {\n    > 200\n  }\n}\n$ result = check(10)"
@@ -2601,6 +2646,18 @@ import "./parser"
 
   $ t6_src = "$ obj = { x: 10, y: 20 }\n$ result = obj.x + obj.y"
   if run_test("object literal + field access", t6_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+  $ t7_src = "$ result = repeat(\"a\", 3)"
+  if run_test("repeat(\"a\", 3) = \"aaa\"", t7_src, "aaa") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t8_src = "$ result = reverse(\"hello\")"
+  if run_test("reverse(\"hello\") = \"olleh\"", t8_src, "olleh") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t9_src = "$ result = flatten([1, [2, 3], 4])"
+  if run_test("flatten([1, [2, 3], 4])", t9_src, [1, 2, 3, 4]) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t10_src = "$ result = range(3)"
+  if run_test("range(3) = [0, 1, 2]", t10_src, [0, 1, 2]) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
 
   print("")
   print("========================================")

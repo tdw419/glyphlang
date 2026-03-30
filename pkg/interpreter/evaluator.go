@@ -536,8 +536,58 @@ func (i *Interpreter) evaluateEq(left, right interface{}) (interface{}, error) {
 		return coercedLeft == coercedRight, nil
 	}
 
-	// For non-numeric types, compare directly
-	return left == right, nil
+	// Handle slices (arrays) recursively
+	if lSlice, ok1 := left.([]interface{}); ok1 {
+		if rSlice, ok2 := right.([]interface{}); ok2 {
+			if len(lSlice) != len(rSlice) {
+				return false, nil
+			}
+			for idx := range lSlice {
+				eq, err := i.evaluateEq(lSlice[idx], rSlice[idx])
+				if err != nil {
+					return false, err
+				}
+				if b, ok := eq.(bool); !ok || !b {
+					return false, nil
+				}
+			}
+			return true, nil
+		}
+		return false, nil
+	}
+
+	// Handle maps (objects) recursively
+	if lMap, ok1 := left.(map[string]interface{}); ok1 {
+		if rMap, ok2 := right.(map[string]interface{}); ok2 {
+			if len(lMap) != len(rMap) {
+				return false, nil
+			}
+			for k, v1 := range lMap {
+				v2, exists := rMap[k]
+				if !exists {
+					return false, nil
+				}
+				eq, err := i.evaluateEq(v1, v2)
+				if err != nil {
+					return false, err
+				}
+				if b, ok := eq.(bool); !ok || !b {
+					return false, nil
+				}
+			}
+			return true, nil
+		}
+		return false, nil
+	}
+
+	// For comparable types, compare directly.
+	switch left.(type) {
+	case string, int64, float64, bool, nil:
+		return left == right, nil
+	}
+
+	// Avoid panic on uncomparable types
+	return false, nil
 }
 
 // evaluateNe handles inequality comparison
