@@ -1,0 +1,6 @@
+name: glyphlang
+language: go
+test_command: go test ./...
+test_parser: go
+health_threshold: 3
+pi_model: zai/glm-5.1
