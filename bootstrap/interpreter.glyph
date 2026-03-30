@@ -1841,6 +1841,38 @@ import "./parser"
   $ t158_src = "! double(x: int) -> int { > x * 2 }\n$ arr = [1, 2, 3, 4]\n$ result = double(arr[0]) + double(arr[3])"
   if run_test("array element as function argument (2+8=10)", t158_src, 10) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
+  # ── Test 159: empty object then dynamic field add ──
+  $ t159_src = "$ obj = {}\n$ obj.x = 10\n$ obj.y = 20\n$ result = obj.x + obj.y"
+  if run_test("empty object + dynamic field add (10+20=30)", t159_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 160: object field used directly in boolean condition ──
+  $ t160_src = "$ obj = { active: true, val: 100 }\n$ result = 0\nif obj.active {\n  $ result = obj.val\n}"
+  if run_test("object field as boolean condition (100)", t160_src, 100) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 161: deeply nested inline object construction ──
+  $ t161_src = "$ obj = { a: { b: { c: { d: 42 } } } }\n$ result = obj.a.b.c.d"
+  if run_test("4-level nested object field access (42)", t161_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 162: object field as while loop counter ──
+  $ t162_src = "$ obj = { count: 0, total: 0 }\nwhile obj.count < 5 {\n  $ obj.total = obj.total + obj.count\n  $ obj.count = obj.count + 1\n}\n$ result = obj.total"
+  if run_test("object field as while loop counter (0+1+2+3+4=10)", t162_src, 10) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 163: function returns object, field used in expression ──
+  $ t163_src = "! point(x: int, y: int) -> any {\n  > { x: x, y: y }\n}\n$ result = point(3, 4).x * point(3, 4).y"
+  if run_test("function returns object + field in expr (3*4=12)", t163_src, 12) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 164: object fields in string concatenation ──
+  $ t164_src = "$ p = { first: \"Grace\", last: \"Hopper\" }\n$ result = p.first + \" \" + p.last"
+  if run_test("object string fields concatenated (Grace Hopper)", t164_src, "Grace Hopper") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 165: array of objects, sum a field ──
+  $ t165_src = "$ objs = [{ v: 1 }, { v: 2 }, { v: 3 }]\n$ sum = 0\nfor o in objs {\n  $ sum = sum + o.v\n}\n$ result = sum"
+  if run_test("array of objects field sum (1+2+3=6)", t165_src, 6) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 166: object field overwrite + previous value lost ──
+  $ t166_src = "$ obj = { val: 10 }\n$ obj.val = 20\n$ obj.val = obj.val + 5\n$ result = obj.val"
+  if run_test("object field overwrite twice (10→20→25)", t166_src, 25) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   # ── Summary ──
   print("")
   print("========================================")
