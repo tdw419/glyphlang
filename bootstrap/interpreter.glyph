@@ -810,7 +810,7 @@ import "./parser"
 
 @ command run {
   print("========================================")
-  print("  GlyphLang Bootstrap Interpreter v0.17")
+  print("  GlyphLang Bootstrap Interpreter v0.18")
   print("========================================")
 
   $ passed = 0
@@ -1168,6 +1168,26 @@ import "./parser"
   # ── Test 71: typeOf builtin ──
   $ t72_src = "$ a = typeOf(42)\n$ b = typeOf(\"hello\")\n$ c = typeOf(true)\n$ d = typeOf(null)\n$ e = typeOf([1, 2])\n$ f = typeOf({ x: 1 })\n$ result = a + \" \" + b + \" \" + c + \" \" + d + \" \" + e + \" \" + f"
   if run_test("typeOf builtin (all types)", t72_src, "int str bool null array object") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 72: object with variable-key bracket access ──
+  $ t73_src = "$ obj = { x: 10, y: 20 }\n$ key = \"x\"\n$ result = obj[key]"
+  if run_test("object variable-key bracket access", t73_src, 10) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 73: object with array field ──
+  $ t74_src = "$ obj = { items: [10, 20, 30] }\n$ result = obj.items[0] + obj.items[1] + obj.items[2]"
+  if run_test("object with array field", t74_src, 60) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 74: object field self-update ──
+  $ t75_src = "$ obj = { x: 1 }\n$ obj.x = obj.x + 99\n$ result = obj.x"
+  if run_test("object field self-update (1+99=100)", t75_src, 100) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 75: object field used as function argument ──
+  $ t76_src = "! add3(a: int, b: int, c: int) -> int { > a + b + c }\n$ obj = { a: 1, b: 2, c: 3 }\n$ result = add3(obj.a, obj.b, obj.c)"
+  if run_test("object fields as function args", t76_src, 6) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 76: object built incrementally via for_in ──
+  $ t77_src = "! build_obj(keys: any, vals: any) -> any {\n  $ obj = {}\n  $ i = 0\n  while i < length(keys) {\n    if keys[i] == \"a\" { $ obj.a = vals[i] }\n    if keys[i] == \"b\" { $ obj.b = vals[i] }\n    $ i = i + 1\n  }\n  > obj\n}\n$ o = build_obj([\"a\", \"b\"], [10, 20])\n$ result = o.a + o.b"
+  if run_test("object built incrementally via loop", t77_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
