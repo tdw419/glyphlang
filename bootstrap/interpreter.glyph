@@ -1,5 +1,5 @@
 # bootstrap/interpreter.glyph
-# v0.11.0 Tree-walking interpreter for GlyphLang
+# v0.12.0 Tree-walking interpreter for GlyphLang
 # Evaluates AST nodes directly — no bytecode, no int-only limitation.
 # This is the path to self-hosting: the Go `glyph exec` uses the same approach.
 
@@ -488,7 +488,7 @@ import "./parser"
       env_set(env, "@cmd_" + item.command_name, fn)
     }
 
-    if item.kind == "for_in" || item.kind == "if" || item.kind == "while" || item.kind == "assign" || item.kind == "expression" || item.kind == "return" {
+    if item.kind == "for_in" || item.kind == "if" || item.kind == "while" || item.kind == "assign" || item.kind == "expression" || item.kind == "return" || item.kind == "field_assign" || item.kind == "index_assign" {
       $ sr = exec_stmt(item, env)
       if sr.error != "" { > { value: null, error: sr.error } }
     }
@@ -552,7 +552,7 @@ import "./parser"
 
 @ command run {
   print("========================================")
-  print("  GlyphLang Bootstrap Interpreter v0.11")
+  print("  GlyphLang Bootstrap Interpreter v0.12")
   print("========================================")
 
   $ passed = 0
@@ -602,11 +602,23 @@ import "./parser"
   $ t11_src = "$ obj = { x: 10, y: 20 }\n$ result = obj.x + obj.y"
   if run_test("object literal + field access", t11_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
-  # ── Test 12: array literal + index ──
-  $ t12_src = "$ arr = [10, 20, 30]\n$ result = arr[0] + arr[2]"
-  if run_test("array literal + index", t12_src, 40) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+  # ── Test 12: object field assignment ──
+  $ t12_src = "$ obj = { x: 1, y: 2 }\n$ obj.x = 99\n$ result = obj.x + obj.y"
+  if run_test("object field assignment", t12_src, 101) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
-  # ── Test 13: self-hosting seed — dynamic eval of arithmetic ──
+  # ── Test 13: nested objects + chained field access ──
+  $ t13_src = "$ obj = { inner: { val: 42 } }\n$ result = obj.inner.val"
+  if run_test("nested object field access", t13_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 14: function returning object + field access ──
+  $ t14_src = "! make_point(x: int, y: int) -> any {\n  > { x: x, y: y }\n}\n$ p = make_point(3, 7)\n$ result = p.x * 10 + p.y"
+  if run_test("function returning object", t14_src, 37) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 15: array literal + index ──
+  $ t15_src = "$ arr = [10, 20, 30]\n$ result = arr[0] + arr[2]"
+  if run_test("array literal + index", t15_src, 40) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 16: self-hosting seed — dynamic eval of arithmetic ──
   # Use eval_source to parse and execute a source string at runtime
   $ seed_env = env_new()
   $ seed_src = "const A = 10 + 20\nconst B = A * 2"
@@ -632,7 +644,7 @@ import "./parser"
     }
   }
 
-  # ── Test 14: self-hosting seed — dynamic eval with function ──
+  # ── Test 17: self-hosting seed — dynamic eval with function ──
   # Use eval_source to define and call a function dynamically
   $ seed2_env = env_new()
   $ seed2_src = "! triple(x: int) -> int { > x * 3 }\n$ result = triple(14)"
@@ -653,6 +665,31 @@ import "./parser"
         $ failed = failed + 1
       } else {
         print("  PASS: result = " + toString(rv.value))
+        $ passed = passed + 1
+      }
+    }
+  }
+
+  # ── Test 16: dynamic eval with field assignment ──
+  $ seed3_env = env_new()
+  $ seed3_src = "$ obj = { x: 1, y: 2 }\n$ obj.x = 10\n$ result = obj.x + obj.y"
+  $ seed3_r = eval_source(seed3_src, seed3_env)
+  print("")
+  print("TEST: dynamic eval (field assignment)")
+  if seed3_r.error != "" {
+    print("  FAIL: " + seed3_r.error)
+    $ failed = failed + 1
+  } else {
+    $ rv3 = env_get(seed3_env, "result")
+    if rv3.error != "" {
+      print("  FAIL: no result: " + rv3.error)
+      $ failed = failed + 1
+    } else {
+      if rv3.value != 12 {
+        print("  FAIL: got " + toString(rv3.value) + " expected 12")
+        $ failed = failed + 1
+      } else {
+        print("  PASS: result = " + toString(rv3.value))
         $ passed = passed + 1
       }
     }

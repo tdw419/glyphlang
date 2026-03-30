@@ -1,0 +1,49 @@
+import "./bootstrap/parser"
+
+@ command run {
+  $ src = "! make_counter() -> any {\n  $ count = 0\n  ! inc() -> int {\n    $ count = count + 1\n    > count\n  }\n  > inc\n}\n$ c = make_counter()\n$ a = c()\n$ b = c()\n$ result = c()"
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" {
+    print("PARSE ERROR: " + pr.error)
+    > { error: pr.error }
+  }
+  
+  # Debug: print all module items
+  $ i = 0
+  while i < length(pr.mod.items) {
+    $ item = pr.mod.items[i]
+    print("Module item " + toString(i) + ": kind=" + item.kind)
+    if item.kind == "function" {
+      print("  func_name=" + item.func_name)
+      print("  body has " + toString(length(item.func_body)) + " stmts")
+      $ j = 0
+      while j < length(item.func_body) {
+        $ s = item.func_body[j]
+        print("    stmt " + toString(j) + ": kind=" + s.kind)
+        if s.kind == "function" {
+          print("      inner func: " + s.func_name)
+          print("      inner body has " + toString(length(s.func_body)) + " stmts")
+          $ k = 0
+          while k < length(s.func_body) {
+            $ ss = s.func_body[k]
+            print("        stmt " + toString(k) + ": kind=" + ss.kind)
+            if ss.kind == "assign" {
+              print("          target=" + ss.target)
+            }
+            $ k = k + 1
+          }
+        }
+        $ j = j + 1
+      }
+    }
+    if item.kind == "var_decl" {
+      print("  var_name=" + item.var_name)
+    }
+    if item.kind == "assign" {
+      print("  target=" + item.target)
+    }
+    $ i = i + 1
+  }
+  > { ok: true }
+}

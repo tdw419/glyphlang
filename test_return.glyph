@@ -1,0 +1,30 @@
+import "./bootstrap/parser"
+
+@ command run {
+  # Try putting return FIRST
+  $ src = "! get_val() -> int { > 42 }\n$ result = get_val()"
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  $ item = pr.mod.items[0]
+  print("body length=" + toString(length(item.func_body)))
+  $ j = 0
+  while j < length(item.func_body) {
+    print("  " + toString(j) + ": kind=" + item.func_body[j].kind)
+    $ j = j + 1
+  }
+  
+  # Try multi-line with return on second line but using semicolons
+  $ src2 = "! get_val2() -> int {\n  > 42\n}\n$ result2 = get_val2()"
+  $ p2 = parser.new_parser(src2)
+  $ pr2 = parser.parse(p2)
+  if pr2.error != "" { print("ERROR: " + pr2.error) }
+  $ item2 = pr2.mod.items[0]
+  print("body2 length=" + toString(length(item2.func_body)))
+  $ j = 0
+  while j < length(item2.func_body) {
+    print("  " + toString(j) + ": kind=" + item2.func_body[j].kind)
+    $ j = j + 1
+  }
+  
+  > { ok: true }
+}

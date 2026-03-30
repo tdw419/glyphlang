@@ -294,6 +294,18 @@ import "./ast"
   if stmt_res.error != "" {
     > { parser: p, item: _item(), error: stmt_res.error }
   }
+  # If the statement is field_assign or index_assign, pass it through directly
+  $ sk = stmt_res.stmt.kind
+  if sk == "field_assign" || sk == "index_assign" {
+    $ it = _item()
+    $ it.kind = sk
+    $ it.target = stmt_res.stmt.target
+    $ it.field = stmt_res.stmt.field
+    $ it.obj_expr = stmt_res.stmt.obj_expr
+    $ it.index_expr = stmt_res.stmt.index_expr
+    $ it.value = stmt_res.stmt.value
+    > { parser: stmt_res.parser, item: it, error: "" }
+  }
   # Wrap the assignment statement as a var_decl item
   $ it = _item()
   $ it.kind = "var_decl"

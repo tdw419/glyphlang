@@ -1,0 +1,76 @@
+import "./bootstrap/parser"
+
+! env_new() -> any {
+  > { bindings: {}, parent: null }
+}
+
+! env_new_child(parent: any) -> any {
+  > { bindings: {}, parent: parent }
+}
+
+! env_get(env: any, name: str) -> any {
+  $ found = false
+  $ val = null
+  $ ks = keys(env.bindings)
+  $ i = 0
+  while i < length(ks) {
+    if ks[i] == name {
+      $ found = true
+      $ val = env.bindings[ks[i]]
+    }
+    $ i = i + 1
+  }
+  if found { > val }
+  if env.parent != null {
+    > env_get(env.parent, name)
+  }
+  > null
+}
+
+! env_set(env: any, name: str, val: any) {
+  $ keys = env.bindings
+  $ keys[name] = val
+  $ env.bindings = keys
+}
+
+! env_update(env: any, name: str, val: any) -> bool {
+  $ ks = keys(env.bindings)
+  $ i = 0
+  while i < length(ks) {
+    if ks[i] == name {
+      env_set(env, name, val)
+      > true
+    }
+    $ i = i + 1
+  }
+  if env.parent != null {
+    > env_update(env.parent, name, val)
+  }
+  > false
+}
+
+@ command run {
+  # Test mutable closure manually
+  $ outer_env = env_new()
+  env_set(outer_env, "count", 0)
+  
+  $ inner_env = env_new_child(outer_env)
+  
+  # Read count from inner
+  $ v = env_get(inner_env, "count")
+  print("count from inner = " + toString(v))
+  
+  # Update count from inner
+  $ updated = env_update(inner_env, "count", v + 1)
+  print("updated = " + toString(updated))
+  
+  # Check outer
+  $ v2 = env_get(outer_env, "count")
+  print("count in outer after update = " + toString(v2))
+  
+  # Check inner
+  $ v3 = env_get(inner_env, "count")
+  print("count in inner after update = " + toString(v3))
+  
+  > { ok: true }
+}
