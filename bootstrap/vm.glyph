@@ -956,32 +956,37 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 }
 
 ! test_recursive_factorial() -> bool {
+  # Byte layout (verified):
+  # PUSH=5bytes, CALL=5bytes, HALT=1byte, POP=1byte
+  # LOAD_FP=2bytes, LE=1byte, JUMP_IF_FALSE=5bytes, RETURN=1byte
+  # SUB=1byte, MUL=1byte
   $ code = [
-    OP_PUSH, 0, 0, 0, 0,           # 0-1: PUSH 5
-    OP_CALL, 9, 0, 0, 0,  # 2-6: CALL factorial at offset 9
-    OP_HALT,              # 7: HALT
-    OP_POP,               # 8: (padding)
-    
-    # factorial function (offset 9):
-    # Stack: [arg, old_fp, return_addr]
-    # FP points to old_fp, so arg is at FP-1
-    OP_LOAD_FP, -1,       # 9: Load n from FP-1
-    OP_PUSH, 1, 0, 0, 0,           # 10: PUSH 1
-    OP_LE,                # 11: n <= 1?
-    OP_JUMP_IF_FALSE, 22, 0, 0, 0,  # 12-16: If false, jump to recursive case
-    
-    # Base case (offset 19):
-    OP_PUSH, 1, 0, 0, 0,           # 19: Return 1
-    OP_RETURN,            # 21: RETURN
-    
-    # Recursive case (offset 22):
-    OP_LOAD_FP, -1,       # 22: Load n from FP-1
-    OP_PUSH, 1, 0, 0, 0,           # 23: PUSH 1
-    OP_SUB,               # 24: n - 1
-    OP_CALL, 9, 0, 0, 0,  # 25-29: CALL factorial(n-1)
-    OP_LOAD_FP, -1,       # 30: Load n again from FP-1
-    OP_MUL,               # 31: n * factorial(n-1)
-    OP_RETURN             # 32: RETURN result
+    # Main: push 5, call factorial, halt
+    OP_PUSH, 0, 0, 0, 0,           # [0-4]   PUSH constants[0] = 5
+    OP_CALL, 12, 0, 0, 0,          # [5-9]   CALL factorial at offset 12
+    OP_HALT,                       # [10]    HALT
+    OP_POP,                        # [11]    POP (padding between main and function)
+
+    # factorial(n) at offset 12:
+    # On entry: stack = [n, old_fp, return_addr, stack_base], FP -> old_fp
+    # n is at FP-1
+    OP_LOAD_FP, -1,                # [12-13] push n (= stack[FP-1])
+    OP_PUSH, 1, 0, 0, 0,          # [14-18] push constants[1] = 1
+    OP_LE,                         # [19]    n <= 1?
+    OP_JUMP_IF_FALSE, 31, 0, 0, 0, # [20-24] if n>1, jump to recursive case at 31
+
+    # Base case (fall through, n <= 1):
+    OP_PUSH, 1, 0, 0, 0,          # [25-29] push 1
+    OP_RETURN,                     # [30]    return 1
+
+    # Recursive case at offset 31:
+    OP_LOAD_FP, -1,                # [31-32] push n
+    OP_PUSH, 1, 0, 0, 0,          # [33-37] push 1
+    OP_SUB,                        # [38]    n - 1
+    OP_CALL, 12, 0, 0, 0,         # [39-43] CALL factorial at offset 12
+    OP_LOAD_FP, -1,                # [44-45] push n again
+    OP_MUL,                        # [46]    n * factorial(n-1)
+    OP_RETURN                      # [47]    return result
   ]
   $ constants = [5, 1]
   $ result = exec(code, constants)
