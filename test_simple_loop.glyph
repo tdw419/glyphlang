@@ -1,0 +1,13 @@
+import "./bootstrap/parser"
+
+@ command run {
+  # Test: function that builds an array in a while loop
+  $ src = "! build_arr() -> any {\n  $ out = []\n  $ i = 0\n  while i < 3 {\n    $ out = out + [i]\n    $ i = i + 1\n  }\n  > out\n}"
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" {
+    print("PARSE ERROR: " + pr.error)
+  } else {
+    print("Parsed OK, items: " + toString(length(pr.mod.items)))
+  }
+}
