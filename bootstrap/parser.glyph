@@ -174,7 +174,7 @@ import "./ast"
   if tok.type == token.DOLLAR { > parse_var_decl_item(p) }
   
   # Try parsing as a statement for top-level script-like code
-  if tok.type == token.FOR || tok.type == token.IF || tok.type == token.WHILE || tok.type == token.RETURN {
+  if tok.type == token.FOR || (tok.type == token.IDENT && tok.literal == "if") || (tok.type == token.IDENT && tok.literal == "while") || tok.type == token.GREATER || tok.type == token.RETURN {
     $ res = parse_statement(p)
     > { parser: res.parser, item: res.stmt, error: res.error }
   }

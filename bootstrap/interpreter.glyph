@@ -41,8 +41,20 @@ import "./parser"
 }
 
 ! env_get(env: Environment, name: str) -> EvalResult {
-  if env.bindings[name] != null {
-    > { value: env.bindings[name], error: "" }
+  # Check if name exists in current bindings by iterating keys
+  $ found = false
+  $ val = null
+  $ ks = keys(env.bindings)
+  $ i = 0
+  while i < length(ks) {
+    if ks[i] == name {
+      $ found = true
+      $ val = env.bindings[ks[i]]
+    }
+    $ i = i + 1
+  }
+  if found {
+    > { value: val, error: "" }
   }
   if env.parent != null {
     > env_get(env.parent, name)
@@ -442,6 +454,7 @@ import "./parser"
     }
 
     if item.kind == "function" {
+      env_set(env, item.func_name, null)
       $ fn = {
         kind: "func_def",
         name: item.func_name,
@@ -475,41 +488,87 @@ import "./parser"
 
 # ─── Entry Point ───────────────────────────────────────────────────
 
+! run_test(name: str, src: str, expected: any) -> bool {
+  print("")
+  print("TEST: " + name)
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" {
+    print("  PARSE ERROR: " + pr.error)
+    > false
+  }
+
+  $ env = env_new()
+  $ mr = exec_module(pr.mod, env)
+  if mr.error != "" {
+    print("  EXEC ERROR: " + mr.error)
+    > false
+  }
+
+  # Check "result" binding if expected != null
+  if expected != null {
+    $ rr = env_get(env, "result")
+    if rr.error != "" {
+      print("  ERROR: no 'result' binding: " + rr.error)
+      > false
+    }
+    if rr.value != expected {
+      print("  FAIL: got " + toString(rr.value) + " expected " + toString(expected))
+      > false
+    }
+    print("  PASS: result = " + toString(rr.value))
+    > true
+  }
+  print("  PASS (no result check)")
+  > true
+}
+
 @ command run {
   print("========================================")
   print("  GlyphLang Bootstrap Interpreter v0.11")
   print("========================================")
+
+  $ passed = 0
+  $ failed = 0
+
+  # ── Test 1: const + arithmetic ──
+  $ t1_src = "const X = 42\nconst Y = X + 3\n$ result = Y"
+  if run_test("const + arithmetic", t1_src, 45) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 2: function definition and call ──
+  $ t2_src = "! double(x: int) -> int { > x * 2 }\n$ result = double(21)"
+  if run_test("function call", t2_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 3: while loop (sum 1..5) ──
+  $ t3_src = "! sum_to(n: int) -> int {\n  $ total = 0\n  $ i = 1\n  while i <= n {\n    $ total = total + i\n    $ i = i + 1\n  }\n  > total\n}\n$ result = sum_to(5)"
+  if run_test("while loop (sum 1..5=15)", t3_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 4: if/else branching ──
+  $ t4_src = "! check(x: int) -> int {\n  if x > 5 {\n    > 100\n  } else {\n    > 200\n  }\n}\n$ result = check(10)"
+  if run_test("if/else (true branch)", t4_src, 100) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 5: string concatenation ──
+  $ t5_src = "const A = \"hello\"\nconst B = \" \" + \"world\"\n$ result = A + B"
+  if run_test("string concat", t5_src, "hello world") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 6: recursive function (factorial) ──
+  $ t6_src = "! fact(n: int) -> int {\n  if n <= 1 { > 1 }\n  > n * fact(n - 1)\n}\n$ result = fact(5)"
+  if run_test("recursive factorial(5)=120", t6_src, 120) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 7: closure (higher-order function) ──
+  $ t7_src = "! make_adder(n: int) -> int {\n  > n\n}\n$ result = make_adder(32)"
+  if run_test("function returning value (closure prep)", t7_src, 32) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Summary ──
   print("")
+  print("========================================")
+  print("  PASSED: " + toString(passed) + "  FAILED: " + toString(failed))
+  print("========================================")
 
-  # Self-test: parse and evaluate a simple module
-  $ src = "const X = 42\nconst Y = X + 3"
-  print("Parsing: " + src)
-  $ p = parser.new_parser(src)
-  $ pr = parser.parse(p)
-  if pr.error != "" {
-    print("Parse error: " + pr.error)
-    > { ok: false }
+  if failed == 0 {
+    print("ALL TESTS PASSED")
+    > { ok: true, passed: passed, failed: failed }
   }
-
-  print("Executing...")
-  $ env = env_new()
-  $ mr = exec_module(pr.mod, env)
-
-  if mr.error != "" {
-    print("Error: " + mr.error)
-    > { ok: false }
-  }
-
-  $ x_val = env.bindings["X"]
-  $ y_val = env.bindings["Y"]
-  print("X = " + toString(x_val))
-  print("Y = " + toString(y_val))
-
-  if x_val == 42 && y_val == 45 {
-    print("")
-    print("SELF-TEST PASSED")
-    > { ok: true, X: x_val, Y: y_val }
-  }
-  print("SELF-TEST FAILED")
-  > { ok: false }
+  print("SOME TESTS FAILED")
+  > { ok: false, passed: passed, failed: failed }
 }
