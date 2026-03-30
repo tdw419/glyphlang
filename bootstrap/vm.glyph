@@ -787,7 +787,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 # ─── Tests ───────────────────────────────────────────────────────────
 
 ! test_simple() -> bool {
-  $ code = [OP_PUSH, 0, OP_HALT]
+  $ code = [OP_PUSH, 0, 0, 0, 0, OP_HALT]
   $ constants = [42]
   $ result = exec(code, constants)
   if result == 42 {
@@ -799,7 +799,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 }
 
 ! test_arithmetic() -> bool {
-  $ code = [OP_PUSH, 0, OP_PUSH, 1, OP_ADD, OP_PUSH, 2, OP_MUL, OP_HALT]
+  $ code = [OP_PUSH, 0, 0, 0, 0, OP_PUSH, 1, 0, 0, 0, OP_ADD, OP_PUSH, 2, 0, 0, 0, OP_MUL, OP_HALT]
   $ constants = [5, 3, 2]
   $ result = exec(code, constants)
   if result == 16 {
@@ -811,7 +811,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 }
 
 ! test_comparison() -> bool {
-  $ code = [OP_PUSH, 0, OP_PUSH, 1, OP_LT, OP_HALT]
+  $ code = [OP_PUSH, 0, 0, 0, 0, OP_PUSH, 1, 0, 0, 0, OP_LT, OP_HALT]
   $ constants = [5, 10]
   $ result = exec(code, constants)
   if result == 1 {
@@ -824,14 +824,14 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 
 ! test_loop() -> bool {
   $ code = [
-    OP_PUSH, 0,
-    OP_PUSH, 1,
+    OP_PUSH, 0, 0, 0, 0,
+    OP_PUSH, 1, 0, 0, 0,
     OP_ADD,
-    OP_PUSH, 2,
+    OP_PUSH, 2, 0, 0, 0,
     OP_ADD,
-    OP_PUSH, 3,
+    OP_PUSH, 3, 0, 0, 0,
     OP_ADD,
-    OP_PUSH, 4,
+    OP_PUSH, 4, 0, 0, 0,
     OP_ADD,
     OP_HALT
   ]
@@ -847,13 +847,13 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 
 ! test_conditional() -> bool {
   $ code = [
-    OP_PUSH, 0,
-    OP_PUSH, 1,
+    OP_PUSH, 0, 0, 0, 0,
+    OP_PUSH, 1, 0, 0, 0,
     OP_GT,
     OP_JUMP_IF_FALSE, 14, 0, 0, 0,
-    OP_PUSH, 2,
+    OP_PUSH, 2, 0, 0, 0,
     OP_JUMP, 18, 0, 0, 0,
-    OP_PUSH, 3,
+    OP_PUSH, 3, 0, 0, 0,
     OP_HALT
   ]
   $ constants = [5, 3, 1, 0]
@@ -868,11 +868,11 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 
 ! test_logic() -> bool {
   $ code = [
-    OP_PUSH, 0,
-    OP_PUSH, 1,
+    OP_PUSH, 0, 0, 0, 0,
+    OP_PUSH, 1, 0, 0, 0,
     OP_GT,
-    OP_PUSH, 2,
-    OP_PUSH, 3,
+    OP_PUSH, 2, 0, 0, 0,
+    OP_PUSH, 3, 0, 0, 0,
     OP_GT,
     OP_AND,
     OP_HALT
@@ -889,11 +889,11 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 
 ! test_or() -> bool {
   $ code = [
-    OP_PUSH, 0,
-    OP_PUSH, 1,
+    OP_PUSH, 0, 0, 0, 0,
+    OP_PUSH, 1, 0, 0, 0,
     OP_LT,
-    OP_PUSH, 2,
-    OP_PUSH, 3,
+    OP_PUSH, 2, 0, 0, 0,
+    OP_PUSH, 3, 0, 0, 0,
     OP_GT,
     OP_OR,
     OP_HALT
@@ -910,7 +910,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 
 ! test_load_var() -> bool {
   $ code = [
-    OP_LOAD_VAR, 0,
+    OP_LOAD_VAR, 0, 0, 0, 0,
     OP_HALT
   ]
   $ constants = [42]
@@ -942,7 +942,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
   $ code = [
     OP_CALL, 6, 0, 0, 0,
     OP_HALT,
-    OP_PUSH, 0,
+    OP_PUSH, 0, 0, 0, 0,
     OP_RETURN
   ]
   $ constants = [42]
@@ -957,7 +957,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 
 ! test_recursive_factorial() -> bool {
   $ code = [
-    OP_PUSH, 0,           # 0-1: PUSH 5
+    OP_PUSH, 0, 0, 0, 0,           # 0-1: PUSH 5
     OP_CALL, 9, 0, 0, 0,  # 2-6: CALL factorial at offset 9
     OP_HALT,              # 7: HALT
     OP_POP,               # 8: (padding)
@@ -966,17 +966,17 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
     # Stack: [arg, old_fp, return_addr]
     # FP points to old_fp, so arg is at FP-1
     OP_LOAD_FP, -1,       # 9: Load n from FP-1
-    OP_PUSH, 1,           # 10: PUSH 1
+    OP_PUSH, 1, 0, 0, 0,           # 10: PUSH 1
     OP_LE,                # 11: n <= 1?
     OP_JUMP_IF_FALSE, 22, 0, 0, 0,  # 12-16: If false, jump to recursive case
     
     # Base case (offset 19):
-    OP_PUSH, 1,           # 19: Return 1
+    OP_PUSH, 1, 0, 0, 0,           # 19: Return 1
     OP_RETURN,            # 21: RETURN
     
     # Recursive case (offset 22):
     OP_LOAD_FP, -1,       # 22: Load n from FP-1
-    OP_PUSH, 1,           # 23: PUSH 1
+    OP_PUSH, 1, 0, 0, 0,           # 23: PUSH 1
     OP_SUB,               # 24: n - 1
     OP_CALL, 9, 0, 0, 0,  # 25-29: CALL factorial(n-1)
     OP_LOAD_FP, -1,       # 30: Load n again from FP-1
@@ -1000,10 +1000,10 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 ! test_build_array() -> bool {
   # Build array [10, 20, 30], verify ref is -2000000
   $ code = [
-    OP_PUSH, 0,         # push 10
-    OP_PUSH, 1,         # push 20
-    OP_PUSH, 2,         # push 30
-    OP_BUILD_ARRAY, 3,  # build array of 3 elements
+    OP_PUSH, 0, 0, 0, 0,         # push 10
+    OP_PUSH, 1, 0, 0, 0,         # push 20
+    OP_PUSH, 2, 0, 0, 0,         # push 30
+    OP_BUILD_ARRAY, 3, 0, 0, 0,  # build array of 3 elements
     OP_HALT
   ]
   $ constants = [10, 20, 30]
@@ -1021,11 +1021,11 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
   # Build object {42: 100, 43: 200}, verify ref is -2000000
   # Stack order: push key, push val for each field (last field pushed first popped)
   $ code = [
-    OP_PUSH, 0,          # key1 = 42
-    OP_PUSH, 1,          # val1 = 100
-    OP_PUSH, 2,          # key2 = 43
-    OP_PUSH, 3,          # val2 = 200
-    OP_BUILD_OBJECT, 2,  # 2 fields
+    OP_PUSH, 0, 0, 0, 0,          # key1 = 42
+    OP_PUSH, 1, 0, 0, 0,          # val1 = 100
+    OP_PUSH, 2, 0, 0, 0,          # key2 = 43
+    OP_PUSH, 3, 0, 0, 0,          # val2 = 200
+    OP_BUILD_OBJECT, 2, 0, 0, 0,  # 2 fields
     OP_HALT
   ]
   $ constants = [42, 100, 43, 200]
@@ -1042,10 +1042,10 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 ! test_get_field() -> bool {
   # Build object {42: 100}, then get field 42 -> should return 100
   $ code = [
-    OP_PUSH, 0,          # key = 42
-    OP_PUSH, 1,          # val = 100
-    OP_BUILD_OBJECT, 1,  # 1 field -> ref on stack
-    OP_PUSH, 0,          # push key to look up (42)
+    OP_PUSH, 0, 0, 0, 0,          # key = 42
+    OP_PUSH, 1, 0, 0, 0,          # val = 100
+    OP_BUILD_OBJECT, 1, 0, 0, 0,  # 1 field -> ref on stack
+    OP_PUSH, 0, 0, 0, 0,          # push key to look up (42)
     OP_GET_FIELD,        # look up key 42 in object -> 100
     OP_HALT
   ]
@@ -1063,15 +1063,15 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 ! test_set_field() -> bool {
   # Build object {42: 100}, set field 42 to 200, get field 42 -> 200
   $ code = [
-    OP_PUSH, 0,          # key = 42
-    OP_PUSH, 1,          # val = 100
-    OP_BUILD_OBJECT, 1,  # 1 field -> ref on stack
+    OP_PUSH, 0, 0, 0, 0,          # key = 42
+    OP_PUSH, 1, 0, 0, 0,          # val = 100
+    OP_BUILD_OBJECT, 1, 0, 0, 0,  # 1 field -> ref on stack
     # SET_FIELD: stack needs [obj, key, value]
-    OP_PUSH, 0,          # push key (42)
-    OP_PUSH, 2,          # push new value (200)
+    OP_PUSH, 0, 0, 0, 0,          # push key (42)
+    OP_PUSH, 2, 0, 0, 0,          # push new value (200)
     OP_SET_FIELD,        # pops val, key, obj; pushes obj
     # GET_FIELD to verify
-    OP_PUSH, 0,          # push key (42)
+    OP_PUSH, 0, 0, 0, 0,          # push key (42)
     OP_GET_FIELD,        # look up -> 200
     OP_HALT
   ]
@@ -1088,16 +1088,17 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 
 ! test_def_func() -> bool {
   # Define a function (skip body), then push 42 and halt
-  # Format: OP_DEF_FUNC, name_idx(1), param_count(1), body_length(1), param_names..., body...
+  # Format: OP_DEF_FUNC, name_idx(4), param_count(4), body_length(4), param_names(4*count), body...
   $ code = [
-    OP_DEF_FUNC, 0, 1, 3,  # name_idx=0, params=1, body_len=3
-    # param name idx (1 byte per param):
-    0,                       # param 0 name idx
-    # body (3 bytes):
-    OP_PUSH, 0,
-    OP_RETURN,
+    OP_DEF_FUNC, 0, 0, 0, 0,  # name_idx = 0 (4 bytes)
+    1, 0, 0, 0,              # param_count = 1 (4 bytes)
+    6, 0, 0, 0,              # body_length = 6 (4 bytes)
+    0, 0, 0, 0,              # param 0 name idx (4 bytes)
+    # body (6 bytes):
+    OP_PUSH, 0, 0, 0, 0,    # push constants[0] = 5 (5 bytes)
+    OP_RETURN,              # return (1 byte)
     # After function def, execution continues here:
-    OP_PUSH, 1,              # push 42
+    OP_PUSH, 1, 0, 0, 0,   # push constants[1] = 42 (5 bytes)
     OP_HALT
   ]
   $ constants = [5, 42]
@@ -1116,11 +1117,11 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 ! test_get_index() -> bool {
   # Build array [10, 20, 30], get index 1 -> should return 20
   $ code = [
-    OP_PUSH, 0,         # push 10
-    OP_PUSH, 1,         # push 20
-    OP_PUSH, 2,         # push 30
-    OP_BUILD_ARRAY, 3,  # build array [10, 20, 30]
-    OP_PUSH, 3,         # push index 1
+    OP_PUSH, 0, 0, 0, 0,         # push 10
+    OP_PUSH, 1, 0, 0, 0,         # push 20
+    OP_PUSH, 2, 0, 0, 0,         # push 30
+    OP_BUILD_ARRAY, 3, 0, 0, 0,  # build array [10, 20, 30]
+    OP_PUSH, 3, 0, 0, 0,         # push index 1
     OP_GET_INDEX,       # get arr[1] = 20
     OP_HALT
   ]
@@ -1138,16 +1139,16 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 ! test_set_index() -> bool {
   # Build array [10, 20, 30], set index 1 to 99, get index 1 -> 99
   $ code = [
-    OP_PUSH, 0,         # push 10
-    OP_PUSH, 1,         # push 20
-    OP_PUSH, 2,         # push 30
-    OP_BUILD_ARRAY, 3,  # build array [10, 20, 30]
+    OP_PUSH, 0, 0, 0, 0,         # push 10
+    OP_PUSH, 1, 0, 0, 0,         # push 20
+    OP_PUSH, 2, 0, 0, 0,         # push 30
+    OP_BUILD_ARRAY, 3, 0, 0, 0,  # build array [10, 20, 30]
     # SET_INDEX: stack needs [arr, index, value]
-    OP_PUSH, 3,         # push index 1
-    OP_PUSH, 4,         # push value 99
+    OP_PUSH, 3, 0, 0, 0,         # push index 1
+    OP_PUSH, 4, 0, 0, 0,         # push value 99
     OP_SET_INDEX,       # arr[1] = 99
     # GET_INDEX to verify
-    OP_PUSH, 3,         # push index 1
+    OP_PUSH, 3, 0, 0, 0,         # push index 1
     OP_GET_INDEX,       # get arr[1] = 99
     OP_HALT
   ]
