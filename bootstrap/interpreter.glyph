@@ -203,6 +203,20 @@ import "./parser"
     > { value: args[0] + [args[1]], error: "" }
   }
 
+  if name == "pop" {
+    if length(args) == 0 { > { value: null, error: "pop: empty array" } }
+    $ arr = args[0]
+    if length(arr) == 0 { > { value: null, error: "pop: empty array" } }
+    $ last = arr[length(arr) - 1]
+    $ out = []
+    $ pi = 0
+    while pi < length(arr) - 1 {
+      out = out + [arr[pi]]
+      pi = pi + 1
+    }
+    > { value: { elem: last, rest: out }, error: "" }
+  }
+
   if name == "charAt" {
     if length(args) < 2 { > { value: "", error: "" } }
     $ s = toString(args[0])
@@ -363,6 +377,115 @@ import "./parser"
     > { value: out, error: "" }
   }
 
+  if name == "map" {
+    if length(args) < 2 { > { value: [], error: "" } }
+    $ arr = args[0]
+    $ fn = args[1]
+    if typeOf(fn) != "object" || fn.kind != "func_def" {
+      > { value: null, error: "map: second arg must be a function" }
+    }
+    $ out = []
+    $ mi = 0
+    while mi < length(arr) {
+      $ fn_env = env_new_child(fn.closure)
+      $ pi = 0
+      while pi < length(fn.params) {
+        $ pname = fn.params[pi].name
+        $ pval = null
+        if pi == 0 { pval = arr[mi] }
+        if pi == 1 { pval = mi }
+        env_set(fn_env, pname, pval)
+        pi = pi + 1
+      }
+      $ bi = 0
+      while bi < length(fn.body) {
+        $ sr = exec_stmt(fn.body[bi], fn_env)
+        if sr.error != "" { > { value: null, error: "map: " + sr.error } }
+        if sr.signal == "return" {
+          out = out + [sr.value]
+          break
+        }
+        bi = bi + 1
+      }
+      mi = mi + 1
+    }
+    > { value: out, error: "" }
+  }
+
+  if name == "filter" {
+    if length(args) < 2 { > { value: [], error: "" } }
+    $ arr = args[0]
+    $ fn = args[1]
+    if typeOf(fn) != "object" || fn.kind != "func_def" {
+      > { value: null, error: "filter: second arg must be a function" }
+    }
+    $ out = []
+    $ fi = 0
+    while fi < length(arr) {
+      $ fn_env = env_new_child(fn.closure)
+      $ pi = 0
+      while pi < length(fn.params) {
+        $ pname = fn.params[pi].name
+        $ pval = null
+        if pi == 0 { pval = arr[fi] }
+        if pi == 1 { pval = fi }
+        env_set(fn_env, pname, pval)
+        pi = pi + 1
+      }
+      $ bi = 0
+      $ included = false
+      while bi < length(fn.body) {
+        $ sr = exec_stmt(fn.body[bi], fn_env)
+        if sr.error != "" { > { value: null, error: "filter: " + sr.error } }
+        if sr.signal == "return" {
+          if is_truthy(sr.value) {
+            out = out + [arr[fi]]
+          }
+          break
+        }
+        bi = bi + 1
+      }
+      fi = fi + 1
+    }
+    > { value: out, error: "" }
+  }
+
+  if name == "reduce" {
+    if length(args) < 3 { > { value: args[2], error: "" } }
+    $ arr = args[0]
+    $ fn = args[1]
+    $ acc = args[2]
+    if typeOf(fn) != "object" || fn.kind != "func_def" {
+      > { value: null, error: "reduce: second arg must be a function" }
+    }
+    $ ri = 0
+    while ri < length(arr) {
+      $ fn_env = env_new_child(fn.closure)
+      $ pi = 0
+      while pi < length(fn.params) {
+        $ pname = fn.params[pi].name
+        $ pval = null
+        if pi == 0 { pval = acc }
+        if pi == 1 { pval = arr[ri] }
+        if pi == 2 { pval = ri }
+        env_set(fn_env, pname, pval)
+        pi = pi + 1
+      }
+      $ bi = 0
+      while bi < length(fn.body) {
+        $ sr = exec_stmt(fn.body[bi], fn_env)
+        if sr.error != "" { > { value: null, error: "reduce: " + sr.error } }
+        if sr.signal == "return" {
+          acc = sr.value
+          break
+        }
+        bi = bi + 1
+      }
+      ri = ri + 1
+    }
+    > { value: acc, error: "" }
+  }
+
   > { value: null, error: "not_builtin:" + name }
 }
 
@@ -401,7 +524,29 @@ import "./parser"
       > { value: to_int(l) + to_int(r), error: "" }
     }
     if op == "-" { > { value: to_int(l) - to_int(r), error: "" } }
-    if op == "*" { > { value: to_int(l) * to_int(r), error: "" } }
+    if op == "*" {
+      # String * int: repeat string
+      if typeOf(l) == "str" && typeOf(r) == "int" {
+        $ out = ""
+        $ ri = 0
+        while ri < to_int(r) {
+          $ out = out + toString(l)
+          $ ri = ri + 1
+        }
+        > { value: out, error: "" }
+      }
+      # int * str: repeat string
+      if typeOf(l) == "int" && typeOf(r) == "str" {
+        $ out = ""
+        $ ri = 0
+        while ri < to_int(l) {
+          $ out = out + toString(r)
+          $ ri = ri + 1
+        }
+        > { value: out, error: "" }
+      }
+      > { value: to_int(l) * to_int(r), error: "" }
+    }
     if op == "/" {
       if to_int(r) == 0 { > { value: null, error: "division by zero" } }
       > { value: to_int(l) / to_int(r), error: "" }
@@ -470,6 +615,51 @@ import "./parser"
       $ bi = bi + 1
     }
     > { value: null, error: "" }
+  }
+
+  # Method call: obj.method(args) — evaluates callee, then calls the result
+  if expr.kind == "method_call" {
+    $ callee_r = eval_expr(expr.object, env)
+    if callee_r.error != "" { > callee_r }
+    $ fn = callee_r.value
+
+    $ arg_vals = []
+    $ i = 0
+    while i < length(expr.args) {
+      $ ar = eval_expr(expr.args[i], env)
+      if ar.error != "" { > ar }
+      $ arg_vals = arg_vals + [ar.value]
+      $ i = i + 1
+    }
+
+    # Check if callee result is a builtin name
+    if typeOf(fn) == "str" {
+      $ br = call_builtin(fn, arg_vals)
+      if br.error == "" { > br }
+    }
+
+    # Check if callee is a func_def (from object field or index)
+    if typeOf(fn) == "object" && fn.kind == "func_def" {
+      $ fn_env = env_new_child(fn.closure)
+      $ pi = 0
+      while pi < length(fn.params) {
+        $ pname = fn.params[pi].name
+        $ pval = null
+        if pi < length(arg_vals) { pval = arg_vals[pi] }
+        env_set(fn_env, pname, pval)
+        $ pi = pi + 1
+      }
+      $ bi = 0
+      while bi < length(fn.body) {
+        $ sr = exec_stmt(fn.body[bi], fn_env)
+        if sr.error != "" { > { value: null, error: sr.error } }
+        if sr.signal == "return" { > { value: sr.value, error: "" } }
+        $ bi = bi + 1
+      }
+      > { value: null, error: "" }
+    }
+
+    > { value: null, error: "method call on non-function: " + typeOf(fn) }
   }
 
   if expr.kind == "field" {
@@ -810,7 +1000,7 @@ import "./parser"
 
 @ command run {
   print("========================================")
-  print("  GlyphLang Bootstrap Interpreter v0.18")
+  print("  GlyphLang Bootstrap Interpreter v0.19")
   print("========================================")
 
   $ passed = 0
@@ -1188,6 +1378,54 @@ import "./parser"
   # ── Test 76: object built incrementally via for_in ──
   $ t77_src = "! build_obj(keys: any, vals: any) -> any {\n  $ obj = {}\n  $ i = 0\n  while i < length(keys) {\n    if keys[i] == \"a\" { $ obj.a = vals[i] }\n    if keys[i] == \"b\" { $ obj.b = vals[i] }\n    $ i = i + 1\n  }\n  > obj\n}\n$ o = build_obj([\"a\", \"b\"], [10, 20])\n$ result = o.a + o.b"
   if run_test("object built incrementally via loop", t77_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 77: string repeat with * ──
+  $ t_strmul_src = "$ result = \"ha\" * 3"
+  if run_test("string repeat (ha*3=hahaha)", t_strmul_src, "hahaha") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 78: string repeat int * str ──
+  $ t_strmul2_src = "$ result = 2 * \"ab\""
+  if run_test("string repeat (2*ab=abab)", t_strmul2_src, "abab") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 79: pop builtin ──
+  $ t_pop_src = "$ r = pop([10, 20, 30])\n$ result = r.elem + length(r.rest)"
+  if run_test("pop builtin (30 + 2=32)", t_pop_src, 32) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 80: map builtin ──
+  $ t_map_src = "! double(x: int) -> int { > x * 2 }\n$ arr = map([1, 2, 3, 4], double)\n$ result = arr[0] + arr[1] + arr[2] + arr[3]"
+  if run_test("map builtin (2+4+6+8=20)", t_map_src, 20) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 81: filter builtin ──
+  $ t_filter_src = "! is_even(x: int) -> bool { > x % 2 == 0 }\n$ arr = filter([1, 2, 3, 4, 5, 6], is_even)\n$ result = arr[0] + arr[1] + arr[2]"
+  if run_test("filter builtin (2+4+6=12)", t_filter_src, 12) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 82: reduce builtin ──
+  $ t_reduce_src = "! sum(acc: int, cur: int) -> int { > acc + cur }\n$ result = reduce([1, 2, 3, 4, 5], sum, 0)"
+  if run_test("reduce builtin (sum 1..5=15)", t_reduce_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 83: method call on object field (function stored as field) ──
+  $ t83_src = "! double(x: int) -> int { > x * 2 }\n$ obj = { fn: double }\n$ result = obj.fn(21)"
+  if run_test("method call on object field", t83_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 84: method call with closure from object ──
+  $ t84_src = "! make_adder(n: int) -> any {\n  ! add(x: int) -> int { > x + n }\n  > { add: add }\n}\n$ obj = make_adder(10)\n$ result = obj.add(32)"
+  if run_test("method call with closure from object", t84_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 85: method call on object returned from function ──
+  $ t85_src = "! make_counter(start: int) -> any {\n  $ count = start\n  ! inc() -> int {\n    $ count = count + 1\n    > count\n  }\n  > { inc: inc }\n}\n$ c = make_counter(0)\n$ a = c.inc()\n$ b = c.inc()\n$ result = a + b"
+  if run_test("method call on returned object (counter)", t85_src, 3) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 86: method call with multiple arguments ──
+  $ t86_src = "! add3(a: int, b: int, c: int) -> int { > a + b + c }\n$ obj = { compute: add3 }\n$ result = obj.compute(10, 20, 12)"
+  if run_test("method call with multiple arguments", t86_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 87: method call on nested object field ──
+  $ t87_src = "! mul(a: int, b: int) -> int { > a * b }\n$ obj = { inner: { fn: mul } }\n$ result = obj.inner.fn(6, 7)"
+  if run_test("method call on nested object field", t87_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 88: object with multiple methods ──
+  $ t88_src = "! add_op(a: int, b: int) -> int { > a + b }\n! mul_op(a: int, b: int) -> int { > a * b }\n$ calc = { add: add_op, mul: mul_op }\n$ r1 = calc.add(20, 22)\n$ r2 = calc.mul(6, 7)\n$ result = r1 + r2"
+  if run_test("object with multiple methods", t88_src, 84) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")

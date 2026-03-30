@@ -881,6 +881,26 @@ import "./ast"
         if rp.error != "" { > { parser: p, expr: _expr(), error: rp.error } }
         p = rp.parser
         expr = _call_expr(fn_name, args)
+      } else if expr.kind == "field" || expr.kind == "index" {
+        # Method call: obj.method(args) or arr[i](args)
+        $ callee = expr
+        $ adv = advance(p)
+        p = adv.parser
+        $ args = []
+        while cur_type(p) != token.RPAREN && cur_type(p) != token.EOF {
+          $ ar = parse_expression(p)
+          if ar.error != "" { > { parser: p, expr: _expr(), error: ar.error } }
+          p = ar.parser
+          args = args + [ar.expr]
+          if cur_type(p) == token.COMMA {
+            $ adv2 = advance(p)
+            p = adv2.parser
+          }
+        }
+        $ rp = expect(p, token.RPAREN)
+        if rp.error != "" { > { parser: p, expr: _expr(), error: rp.error } }
+        p = rp.parser
+        expr = _method_call_expr(callee, args)
       } else {
         _done = true
       }
@@ -1159,6 +1179,14 @@ import "./ast"
   $ e.kind = "field"
   $ e.object = obj
   $ e.field_name = field
+  > e
+}
+
+! _method_call_expr(callee: ast.Expr, args: [ast.Expr]) -> ast.Expr {
+  $ e = _expr()
+  $ e.kind = "method_call"
+  $ e.object = callee
+  $ e.args = args
   > e
 }
 
