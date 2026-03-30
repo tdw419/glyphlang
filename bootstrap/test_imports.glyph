@@ -1,0 +1,13 @@
+# test_imports.glyph
+# Test module imports
+
+import "./test_module"
+
+@ command run {
+    print("=== Module Import Test ===")
+    $ result = add(3, 5)
+    print("add(3, 5) = " + toString(result))
+    $ result2 = multiply(4, 7)
+    print("multiply(4, 7) = " + toString(result2))
+    > {ok: true}
+}
