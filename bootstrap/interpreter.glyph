@@ -1,5 +1,5 @@
 # bootstrap/interpreter.glyph
-# v0.13.0 Tree-walking interpreter for GlyphLang
+# v0.14.0 Tree-walking interpreter for GlyphLang
 # Evaluates AST nodes directly — no bytecode, no int-only limitation.
 # This is the path to self-hosting: the Go `glyph exec` uses the same approach.
 
@@ -449,19 +449,13 @@ import "./parser"
   if stmt.kind == "field_assign" {
     $ or = eval_expr(stmt.obj_expr, env)
     if or.error != "" {
-      print("  FA ERR: obj eval failed: " + or.error)
       > { value: null, error: or.error, signal: "" }
     }
     $ vr = eval_expr(stmt.value, env)
     if vr.error != "" {
-      print("  FA ERR: val eval failed: " + vr.error)
       > { value: null, error: vr.error, signal: "" }
     }
-    print("  FA: setting " + stmt.field + " = " + toString(vr.value) + " on type=" + typeOf(or.value))
-    $ before = or.value[stmt.field]
     $ or.value[stmt.field] = vr.value
-    $ after = or.value[stmt.field]
-    print("  FA: before=" + toString(before) + " after=" + toString(after))
     > null_result
   }
 
@@ -645,7 +639,7 @@ import "./parser"
 
 @ command run {
   print("========================================")
-  print("  GlyphLang Bootstrap Interpreter v0.13")
+  print("  GlyphLang Bootstrap Interpreter v0.14")
   print("========================================")
 
   $ passed = 0
@@ -856,6 +850,14 @@ import "./parser"
   # ── Test 34: chained comparisons ──
   $ t34_src = "! in_range(x: int, lo: int, hi: int) -> int {\n  if x >= lo {\n    if x <= hi {\n      > 1\n    }\n  }\n  > 0\n}\n$ result = in_range(5, 1, 10)"
   if run_test("chained comparison (5 in 1..10)", t34_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 35: object literal with computed expression fields ──
+  $ t35_src = "$ a = 10\n$ b = 20\n$ obj = { sum: a + b, diff: b - a }\n$ result = obj.sum * obj.diff"
+  if run_test("object literal with expression fields (30*10=300)", t35_src, 300) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 36: object field mutation across function calls ──
+  $ t36_src = "! bump(p: any) -> int {\n  $ v = p.val\n  $ p.val = v + 1\n  > p.val\n}\n$ obj = { val: 10 }\n$ r1 = bump(obj)\n$ result = r1 + obj.val"
+  if run_test("object field mutation across function calls", t36_src, 22) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
