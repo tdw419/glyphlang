@@ -1,5 +1,5 @@
 # bootstrap/interpreter.glyph
-# v0.15.0 Tree-walking interpreter for GlyphLang
+# v0.16.0 Tree-walking interpreter for GlyphLang
 # Evaluates AST nodes directly — no bytecode, no int-only limitation.
 # This is the path to self-hosting: the Go `glyph exec` uses the same approach.
 
@@ -854,7 +854,11 @@ import "./parser"
     if ir.error != "" { > { value: null, error: ir.error, signal: "" } }
     $ vr = eval_expr(stmt.value, env)
     if vr.error != "" { > { value: null, error: vr.error, signal: "" } }
-    $ obj_val[to_int(ir.value)] = vr.value
+    if typeOf(ir.value) == "str" {
+      $ obj_val[ir.value] = vr.value
+    } else {
+      $ obj_val[to_int(ir.value)] = vr.value
+    }
     > null_result
   }
 
@@ -1468,6 +1472,26 @@ import "./parser"
   # ── Test 94: array concat + iteration ──
   $ t94_src = "$ a = [10, 20]\n$ b = [30, 40]\n$ c = a + b\n$ total = 0\nfor v in c { $ total = total + v }\n$ result = total"
   if run_test("array concat + iteration (sum=100)", t94_src, 100) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 95: deeply nested object field access (3 levels) ──
+  $ t95_src = "$ obj = { a: { b: { c: 42 } } }\n$ result = obj.a.b.c"
+  if run_test("deeply nested object (3 levels)", t95_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 96: object with null field value ──
+  $ t96_src = "$ obj = { x: null, y: 10 }\n$ result = obj.y"
+  if run_test("object with null field", t96_src, 10) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 97: chained field access on function return ──
+  $ t97_src = "! make() -> any { > { inner: { val: 99 } } }\n$ result = make().inner.val"
+  if run_test("chained field on function return", t97_src, 99) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 98: object field mutation via bracket notation ──
+  $ t98_src = "$ obj = { x: 1, y: 2 }\n$ obj[\"x\"] = 50\n$ result = obj.x + obj.y"
+  if run_test("bracket field mutation (50+2=52)", t98_src, 52) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 99: object as accumulator in recursive function ──
+  $ t99_src = "! sum_obj(acc: any, n: int) -> int {\n  if n == 0 { > acc.total }\n  $ acc.total = acc.total + n\n  > sum_obj(acc, n - 1)\n}\n$ obj = { total: 0 }\n$ result = sum_obj(obj, 5)"
+  if run_test("object accumulator in recursion (sum 1..5=15)", t99_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
