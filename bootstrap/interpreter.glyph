@@ -1517,6 +1517,18 @@ import "./parser"
   $ t105_src = "! make_arr() -> any { > [100, 200, 300] }\n$ result = make_arr()[1]"
   if run_test("function returning array + index (200)", t105_src, 200) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
+  # ── Test 106: object field drives while loop ──
+  $ t106_src = "$ obj = { count: 3 }\n$ total = 0\nwhile obj.count > 0 {\n  $ total = total + obj.count\n  $ obj.count = obj.count - 1\n}\n$ result = total"
+  if run_test("object field drives while loop (3+2+1=6)", t106_src, 6) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 107: object boolean field in if condition ──
+  $ t107_src = "$ obj = { active: true, value: 42 }\n$ result = 0\nif obj.active { $ result = obj.value }"
+  if run_test("object boolean field in if condition (42)", t107_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 108: object field computed from other fields ──
+  $ t108_src = "$ obj = { x: 10, y: 20 }\n$ obj.sum = obj.x + obj.y\n$ result = obj.sum"
+  if run_test("object field computed from other fields (30)", t108_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   # ── Summary ──
   print("")
   print("========================================")
