@@ -133,21 +133,21 @@ import "./vm"
 # ─── Demo Programs ──────────────────────────────────────────────────
 
 # calc(2, 3, 1) = 2*3+1 = 7
-# Bytecode: push args, call func, halt; func: load args, mul, add, return
+# 4-byte LE operands throughout
 ! demo_multiarg() -> any {
   $ code = [
-    1, 0,               # 0-1:   PUSH const[0] = 2
-    1, 1,               # 2-3:   PUSH const[1] = 3
-    1, 2,               # 4-5:   PUSH const[2] = 1
-    98, 12, 0, 0, 0,    # 6-10:  CALL target=12 (OP_CALL=98)
-    255,                 # 11:    HALT
-    # -- calc(a, b, c) at offset 12 --
-    66, -3,              # 12-13: LOAD_FP -3 (arg a=2)
-    66, -2,              # 14-15: LOAD_FP -2 (arg b=3)
-    18,                  # 16:    MUL → 6
-    66, -1,              # 17-18: LOAD_FP -1 (arg c=1)
-    16,                  # 19:    ADD → 7
-    97                   # 20:    RETURN (OP_RETURN=97)
+    OP_PUSH, 0,0,0,0,       # 0-4:   PUSH const[0] = 2
+    OP_PUSH, 1,0,0,0,       # 5-9:   PUSH const[1] = 3
+    OP_PUSH, 2,0,0,0,       # 10-14: PUSH const[2] = 1
+    OP_CALL, 21,0,0,0,      # 15-19: CALL target=21
+    OP_HALT,                 # 20:    HALT
+    # -- calc(a, b, c) at offset 21 --
+    OP_LOAD_FP, -3,          # 21-22: LOAD_FP -3 (arg a=2)
+    OP_LOAD_FP, -2,          # 23-24: LOAD_FP -2 (arg b=3)
+    OP_MUL,                  # 25:    MUL → 6
+    OP_LOAD_FP, -1,          # 26-27: LOAD_FP -1 (arg c=1)
+    OP_ADD,                  # 28:    ADD → 7
+    OP_RETURN                # 29:    RETURN
   ]
   $ constants = [2, 3, 1]
   > { code: code, constants: constants, name: "calc(2,3,1) = 2*3+1" }
@@ -156,10 +156,10 @@ import "./vm"
 # Simple: 10 + 20 = 30
 ! demo_simple() -> any {
   $ code = [
-    1, 0,    # PUSH 10
-    1, 1,    # PUSH 20
-    16,      # ADD
-    255      # HALT
+    OP_PUSH, 0,0,0,0,    # PUSH 10
+    OP_PUSH, 1,0,0,0,    # PUSH 20
+    OP_ADD,
+    OP_HALT
   ]
   $ constants = [10, 20]
   > { code: code, constants: constants, name: "10 + 20" }
