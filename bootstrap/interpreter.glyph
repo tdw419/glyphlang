@@ -1427,6 +1427,14 @@ import "./parser"
   $ t88_src = "! add_op(a: int, b: int) -> int { > a + b }\n! mul_op(a: int, b: int) -> int { > a * b }\n$ calc = { add: add_op, mul: mul_op }\n$ r1 = calc.add(20, 22)\n$ r2 = calc.mul(6, 7)\n$ result = r1 + r2"
   if run_test("object with multiple methods", t88_src, 84) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
+  # ── Test 89: empty object + dynamic field addition ──
+  $ t89_src = "$ obj = {}\n$ obj.x = 5\n$ obj.y = 10\n$ result = obj.x + obj.y"
+  if run_test("empty object + dynamic fields", t89_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 90: iterate object keys and sum values dynamically ──
+  $ t90_src = "$ obj = { a: 10, b: 20, c: 30 }\n$ ks = keys(obj)\n$ total = 0\nfor k in ks {\n  $ total = total + obj[k]\n}\n$ result = total"
+  if run_test("iterate keys + dynamic field access", t90_src, 60) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   # ── Summary ──
   print("")
   print("========================================")
