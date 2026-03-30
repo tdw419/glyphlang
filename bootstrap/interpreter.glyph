@@ -557,6 +557,43 @@ import "./parser"
     > { value: arr, error: "" }
   }
 
+  # format("Hello {0}, you are {1} years old", name, age)
+  # Replaces {N} placeholders with toString(args[N+1])
+  if name == "format" {
+    if length(args) < 1 { > { value: "", error: "" } }
+    $ tmpl = toString(args[0])
+    $ result = ""
+    $ i = 0
+    $ len = length(tmpl)
+    while i < len {
+      $ ch = charAt(tmpl, i)
+      if ch == "{" {
+        # find closing }
+        $ j = i + 1
+        $ num_str = ""
+        while j < len {
+          $ c2 = charAt(tmpl, j)
+          if c2 == "}" {
+            # substitute
+            $ idx = toInt(num_str)
+            if idx + 1 < length(args) {
+              result = result + toString(args[idx + 1])
+            }
+            $ i = j
+            $ j = len
+          } else {
+            num_str = num_str + c2
+          }
+          $ j = j + 1
+        }
+      } else {
+        result = result + ch
+      }
+      $ i = i + 1
+    }
+    > { value: result, error: "" }
+  }
+
   > { value: null, error: "not_builtin:" + name }
 }
 
@@ -2127,6 +2164,23 @@ import "./parser"
   # ── Test 200: negative index in loop — sum from end ──
   $ t200_src = "$ arr = [10, 20, 30]\n$ result = arr[-1] + arr[-2] + arr[-3]"
   if run_test("negative index sum all from end (60)", t200_src, 60) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Tests 201-205: format builtin ──
+
+  $ t201_src = "$ s = format(\"Hello {0}!\", \"world\")\n$ result = s"
+  if run_test("format builtin — basic substitution (Hello world!)", t201_src, "Hello world!") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t202_src = "$ s = format(\"{0} + {1} = {2}\", 10, 32, 42)\n$ result = s"
+  if run_test("format builtin — multi-placeholder (10 + 32 = 42)", t202_src, "10 + 32 = 42") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t203_src = "$ name = \"Glyph\"\n$ s = format(\"Language: {0}, Version: {1}\", name, 22)\n$ result = s"
+  if run_test("format builtin — mixed types (Language: Glyph, Version: 22)", t203_src, "Language: Glyph, Version: 22") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t204_src = "$ s = format(\"repeated {0} {1} {0}\", \"hello\", \"and\")\n$ result = s"
+  if run_test("format builtin — repeated placeholders (repeated hello and hello)", t204_src, "repeated hello and hello") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  $ t205_src = "$ s = format(\"no placeholders here\")\n$ result = s"
+  if run_test("format builtin — no placeholders (no placeholders here)", t205_src, "no placeholders here") { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
