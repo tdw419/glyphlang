@@ -1,5 +1,5 @@
 # bootstrap/interpreter.glyph
-# v0.17.0 Tree-walking interpreter for GlyphLang
+# v0.22.0 Tree-walking interpreter for GlyphLang
 # Evaluates AST nodes directly — no bytecode, no int-only limitation.
 # This is the path to self-hosting: the Go `glyph exec` uses the same approach.
 
@@ -486,6 +486,77 @@ import "./parser"
     > { value: acc, error: "" }
   }
 
+  if name == "insert" {
+    if length(args) < 3 { > { value: args[0], error: "" } }
+    $ arr = args[0]
+    $ idx = toInt(args[1])
+    $ val = args[2]
+    $ out = []
+    $ ii = 0
+    while ii < length(arr) {
+      if ii == idx { $ out = out + [val] }
+      $ out = out + [arr[ii]]
+      $ ii = ii + 1
+    }
+    if idx >= length(arr) { $ out = out + [val] }
+    > { value: out, error: "" }
+  }
+
+  if name == "remove_at" {
+    if length(args) < 2 { > { value: args[0], error: "" } }
+    $ arr = args[0]
+    $ idx = toInt(args[1])
+    $ out = []
+    $ ii = 0
+    while ii < length(arr) {
+      if ii != idx { $ out = out + [arr[ii]] }
+      $ ii = ii + 1
+    }
+    > { value: out, error: "" }
+  }
+
+  if name == "flatten" {
+    if length(args) == 0 { > { value: [], error: "" } }
+    $ arr = args[0]
+    $ out = []
+    $ fi = 0
+    while fi < length(arr) {
+      if typeOf(arr[fi]) == "array" {
+        $ inner = arr[fi]
+        $ ij = 0
+        while ij < length(inner) {
+          $ out = out + [inner[ij]]
+          $ ij = ij + 1
+        }
+      } else {
+        $ out = out + [arr[fi]]
+      }
+      $ fi = fi + 1
+    }
+    > { value: out, error: "" }
+  }
+
+  if name == "sort" {
+    if length(args) == 0 { > { value: [], error: "" } }
+    $ arr = args[0]
+    # Simple bubble sort (bootstrap-friendly)
+    $ n = length(arr)
+    $ si = 0
+    while si < n - 1 {
+      $ sj = 0
+      while sj < n - si - 1 {
+        if compare_values(arr[sj], arr[sj + 1]) > 0 {
+          $ tmp = arr[sj]
+          $ arr[sj] = arr[sj + 1]
+          $ arr[sj + 1] = tmp
+        }
+        $ sj = sj + 1
+      }
+      $ si = si + 1
+    }
+    > { value: arr, error: "" }
+  }
+
   > { value: null, error: "not_builtin:" + name }
 }
 
@@ -719,6 +790,8 @@ import "./parser"
     # Integer key → string character access: "hello"[0] → "h"
     if typeOf(cr.value) == "str" {
       $ ci = to_int(ir.value)
+      # Negative index: count from end
+      if ci < 0 { $ ci = length(cr.value) + ci }
       if ci >= 0 && ci < length(cr.value) {
         > { value: charAt(cr.value, ci), error: "" }
       }
@@ -726,6 +799,8 @@ import "./parser"
     }
     # Integer key → array index access: arr[i]
     $ ci = to_int(ir.value)
+    # Negative index: count from end
+    if ci < 0 { $ ci = length(cr.value) + ci }
     if ci >= 0 && ci < length(cr.value) {
       > { value: cr.value[ci], error: "" }
     }
@@ -1022,7 +1097,7 @@ import "./parser"
 
 @ command run {
   print("========================================")
-  print("  GlyphLang Bootstrap Interpreter v0.21")
+  print("  GlyphLang Bootstrap Interpreter v0.22")
   print("========================================")
 
   $ passed = 0
@@ -2004,6 +2079,54 @@ import "./parser"
   # ── Test 188: typeOf builtin ──
   $ t188_src = "$ result = 0\nif typeOf(42) == \"int\" {\n  if typeOf(\"hello\") == \"str\" {\n    if typeOf(true) == \"bool\" {\n      $ result = 1\n    }\n  }\n}"
   if run_test("typeOf builtin — int/str/bool (1)", t188_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 189: negative array index arr[-1] = last element ──
+  $ t189_src = "$ arr = [10, 20, 30, 40, 50]\n$ result = arr[-1]"
+  if run_test("negative array index arr[-1] (50)", t189_src, 50) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 190: negative array index arr[-2] = second to last ──
+  $ t190_src = "$ arr = [10, 20, 30, 40, 50]\n$ result = arr[-2]"
+  if run_test("negative array index arr[-2] (40)", t190_src, 40) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 191: negative string index s[-1] = last char ──
+  $ t191_src = "$ s = \"hello\"\n$ result = s[-1]"
+  if run_test("negative string index s[-1] (o)", t191_src, "o") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 192: negative string index s[-2] ──
+  $ t192_src = "$ s = \"glyph\"\n$ result = s[-2]"
+  if run_test("negative string index s[-2] (p)", t192_src, "p") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 193: insert builtin — insert value at index ──
+  $ t193_src = "$ arr = [10, 30, 40]\n$ arr = insert(arr, 1, 20)\n$ result = arr[0] + arr[1] + arr[2] + arr[3]"
+  if run_test("insert builtin — insert 20 at index 1 (100)", t193_src, 100) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 194: remove_at builtin — remove element at index ──
+  $ t194_src = "$ arr = [10, 20, 99, 30, 40]\n$ arr = remove_at(arr, 2)\n$ result = arr[0] + arr[1] + arr[2] + arr[3]"
+  if run_test("remove_at builtin — remove index 2 (100)", t194_src, 100) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 195: flatten builtin — flatten nested arrays ──
+  $ t195_src = "$ arr = [[1, 2], [3, 4], [5]]\n$ flat = flatten(arr)\n$ result = flat[0] + flat[1] + flat[2] + flat[3] + flat[4]"
+  if run_test("flatten builtin — [[1,2],[3,4],[5]] (15)", t195_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 196: sort builtin — sort array of ints ──
+  $ t196_src = "$ arr = [5, 3, 8, 1, 9, 2]\n$ sorted = sort(arr)\n$ result = sorted[0] + sorted[1] + sorted[2]"
+  if run_test("sort builtin — first 3 of sorted [5,3,8,1,9,2] (1+2+3=6)", t196_src, 6) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 197: sort builtin — verify full sorted order ──
+  $ t197_src = "$ arr = [5, 3, 8, 1, 9, 2]\n$ sorted = sort(arr)\n$ result = sorted[0] * 100000 + sorted[1] * 10000 + sorted[2] * 1000 + sorted[3] * 100 + sorted[4] * 10 + sorted[5]"
+  if run_test("sort builtin — full order 123589 (123589)", t197_src, 123589) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 198: insert at end of array ──
+  $ t198_src = "$ arr = [1, 2, 3]\n$ arr = insert(arr, 3, 4)\n$ result = length(arr) + arr[3]"
+  if run_test("insert at end — length=4, arr[3]=4 (8)", t198_src, 8) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 199: flatten with non-array elements ──
+  $ t199_src = "$ arr = [[1, 2], 3, [4, 5]]\n$ flat = flatten(arr)\n$ result = flat[0] + flat[1] + flat[2] + flat[3] + flat[4]"
+  if run_test("flatten mixed — [[1,2],3,[4,5]] (15)", t199_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 200: negative index in loop — sum from end ──
+  $ t200_src = "$ arr = [10, 20, 30]\n$ result = arr[-1] + arr[-2] + arr[-3]"
+  if run_test("negative index sum all from end (60)", t200_src, 60) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
