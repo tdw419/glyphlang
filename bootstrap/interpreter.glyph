@@ -1809,6 +1809,38 @@ import "./parser"
   $ t150_src = "! scale(obj: any, factor: int) -> int {\n  > obj.val * factor\n}\n$ a = { val: 3 }\n$ b = { val: 7 }\n$ result = scale(a, 10) + scale(b, 10)"
   if run_test("shared function on multiple objects (30+70=100)", t150_src, 100) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
+  # ── Test 151: array element as index into another array ──
+  $ t151_src = "$ lookup = [100, 200, 300]\n$ idx = [2, 0, 1]\n$ result = lookup[idx[0]] + lookup[idx[1]] + lookup[idx[2]]"
+  if run_test("array element as index into another array (300+100+200=600)", t151_src, 600) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 152: array sum via indexed while loop ──
+  $ t152_src = "$ arr = [1, 2, 3, 4, 5]\n$ sum = 0\n$ i = 0\nwhile i < length(arr) {\n  $ sum = sum + arr[i]\n  $ i = i + 1\n}\n$ result = sum"
+  if run_test("array sum via indexed while loop (15)", t152_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 153: array element used as while loop bound ──
+  $ t153_src = "$ limits = [3, 5, 7]\n$ total = 0\n$ j = 0\nwhile j < limits[1] {\n  $ total = total + j\n  $ j = j + 1\n}\n$ result = total"
+  if run_test("array element as while loop bound (0+1+2+3+4=10)", t153_src, 10) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 154: array element updated based on other elements ──
+  $ t154_src = "$ arr = [10, 20, 30]\n$ arr[0] = arr[1] + arr[2]\n$ arr[1] = arr[0] * 2\n$ result = arr[0] + arr[1]"
+  if run_test("array cross-element update (50+100=150)", t154_src, 150) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 155: array of mixed types with typeOf ──
+  $ t155_src = "$ arr = [42, \"hello\", true]\n$ result = typeOf(arr[0]) + \" \" + typeOf(arr[1]) + \" \" + typeOf(arr[2])"
+  if run_test("array of mixed types typeOf (int str bool)", t155_src, "int str bool") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 156: array filtering with comparison in for-in ──
+  $ t156_src = "$ nums = [3, 7, 2, 8, 1, 9, 4]\n$ count = 0\nfor n in nums {\n  if n > 5 {\n    $ count = count + 1\n  }\n}\n$ result = count"
+  if run_test("array filtering count > 5 (3)", t156_src, 3) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 157: array from range then modified via index assignment ──
+  $ t157_src = "$ arr = range(5)\n$ arr[0] = 10\n$ arr[2] = 20\n$ result = arr[0] + arr[1] + arr[2] + arr[3] + arr[4]"
+  if run_test("range array modified via index (10+1+20+3+4=38)", t157_src, 38) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 158: array element passed as function argument ──
+  $ t158_src = "! double(x: int) -> int { > x * 2 }\n$ arr = [1, 2, 3, 4]\n$ result = double(arr[0]) + double(arr[3])"
+  if run_test("array element as function argument (2+8=10)", t158_src, 10) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   # ── Summary ──
   print("")
   print("========================================")
