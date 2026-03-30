@@ -1,0 +1,62 @@
+# bootstrap/main.glyph
+# Standalone GlyphLang entry point — Issue #12
+# Loads and executes .glyph files through the bootstrap interpreter pipeline.
+# Usage: glyph exec bootstrap/main.glyph run --file path/to/program.glyph
+
+import "./interpreter"
+! lastIndexOf(s: str, sub: str) -> int {
+  $ i = length(s) - length(sub)
+  while i >= 0 {
+    if substring(s, i, i + length(sub)) == sub {
+      > i
+    }
+    $ i = i - 1
+  }
+  > -1
+}
+
+
+@ command run file: str! {
+  print("=== GlyphLang Standalone Runner ===")
+  print("  Loading: " + file)
+
+  # Read the source file
+  $ src = readFile(file)
+  if length(src) == 0 {
+    print("  ERROR: file not found or empty: " + file)
+    > { ok: false, error: "file not found or empty: " + file }
+  }
+
+  # Determine base path for imports (directory of the target file)
+  $ base = "./"
+  $ last_slash = lastIndexOf(file, "/")
+  if last_slash >= 0 {
+    $ base = substring(file, 0, last_slash + 1)
+  }
+
+  # Parse the source
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" {
+    print("  PARSE ERROR: " + pr.error)
+    > { ok: false, error: "parse error: " + pr.error }
+  }
+
+  # Execute the module through the bootstrap interpreter
+  $ env = env_new()
+  $ mr = exec_module(pr.mod, env, base, null)
+  if mr.error != "" {
+    print("  EXEC ERROR: " + mr.error)
+    > { ok: false, error: "exec error: " + mr.error }
+  }
+
+  # Check for a result variable
+  $ rv = env_get(env, "result")
+  $ result_val = null
+  if rv.error == "" {
+    $ result_val = rv.value
+  }
+
+  print("  Done. Result: " + toString(result_val))
+  > { ok: true, value: result_val, error: "" }
+}
