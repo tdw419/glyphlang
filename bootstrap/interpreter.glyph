@@ -1529,6 +1529,50 @@ import "./parser"
   $ t108_src = "$ obj = { x: 10, y: 20 }\n$ obj.sum = obj.x + obj.y\n$ result = obj.sum"
   if run_test("object field computed from other fields (30)", t108_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
+  # ── Test 109: object used as lookup map ──
+  $ t109_src = "$ scores = { alice: 95, bob: 87, carol: 92 }\n$ result = scores.alice + scores.bob + scores.carol"
+  if run_test("object as lookup map (95+87+92=274)", t109_src, 274) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 110: object passed through multiple functions ──
+  $ t110_src = "! wrap(obj: any) -> any { > { inner: obj } }\n! extract(w: any) -> int { > w.inner.val }\n$ obj = { val: 42 }\n$ wrapped = wrap(obj)\n$ result = extract(wrapped)"
+  if run_test("object through multiple functions (42)", t110_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 111: object with nested array field + mutation ──
+  $ t111_src = "$ obj = { data: [1, 2, 3] }\n$ obj.data = obj.data + [4]\n$ result = length(obj.data) + obj.data[3]"
+  if run_test("object array field mutation (4+4=8)", t111_src, 8) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 112: object returned from conditional ──
+  $ t112_src = "! pick(high: bool) -> any {\n  if high { > { val: 100 } }\n  > { val: 0 }\n}\n$ a = pick(true)\n$ b = pick(false)\n$ result = a.val + b.val"
+  if run_test("object from conditional (100+0=100)", t112_src, 100) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 113: object with closure as method ──
+  $ t113_src = "! make_rect(w: int, h: int) -> any {\n  ! area() -> int { > w * h }\n  > { w: w, h: h, area: area }\n}\n$ r = make_rect(5, 8)\n$ result = r.area()"
+  if run_test("object closure method (5*8=40)", t113_src, 40) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 114: deep nested object mutation (3 levels via temp) ──
+  $ t114_src = "$ obj = { a: { b: { c: 1 } } }\n$ inner = obj.a.b\n$ inner.c = inner.c + 99\n$ result = obj.a.b.c"
+  if run_test("deep nested mutation via temp (1+99=100)", t114_src, 100) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 115: object array of objects + field update in loop ──
+  $ t115_src = "! set_v(items: any, i: int, val: int) {\n  $ item = items[i]\n  $ item.v = val\n}\n$ items = [{ v: 0 }, { v: 0 }, { v: 0 }]\n$ i = 0\nwhile i < length(items) {\n  set_v(items, i, (i + 1) * 10)\n  $ i = i + 1\n}\n$ result = items[0].v + items[1].v + items[2].v"
+  if run_test("array of objects update via function (10+20+30=60)", t115_src, 60) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 116: object with field referencing another object ──
+  $ t116_src = "$ base = { val: 10 }\n$ wrapper = { inner: base }\n$ result = wrapper.inner.val"
+  if run_test("object field referencing object (10)", t116_src, 10) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 117: keys + dynamic access for sum ──
+  $ t117_src = "$ obj = { a: 100, b: 200, c: 300 }\n$ ks = keys(obj)\n$ result = obj[ks[0]] + obj[ks[1]] + obj[ks[2]]"
+  if run_test("keys + dynamic access sum (600)", t117_src, 600) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 118: object method with mutable state ──
+  $ t118_src = "! make_accumulator() -> any {\n  $ total = 0\n  ! add(n: int) -> int {\n    $ total = total + n\n    > total\n  }\n  > { add: add, peek: total }\n}\n$ acc = make_accumulator()\n$ a = acc.add(10)\n$ b = acc.add(20)\n$ c = acc.add(12)\n$ result = a + b + c"
+  if run_test("object method mutable state (10+30+42=82)", t118_src, 82) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 119: for_in with break on threshold ──
+  $ t119_src = "! sum_until(items: any, limit: int) -> int {\n  $ total = 0\n  for item in items {\n    $ total = total + item\n    if total >= limit { break }\n  }\n  > total\n}\n$ result = sum_until([5, 10, 15, 20], 20)"
+  if run_test("for_in with break on threshold (30)", t119_src, 30) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
   # ── Summary ──
   print("")
   print("========================================")
