@@ -12,6 +12,7 @@ import "./ast"
   symbol_table: any!
   scopes: [any]!
   current_scope: int!
+  label_counter: int!
 }
 
 : CompileResult {
@@ -42,6 +43,9 @@ const OP_LOAD_VAR      = 64
 const OP_STORE_VAR     = 65
 const OP_JUMP          = 80
 const OP_JUMP_IF_FALSE = 81
+const OP_GET_ITER      = 83
+const OP_ITER_NEXT     = 84
+const OP_ITER_HAS_NEXT = 85
 const OP_GET_INDEX     = 86
 const OP_SET_INDEX     = 87
 const OP_RETURN        = 97
@@ -61,7 +65,8 @@ const OP_HALT          = 255
     instructions: [],
     symbol_table: {},
     scopes: [{}],
-    current_scope: 0
+    current_scope: 0,
+    label_counter: 0
   }
 }
 
@@ -300,6 +305,12 @@ const OP_HALT          = 255
   if item.kind == "import" { > "" }
   if item.kind == "from_import" { > "" }
   if item.kind == "command" { > "" }
+
+  # Try compiling as a statement for top-level script-like code
+  if item.kind == "for_in" || item.kind == "if" || item.kind == "while" || item.kind == "assign" || item.kind == "expression" {
+    > compile_statement(c, item)
+  }
+
   > ""
 }
 
@@ -423,6 +434,78 @@ const OP_HALT          = 255
 
   if stmt.kind == "break" { > "" }
   if stmt.kind == "continue" { > "" }
+
+  if stmt.kind == "for_in" {
+    # 1. Compile the iterable expression → collection on stack
+    $ err = compile_expression(c, stmt.while_condition)
+    if err != "" { > err }
+
+    # 2. GET_ITER → iterator ref on stack
+    emit_byte(c, OP_GET_ITER)
+
+    # 3. Store iterator in a temp variable (__iter_N)
+    $ iter_name = "__iter_" + toString(c.label_counter)
+    $ c.label_counter = c.label_counter + 1
+    $ iter_idx = add_constant(c, iter_name)
+    emit_byte(c, OP_STORE_VAR)
+    emit_bytes4(c, iter_idx)
+
+    # 4. Define value variable in constant pool
+    $ value_idx = add_constant(c, stmt.target)
+
+    # 5. Define key variable if present
+    $ has_key = 0
+    $ key_idx = 0
+    if stmt.field != "" {
+      $ key_idx = add_constant(c, stmt.field)
+      $ has_key = 1
+    }
+
+    # 6. Loop start
+    $ loop_start = length(c.instructions)
+
+    # 7. Load iterator, check has_next
+    emit_byte(c, OP_LOAD_VAR)
+    emit_bytes4(c, iter_idx)
+    emit_byte(c, OP_ITER_HAS_NEXT)
+    $ jump_end_pos = emit_jump(c, OP_JUMP_IF_FALSE)
+
+    # 8. Load iterator, get next element
+    emit_byte(c, OP_LOAD_VAR)
+    emit_bytes4(c, iter_idx)
+    emit_byte(c, OP_ITER_NEXT)
+    emit_byte(c, has_key)
+
+    # 9. Store value variable (top of stack)
+    emit_byte(c, OP_STORE_VAR)
+    emit_bytes4(c, value_idx)
+
+    # 10. Store key variable if present (next on stack)
+    if has_key != 0 {
+      emit_byte(c, OP_STORE_VAR)
+      emit_bytes4(c, key_idx)
+    }
+
+    # 11. Compile loop body
+    $ i = 0
+    while i < length(stmt.body) {
+      $ serr = compile_statement(c, stmt.body[i])
+      if serr != "" { > serr }
+      $ i = i + 1
+    }
+
+    # 12. Jump back to loop start
+    $ loop_jump = emit_jump(c, OP_JUMP)
+    $ b = intToBytes4(loop_start)
+    $ c.instructions[loop_jump] = b[0]
+    $ c.instructions[loop_jump + 1] = b[1]
+    $ c.instructions[loop_jump + 2] = b[2]
+    $ c.instructions[loop_jump + 3] = b[3]
+
+    # 13. Patch jump to end
+    patch_jump(c, jump_end_pos)
+    > ""
+  }
 
   > ""
 }

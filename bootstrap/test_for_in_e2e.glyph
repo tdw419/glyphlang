@@ -1,0 +1,220 @@
+# bootstrap/test_for_in_e2e.glyph
+# Phase 3: End-to-end for-in — compile and execute
+import "./parser"
+import "./compiler"
+import "./vm"
+
+@ command run {
+    print("=== For-In E2E Tests ===")
+    $ passed = 0
+    $ total = 0
+
+    # Test 1: Raw bytecode — sum [10, 20, 30] via for-in with LOAD/STORE_VAR
+    $ total = total + 1
+    print("Test 1: raw bytecode sum [10, 20, 30]")
+    # Constants: [0]=10, [1]=20, [2]=30, [3]=0
+    # Globals slots (by const pool idx): [4]=sum, [5]=__iter_0, [6]=x
+    # read_addr is little-endian
+    $ code = [
+        # sum = 0
+        OP_PUSH,   3,0,0,0,           # push constants[3]=0
+        OP_STORE_VAR, 4,0,0,0,        # globals[4] = 0
+
+        # Build array [10, 20, 30]
+        OP_PUSH,   0,0,0,0,           # 10
+        OP_PUSH,   1,0,0,0,           # 20
+        OP_PUSH,   2,0,0,0,           # 30
+        OP_BUILD_ARRAY, 3,0,0,0,      # array ref
+
+        OP_GET_ITER,                  # iter ref
+        OP_STORE_VAR, 5,0,0,0,        # globals[5] = iter
+
+        # --- Loop start (PC=36) ---
+        OP_LOAD_VAR,  5,0,0,0,        # load iter
+        OP_ITER_HAS_NEXT,
+        OP_JUMP_IF_FALSE, 80,0,0,0,   # jump to end (PC=80)
+
+        OP_LOAD_VAR,  5,0,0,0,        # load iter
+        OP_ITER_NEXT, 0,              # push value (no key)
+        OP_STORE_VAR, 6,0,0,0,        # globals[6] = x
+
+        # sum = sum + x
+        OP_LOAD_VAR,  4,0,0,0,        # load sum
+        OP_LOAD_VAR,  6,0,0,0,        # load x
+        OP_ADD,
+        OP_STORE_VAR, 4,0,0,0,        # store sum
+
+        # Jump back to loop start (PC=36)
+        OP_JUMP,     36,0,0,0,
+
+        # --- Loop end (PC=80) ---
+        OP_LOAD_VAR,  4,0,0,0,        # load final sum
+        OP_HALT
+    ]
+
+    $ constants = [10, 20, 30, 0, 0, 0, 0]
+    $ result = vm.exec(code, constants)
+
+    if result == 60 {
+        print("  PASS: sum = 60")
+        $ passed = passed + 1
+    } else {
+        print("  FAIL: expected 60, got " + toString(result))
+    }
+
+    # Test 2: Compile for-in statement via parser
+    $ total = total + 1
+    print("Test 2: compile for-in statement")
+    $ p = parser.new_parser("for x in items { }")
+    $ sr = parser.parse_statement(p)
+    if sr.error != "" {
+        print("  FAIL parse: " + sr.error)
+    } else {
+        $ c = compiler.new_compiler()
+        $ mod = { items: [sr.stmt] }
+        $ cr = compiler.compile(c, mod)
+        if cr.error != "" {
+            print("  FAIL compile: " + cr.error)
+        } else {
+            print("  PASS: compiled to " + toString(length(cr.bytecode)) + " bytes")
+            $ passed = passed + 1
+        }
+    }
+
+    # Test 3: Compile for-in with body, verify iterator opcodes present
+    $ total = total + 1
+    print("Test 3: compile for-in with body")
+    $ p3 = parser.new_parser("for x in items { $ sum = sum + x }")
+    $ sr3 = parser.parse_statement(p3)
+    if sr3.error != "" {
+        print("  FAIL parse: " + sr3.error)
+    } else {
+        $ c3 = compiler.new_compiler()
+        $ mod3 = { items: [sr3.stmt] }
+        $ cr3 = compiler.compile(c3, mod3)
+        if cr3.error != "" {
+            print("  FAIL compile: " + cr3.error)
+        } else {
+            $ has_get_iter = 0
+            $ has_iter_next = 0
+            $ has_has_next = 0
+            $ i = 0
+            while i < length(cr3.bytecode) {
+                if cr3.bytecode[i] == OP_GET_ITER { $ has_get_iter = 1 }
+                if cr3.bytecode[i] == OP_ITER_NEXT { $ has_iter_next = 1 }
+                if cr3.bytecode[i] == OP_ITER_HAS_NEXT { $ has_has_next = 1 }
+                $ i = i + 1
+            }
+            if has_get_iter != 0 && has_iter_next != 0 && has_has_next != 0 {
+                print("  PASS: all iterator opcodes present")
+                $ passed = passed + 1
+            } else {
+                print("  FAIL: missing iterator opcodes")
+            }
+        }
+    }
+
+    # Test 4: Compile for-in with key,value
+    $ total = total + 1
+    print("Test 4: compile for-in with key,value")
+    $ p4 = parser.new_parser("for k, v in items { $ sum = sum + v }")
+    $ sr4 = parser.parse_statement(p4)
+    if sr4.error != "" {
+        print("  FAIL parse: " + sr4.error)
+    } else {
+        $ c4 = compiler.new_compiler()
+        $ mod4 = { items: [sr4.stmt] }
+        $ cr4 = compiler.compile(c4, mod4)
+        if cr4.error != "" {
+            print("  FAIL compile: " + cr4.error)
+        } else {
+            $ found_keyed = 0
+            $ i = 0
+            while i < length(cr4.bytecode) {
+                if cr4.bytecode[i] == OP_ITER_NEXT && i + 1 < length(cr4.bytecode) {
+                    if cr4.bytecode[i + 1] == 1 { $ found_keyed = 1 }
+                }
+                $ i = i + 1
+            }
+            if found_keyed != 0 {
+                print("  PASS: ITER_NEXT has key flag")
+                $ passed = passed + 1
+            } else {
+                print("  FAIL: no keyed ITER_NEXT found")
+            }
+        }
+    }
+
+    # Test 5: Compile and EXECUTE a sum script
+    $ total = total + 1
+    print("Test 5: compile and execute sum script")
+    $ p5 = parser.new_parser("$ items = [10, 20, 30]\n$ sum = 0\nfor x in items { $ sum = sum + x }")
+    $ mod_res = parser.parse(p5)
+    if mod_res.error != "" {
+        print("  FAIL parse: " + mod_res.error)
+    } else {
+        $ c5 = compiler.new_compiler()
+        $ cr5 = compiler.compile(c5, mod_res.mod)
+        if cr5.error != "" {
+            print("  FAIL compile: " + cr5.error)
+        } else {
+            # Execute in VM.
+            $ vm5 = vm.new_vm()
+            $ raw_constants = []
+            $ ci = 0
+            while ci < length(c5.constants) {
+                $ cv = c5.constants[ci]
+                if typeOf(cv) == "object" && cv.kind == "literal" {
+                    if cv.type == "int" {
+                        $ raw_constants = raw_constants + [toInt(cv.value)]
+                    } else if cv.type == "bool" {
+                        if cv.value == "true" || cv.value == true {
+                            $ raw_constants = raw_constants + [1]
+                        } else {
+                            $ raw_constants = raw_constants + [0]
+                        }
+                    } else {
+                        $ raw_constants = raw_constants + [0]
+                    }
+                } else if typeOf(cv) == "int" {
+                    $ raw_constants = raw_constants + [cv]
+                } else {
+                    # Map strings (variable names) or null to 0 for the integer VM
+                    $ raw_constants = raw_constants + [0]
+                }
+                $ ci = ci + 1
+            }
+            $ res5 = vm.vm_exec(vm5, c5.instructions, raw_constants)
+            
+            # Check sum variable in globals.
+            # Need to find index of "sum" in constants.
+            $ sum_idx = -1
+            $ si = 0
+            while si < length(c5.constants) {
+                if c5.constants[si] == "sum" { $ sum_idx = si }
+                $ si = si + 1
+            }
+            
+            if sum_idx != -1 {
+                # vm_exec returns final stack top, but we want globals
+                # Wait, I need a way to get the final VM state.
+                # Let's use vm.vm_exec_state which returns { vm: VM, result: int }
+                $ final_vm = vm.vm_exec_state(vm5, c5.instructions, raw_constants).vm
+                $ sum_val = final_vm.globals[sum_idx]
+                if sum_val == 60 {
+                    print("  PASS: executed sum = 60")
+                    $ passed = passed + 1
+                } else {
+                    print("  FAIL: expected 60, got " + toString(sum_val))
+                }
+            } else {
+                print("  FAIL: 'sum' not found in symbols")
+            }
+        }
+    }
+
+    print("")
+    print("For-In E2E: " + toString(passed) + "/" + toString(total))
+    if passed == total { print("ALL FOR-IN E2E TESTS PASSED") }
+    > {ok: passed == total, passed: passed, total: total}
+}

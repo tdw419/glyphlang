@@ -172,6 +172,12 @@ import "./ast"
   if tok.type == token.BANG { > parse_function(p) }
   if tok.type == token.AT { > parse_at_item(p) }
   if tok.type == token.DOLLAR { > parse_var_decl_item(p) }
+  
+  # Try parsing as a statement for top-level script-like code
+  if tok.type == token.FOR || tok.type == token.IF || tok.type == token.WHILE || tok.type == token.RETURN {
+    $ res = parse_statement(p)
+    > { parser: res.parser, item: res.stmt, error: res.error }
+  }
 
   > { parser: p, item: _item(), error: "Unexpected " + tok.type + " at " + toString(tok.line) + ":" + toString(tok.col) }
 }

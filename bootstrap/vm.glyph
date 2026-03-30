@@ -228,14 +228,24 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 # ─── Execution ──────────────────────────────────────────────────────
 
 ! vm_exec(vm: VM, code: [int], constants: [int]) -> int {
+  $ res = vm_exec_state(vm, code, constants)
+  > res.result
+}
+
+! vm_exec_state(vm: VM, code: [int], constants: [int]) -> ExecStateResult {
   $ current = vm
   while !current.halted && current.pc < length(code) {
     $ op = code[current.pc]
     $ result = vm_step(current, op, code, constants)
     $ current = result.vm
   }
+  
+  if length(current.stack) == 0 {
+    > { vm: current, result: 0 }
+  }
+  
   $ final = vm_pop(current)
-  > final.val
+  > { vm: final.vm, result: final.val }
 }
 
 : StepResult {
@@ -245,9 +255,9 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
 ! vm_step(vm: VM, op: int, code: [int], constants: [int]) -> StepResult {
   # Stack operations
   if op == OP_PUSH {
-    $ idx = code[vm.pc + 1]
+    $ idx = read_addr(code, vm.pc + 1)
     $ vm2 = vm_push(vm, constants[idx])
-    $ vm3 = vm_with_pc(vm2, vm.pc + 2)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 5)
     > { vm: vm3 }
   }
   
@@ -416,7 +426,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
   
   # Variables: globals array indexed by constant pool offset
   if op == OP_LOAD_VAR {
-    $ idx = code[vm.pc + 1]
+    $ idx = read_addr(code, vm.pc + 1)
     # First try globals (mutable variables), fall back to constants
     $ val = constants[idx]
     if idx < length(vm.globals) {
@@ -426,7 +436,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
       }
     }
     $ vm2 = vm_push(vm, val)
-    $ vm3 = vm_with_pc(vm2, vm.pc + 2)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 5)
     > { vm: vm3 }
   }
   
@@ -448,7 +458,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
   }
   
   if op == OP_STORE_VAR {
-    $ idx = code[vm.pc + 1]
+    $ idx = read_addr(code, vm.pc + 1)
     $ result = vm_pop(vm)
     $ val = result.val
     # Extend globals array if needed
@@ -468,7 +478,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
       $ i = i + 1
     }
     $ vm2 = { stack: result.vm.stack, pc: result.vm.pc, fp: result.vm.fp, halted: result.vm.halted, heap: result.vm.heap, globals: new_gl }
-    $ vm3 = vm_with_pc(vm2, vm.pc + 2)
+    $ vm3 = vm_with_pc(vm2, vm.pc + 5)
     > { vm: vm3 }
   }
   
@@ -536,7 +546,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
   # Pops `count` elements from stack, stores in heap, pushes ref.
   # Heap layout: [count, elem0, elem1, ...]
   if op == OP_BUILD_ARRAY {
-    $ count = code[vm.pc + 1]
+    $ count = read_addr(code, vm.pc + 1)
     # Pop elements and collect in order (prepend reverses pop order)
     $ elems = []
     $ current = vm
@@ -554,7 +564,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
     # Create VM with updated heap, push ref, advance PC
     $ vm2 = { stack: current.stack, pc: current.pc, fp: current.fp, halted: current.halted, heap: new_heap, globals: current.globals }
     $ vm3 = vm_push(vm2, ref)
-    $ vm4 = vm_with_pc(vm3, vm.pc + 2)
+    $ vm4 = vm_with_pc(vm3, vm.pc + 5)
     > { vm: vm4 }
   }
   
@@ -562,7 +572,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
   # For each field: pop value, then pop key.
   # Heap layout: [field_count, key0, val0, key1, val1, ...]
   if op == OP_BUILD_OBJECT {
-    $ field_count = code[vm.pc + 1]
+    $ field_count = read_addr(code, vm.pc + 1)
     $ fields = []
     $ current = vm
     $ i = 0
@@ -580,7 +590,7 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
     $ new_heap = current.heap + heap_data
     $ vm2 = { stack: current.stack, pc: current.pc, fp: current.fp, halted: current.halted, heap: new_heap, globals: current.globals }
     $ vm3 = vm_push(vm2, ref)
-    $ vm4 = vm_with_pc(vm3, vm.pc + 2)
+    $ vm4 = vm_with_pc(vm3, vm.pc + 5)
     > { vm: vm4 }
   }
   
@@ -617,13 +627,13 @@ const HEAP_ITER_TAG = 3  # Iterator heap entry tag
   }
   
   # OP_DEF_FUNC: skip over function body.
-  # Format: OP_DEF_FUNC, name_idx(1), param_count(1), body_length(1), [param_name_idx(1)]..., body...
+  # Format: OP_DEF_FUNC, name_idx(4), param_count(4), body_length(4), [param_name_idx(4)]..., body...
   if op == OP_DEF_FUNC {
-    $ name_idx = code[vm.pc + 1]
-    $ param_count = code[vm.pc + 2]
-    $ body_length = code[vm.pc + 3]
-    # Total: opcode(1) + name(1) + params(1) + body_len(1) + param_names(param_count) + body(body_length)
-    $ total_size = 4 + param_count + body_length
+    $ name_idx = read_addr(code, vm.pc + 1)
+    $ param_count = read_addr(code, vm.pc + 5)
+    $ body_length = read_addr(code, vm.pc + 9)
+    # Total: opcode(1) + name(4) + params(4) + body_len(4) + param_names(4*param_count) + body(body_length)
+    $ total_size = 13 + 4 * param_count + body_length
     $ vm2 = vm_with_pc(vm, vm.pc + total_size)
     > { vm: vm2 }
   }

@@ -9,15 +9,15 @@ import "./vm"
     $ total = total + 1
     print("Test 1: add(3, 4)")
     $ code1 = [
-        OP_PUSH, 0,            # 0: push a=3
-        OP_PUSH, 1,            # 2: push b=4
-        OP_CALL, 10, 0, 0, 0,  # 4: call add at offset 10 (5 bytes: 4,5,6,7,8)
-        OP_HALT,               # 9: halt
-        # add(a, b) at offset 10: a=FP-2, b=FP-1
-        OP_LOAD_FP, -2,        # 10: load a
-        OP_LOAD_FP, -1,        # 12: load b
-        OP_ADD,                 # 14: a + b
-        OP_RETURN               # 15: return result
+        OP_PUSH, 0,0,0,0,      # 0-4: push a=3
+        OP_PUSH, 1,0,0,0,      # 5-9: push b=4
+        OP_CALL, 16,0,0,0,     # 10-14: call add at offset 16
+        OP_HALT,               # 15: halt
+        # add(a, b) at offset 16: a=FP-2, b=FP-1
+        OP_LOAD_FP, -2,        # 16-17: load a
+        OP_LOAD_FP, -1,        # 18-19: load b
+        OP_ADD,                 # 20: a + b
+        OP_RETURN               # 21: return result
     ]
     $ result1 = vm.exec(code1, [3, 4])
     if result1 == 7 {
@@ -31,42 +31,20 @@ import "./vm"
     $ total = total + 1
     print("Test 2: calc(2, 3, 1) = 2*3+1")
     $ code2 = [
-        OP_PUSH, 0,            # 0: push a=2
-        OP_PUSH, 1,            # 2: push b=3
-        OP_PUSH, 2,            # 4: push c=1
-        OP_CALL, 10, 0, 0, 0,  # 6: call calc at offset 10 (5 bytes: 6-10)
-        OP_HALT,               # 11: halt
-        # Wait, offset 10 is inside the CALL operand. Let me recalculate.
-        # 6: OP_CALL, 7: 13, 8: 0, 9: 0, 10: 0
-        # So offset 10 is part of CALL. Need target = 12
+        OP_PUSH, 0,0,0,0,      # 0-4: push a=2
+        OP_PUSH, 1,0,0,0,      # 5-9: push b=3
+        OP_PUSH, 2,0,0,0,      # 10-14: push c=1
+        OP_CALL, 21,0,0,0,     # 15-19: call calc at offset 21
+        OP_HALT,               # 20: halt
+        # calc(a, b, c) at offset 21: a=FP-3, b=FP-2, c=FP-1
+        OP_LOAD_FP, -3,        # 21-22: load a
+        OP_LOAD_FP, -2,        # 23-24: load b
+        OP_MUL,                 # 25: a * b
+        OP_LOAD_FP, -1,        # 26-27: load c
+        OP_ADD,                 # 28: a*b + c
+        OP_RETURN               # 29: return
     ]
-    # Recalculate properly
-    $ code2b = [
-        OP_PUSH, 0,            # 0: push a=2
-        OP_PUSH, 1,            # 2: push b=3
-        OP_PUSH, 2,            # 4: push c=1
-        OP_CALL, 12, 0, 0, 0,  # 6-10: call calc at offset 12
-        OP_HALT,               # 11: halt (return lands here? no, return_addr=6+5=11... that's HALT, good)
-        # pad
-        0,                     # 12: start of function? No, this is the function!
-        # Actually 12 = first byte of function. Let me not pad.
-    ]
-    # Clean version:
-    $ code2c = [
-        OP_PUSH, 0,            # 0-1: push a=2
-        OP_PUSH, 1,            # 2-3: push b=3
-        OP_PUSH, 2,            # 4-5: push c=1
-        OP_CALL, 12, 0, 0, 0,  # 6-10: call at offset 12
-        OP_HALT,               # 11: halt
-        # calc(a, b, c) at offset 12: a=FP-3, b=FP-2, c=FP-1
-        OP_LOAD_FP, -3,        # 12-13: load a
-        OP_LOAD_FP, -2,        # 14-15: load b
-        OP_MUL,                 # 16: a * b
-        OP_LOAD_FP, -1,        # 17-18: load c
-        OP_ADD,                 # 19: a*b + c
-        OP_RETURN               # 20: return
-    ]
-    $ result2 = vm.exec(code2c, [2, 3, 1])
+    $ result2 = vm.exec(code2, [2, 3, 1])
     if result2 == 7 {
         print("  PASS: calc(2, 3, 1) = " + toString(result2))
         $ passed = passed + 1
@@ -78,47 +56,26 @@ import "./vm"
     $ total = total + 1
     print("Test 3: f(g(1,2), 3) = (1+2)+3 = 6")
     $ code3 = [
-        # Main:
-        OP_PUSH, 0,            # 0-1: push 1
-        OP_PUSH, 1,            # 2-3: push 2
-        OP_CALL, 18, 0, 0, 0,  # 4-8: call g(1,2) at offset 18
-        # g returns 3, now on stack. Push 3 and call f.
-        OP_PUSH, 2,            # 9-10: push 3
-        OP_CALL, 25, 0, 0, 0,  # 11-15: call f(result, 3) at offset 25
-        OP_HALT,               # 16: halt
-        # padding at 17
-        0,
-        # g(x, y) at offset 18: x=FP-2, y=FP-1
-        # Wait, 17 is padding that will be executed. Let me not pad.
-    ]
-    # Actually, the return from g goes to 4+5=9, which is OP_PUSH 2. Good.
-    # The return from f goes to 11+5=16, which is HALT. Good.
-    # g starts at 18: but 17 has a zero byte that won't be reached since
-    # HALT at 16 stops execution. Actually, g is called via CALL which
-    # jumps to 18 directly, skipping 17. So 17 just needs to not be a
-    # valid path. It's fine.
-    # Wait - let me remove the padding and be precise:
-    $ code3b = [
-        OP_PUSH, 0,            # 0-1: push 1
-        OP_PUSH, 1,            # 2-3: push 2
-        OP_CALL, 17, 0, 0, 0,  # 4-8: call g at offset 17
-        OP_PUSH, 2,            # 9-10: push 3
-        OP_CALL, 23, 0, 0, 0,  # 11-15: call f at offset 23
-        OP_HALT,               # 16: halt
+        OP_PUSH, 0,0,0,0,      # 0-4: push 1
+        OP_PUSH, 1,0,0,0,      # 5-9: push 2
+        OP_CALL, 26,0,0,0,     # 10-14: call g at offset 26
+        OP_PUSH, 2,0,0,0,      # 15-19: push 3
+        OP_CALL, 32,0,0,0,     # 20-24: call f at offset 32
+        OP_HALT,               # 25: halt
 
-        # g(x, y) at offset 17: x=FP-2, y=FP-1
-        OP_LOAD_FP, -2,        # 17-18: load x
-        OP_LOAD_FP, -1,        # 19-20: load y
-        OP_ADD,                 # 21: x + y
-        OP_RETURN,              # 22: return
+        # g(x, y) at offset 26: x=FP-2, y=FP-1
+        OP_LOAD_FP, -2,        # 26-27: load x
+        OP_LOAD_FP, -1,        # 28-29: load y
+        OP_ADD,                 # 30: x + y
+        OP_RETURN,              # 31: return
 
-        # f(a, b) at offset 23: a=FP-2, b=FP-1
-        OP_LOAD_FP, -2,        # 23-24: load a
-        OP_LOAD_FP, -1,        # 25-26: load b
-        OP_ADD,                 # 27: a + b
-        OP_RETURN               # 28: return
+        # f(a, b) at offset 32: a=FP-2, b=FP-1
+        OP_LOAD_FP, -2,        # 32-33: load a
+        OP_LOAD_FP, -1,        # 34-35: load b
+        OP_ADD,                 # 36: a + b
+        OP_RETURN               # 37: return
     ]
-    $ result3 = vm.exec(code3b, [1, 2, 3])
+    $ result3 = vm.exec(code3, [1, 2, 3])
     if result3 == 6 {
         print("  PASS: f(g(1,2), 3) = " + toString(result3))
         $ passed = passed + 1
