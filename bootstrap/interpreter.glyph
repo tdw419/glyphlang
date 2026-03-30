@@ -271,6 +271,20 @@ import "./parser"
     if length(args) < 2 { > { value: -1, error: "" } }
     > { value: indexOf(toString(args[0]), toString(args[1])), error: "" }
   }
+  if name == "lastIndexOf" {
+    if length(args) < 2 { > { value: -1, error: "" } }
+    $ s = toString(args[0])
+    $ sub = toString(args[1])
+    $ i = length(s) - length(sub)
+    while i >= 0 {
+      if substring(s, i, i + length(sub)) == sub {
+        > { value: i, error: "" }
+      }
+      $ i = i - 1
+    }
+    > { value: -1, error: "" }
+  }
+
 
   if name == "split" {
     if length(args) < 2 { > { value: [], error: "" } }

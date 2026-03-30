@@ -274,6 +274,9 @@ import "./token"
   l = read_char(l) # skip quote
   $ start_pos = l.pos
   while l.ch != "\"" && l.ch != "" {
+    if l.ch == "\\" {
+      l = read_char(l)
+    }
     l = read_char(l)
   }
   if l.ch == "" {
@@ -283,7 +286,6 @@ import "./token"
   l = read_char(l) # skip closing quote
   > {token: {type: token.STRING, literal: literal, line: line, col: col}, lexer: l}
 }
-
 ! read_identifier(l: Lexer) -> LexerResult {
   $ start_pos = l.pos
   $ line = l.line
