@@ -343,6 +343,26 @@ import "./parser"
     > { value: out, error: "" }
   }
 
+  if name == "range" {
+    $ rng_start = 0
+    $ rng_end = 0
+    if length(args) == 1 {
+      rng_end = toInt(args[0])
+    } else {
+      if length(args) >= 2 {
+        rng_start = toInt(args[0])
+        rng_end = toInt(args[1])
+      }
+    }
+    $ out = []
+    $ ri = rng_start
+    while ri < rng_end {
+      out = out + [ri]
+      ri = ri + 1
+    }
+    > { value: out, error: "" }
+  }
+
   > { value: null, error: "not_builtin:" + name }
 }
 
@@ -790,7 +810,7 @@ import "./parser"
 
 @ command run {
   print("========================================")
-  print("  GlyphLang Bootstrap Interpreter v0.16")
+  print("  GlyphLang Bootstrap Interpreter v0.17")
   print("========================================")
 
   $ passed = 0
@@ -1124,6 +1144,30 @@ import "./parser"
   # ── Test 65: slice builtin ──
   $ t65_src = "$ arr = slice([10, 20, 30, 40, 50], 1, 3)\n$ result = arr[0] + arr[1]"
   if run_test("slice builtin (50)", t65_src, 50) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 66: range builtin (1 arg) ──
+  $ t66_src = "$ arr = range(5)\n$ result = arr[0] + arr[1] + arr[2] + arr[3] + arr[4]"
+  if run_test("range builtin (sum 0..4=10)", t66_src, 10) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 67: range builtin (2 arg, start/end) ──
+  $ t67_src = "$ arr = range(3, 7)\n$ result = arr[0] + arr[1] + arr[2] + arr[3]"
+  if run_test("range builtin (3..7 sum=18)", t67_src, 18) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 68: range + for_in ──
+  $ t68_src = "$ total = 0\nfor i in range(4) {\n  $ total = total + i\n}\n$ result = total"
+  if run_test("range + for_in (sum 0..3=6)", t68_src, 6) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 69: else if chain ──
+  $ t70_src = "! classify(n: int) -> str {\n  if n < 0 {\n    > \"negative\"\n  } else if n == 0 {\n    > \"zero\"\n  } else {\n    > \"positive\"\n  }\n}\n$ r1 = classify(-5)\n$ r2 = classify(0)\n$ r3 = classify(7)\n$ result = r1 + \" \" + r2 + \" \" + r3"
+  if run_test("else if chain (negative zero positive)", t70_src, "negative zero positive") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 70: null comparison ──
+  $ t71_src = "$ x = null\n$ r = 0\nif x == null { $ r = 1 }\n$ result = r"
+  if run_test("null comparison (== null)", t71_src, 1) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 71: typeOf builtin ──
+  $ t72_src = "$ a = typeOf(42)\n$ b = typeOf(\"hello\")\n$ c = typeOf(true)\n$ d = typeOf(null)\n$ e = typeOf([1, 2])\n$ f = typeOf({ x: 1 })\n$ result = a + \" \" + b + \" \" + c + \" \" + d + \" \" + e + \" \" + f"
+  if run_test("typeOf builtin (all types)", t72_src, "int str bool null array object") { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
