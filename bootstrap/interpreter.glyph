@@ -498,6 +498,21 @@ import "./parser"
   > { value: null, error: "" }
 }
 
+# ─── Dynamic Eval (Self-Hosting Seed) ────────────────────────────
+
+! eval_source(src: str, env: Environment) -> EvalResult {
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" {
+    > { value: null, error: "parse error: " + pr.error }
+  }
+  $ mr = exec_module(pr.mod, env)
+  if mr.error != "" {
+    > { value: null, error: "exec error: " + mr.error }
+  }
+  > { value: null, error: "" }
+}
+
 # ─── Entry Point ───────────────────────────────────────────────────
 
 ! run_test(name: str, src: str, expected: any) -> bool {
@@ -590,6 +605,58 @@ import "./parser"
   # ── Test 12: array literal + index ──
   $ t12_src = "$ arr = [10, 20, 30]\n$ result = arr[0] + arr[2]"
   if run_test("array literal + index", t12_src, 40) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 13: self-hosting seed — dynamic eval of arithmetic ──
+  # Use eval_source to parse and execute a source string at runtime
+  $ seed_env = env_new()
+  $ seed_src = "const A = 10 + 20\nconst B = A * 2"
+  $ seed_r = eval_source(seed_src, seed_env)
+  print("")
+  print("TEST: self-hosting seed (const A=10+20, B=A*2)")
+  if seed_r.error != "" {
+    print("  FAIL: " + seed_r.error)
+    $ failed = failed + 1
+  } else {
+    $ bv = env_get(seed_env, "B")
+    if bv.error != "" {
+      print("  FAIL: no B binding: " + bv.error)
+      $ failed = failed + 1
+    } else {
+      if bv.value != 60 {
+        print("  FAIL: got " + toString(bv.value) + " expected 60")
+        $ failed = failed + 1
+      } else {
+        print("  PASS: B = " + toString(bv.value))
+        $ passed = passed + 1
+      }
+    }
+  }
+
+  # ── Test 14: self-hosting seed — dynamic eval with function ──
+  # Use eval_source to define and call a function dynamically
+  $ seed2_env = env_new()
+  $ seed2_src = "! triple(x: int) -> int { > x * 3 }\n$ result = triple(14)"
+  $ seed2_r = eval_source(seed2_src, seed2_env)
+  print("")
+  print("TEST: self-hosting seed (dynamic fn: triple(14)=42)")
+  if seed2_r.error != "" {
+    print("  FAIL: " + seed2_r.error)
+    $ failed = failed + 1
+  } else {
+    $ rv = env_get(seed2_env, "result")
+    if rv.error != "" {
+      print("  FAIL: no result: " + rv.error)
+      $ failed = failed + 1
+    } else {
+      if rv.value != 42 {
+        print("  FAIL: got " + toString(rv.value) + " expected 42")
+        $ failed = failed + 1
+      } else {
+        print("  PASS: result = " + toString(rv.value))
+        $ passed = passed + 1
+      }
+    }
+  }
 
   # ── Summary ──
   print("")
