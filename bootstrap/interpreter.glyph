@@ -614,11 +614,15 @@ import "./parser"
   $ t14_src = "! make_point(x: int, y: int) -> any {\n  > { x: x, y: y }\n}\n$ p = make_point(3, 7)\n$ result = p.x * 10 + p.y"
   if run_test("function returning object", t14_src, 37) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
-  # ── Test 15: array literal + index ──
-  $ t15_src = "$ arr = [10, 20, 30]\n$ result = arr[0] + arr[2]"
-  if run_test("array literal + index", t15_src, 40) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+  # ── Test 15: object passed as function argument ──
+  $ t15_src = "! get_area(rect: any) -> int {\n  > rect.w * rect.h\n}\n$ r = { w: 6, h: 7 }\n$ result = get_area(r)"
+  if run_test("object as function argument", t15_src, 42) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
-  # ── Test 16: self-hosting seed — dynamic eval of arithmetic ──
+  # ── Test 16: array literal + index ──
+  $ t16_src = "$ arr = [10, 20, 30]\n$ result = arr[0] + arr[2]"
+  if run_test("array literal + index", t16_src, 40) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 17: self-hosting seed — dynamic eval of arithmetic ──
   # Use eval_source to parse and execute a source string at runtime
   $ seed_env = env_new()
   $ seed_src = "const A = 10 + 20\nconst B = A * 2"
@@ -644,7 +648,7 @@ import "./parser"
     }
   }
 
-  # ── Test 17: self-hosting seed — dynamic eval with function ──
+  # ── Test 18: self-hosting seed — dynamic eval with function ──
   # Use eval_source to define and call a function dynamically
   $ seed2_env = env_new()
   $ seed2_src = "! triple(x: int) -> int { > x * 3 }\n$ result = triple(14)"
@@ -670,7 +674,7 @@ import "./parser"
     }
   }
 
-  # ── Test 16: dynamic eval with field assignment ──
+  # ── Test 19: dynamic eval with field assignment ──
   $ seed3_env = env_new()
   $ seed3_src = "$ obj = { x: 1, y: 2 }\n$ obj.x = 10\n$ result = obj.x + obj.y"
   $ seed3_r = eval_source(seed3_src, seed3_env)
