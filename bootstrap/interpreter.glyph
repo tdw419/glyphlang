@@ -1913,6 +1913,26 @@ import "./parser"
     }
   }
 
+  # ── Test 169: self-hosting — expression evaluator with subtraction + larger expr ──
+  $ sh169_env = env_new()
+  $ sh169_src = "! to_digit(ch: str) -> int {\n  $ digits = \"0123456789\"\n  $ i = 0\n  while i < length(digits) {\n    if charAt(digits, i) == ch { > i }\n    $ i = i + 1\n  }\n  > -1\n}\n! tokenize(src: str) -> any {\n  $ tokens = []\n  $ i = 0\n  while i < length(src) {\n    $ ch = charAt(src, i)\n    if ch != \" \" {\n      $ tokens = tokens + [ch]\n    }\n    $ i = i + 1\n  }\n  > tokens\n}\n! parse_num(tokens: any, pos: any) -> int {\n  $ result = 0\n  while pos.val < length(tokens) {\n    $ ch = tokens[pos.val]\n    $ d = to_digit(ch)\n    if d < 0 { > result }\n    $ result = result * 10 + d\n    $ pos.val = pos.val + 1\n  }\n  > result\n}\n! parse_factor(tokens: any, pos: any) -> int {\n  $ ch = tokens[pos.val]\n  if ch == \"(\" {\n    $ pos.val = pos.val + 1\n    $ val = parse_expr(tokens, pos)\n    $ pos.val = pos.val + 1\n    > val\n  }\n  > parse_num(tokens, pos)\n}\n! parse_term(tokens: any, pos: any) -> int {\n  $ left = parse_factor(tokens, pos)\n  while pos.val < length(tokens) {\n    $ op = tokens[pos.val]\n    if op != \"*\" { > left }\n    $ pos.val = pos.val + 1\n    $ right = parse_factor(tokens, pos)\n    $ left = left * right\n  }\n  > left\n}\n! parse_expr(tokens: any, pos: any) -> int {\n  $ left = parse_term(tokens, pos)\n  while pos.val < length(tokens) {\n    $ op = tokens[pos.val]\n    if op == \"+\" {\n      $ pos.val = pos.val + 1\n      $ right = parse_term(tokens, pos)\n      $ left = left + right\n    } else {\n      if op == \"-\" {\n        $ pos.val = pos.val + 1\n        $ right = parse_term(tokens, pos)\n        $ left = left - right\n      } else {\n        > left\n      }\n    }\n  }\n  > left\n}\n$ tokens = tokenize(\"(3+4)*2-1\")\n$ pos = { val: 0 }\n$ result = parse_expr(tokens, pos)"
+  $ sh169_r = eval_source(sh169_src, sh169_env, "bootstrap/")
+  print("")
+  print("TEST: self-hosting expression evaluator with parens + subtract ((3+4)*2-1=13)")
+  if sh169_r.error != "" {
+    print("  FAIL: " + sh169_r.error)
+    $ failed = failed + 1
+  } else {
+    $ rv169 = env_get(sh169_env, "result")
+    if rv169.value != 13 {
+      print("  FAIL: got " + toString(rv169.value) + " expected 13")
+      $ failed = failed + 1
+    } else {
+      print("  PASS: result = " + toString(rv169.value))
+      $ passed = passed + 1
+    }
+  }
+
   # ── Summary ──
   print("")
   print("========================================")
