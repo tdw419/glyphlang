@@ -518,6 +518,16 @@ import "./parser"
     $ op = expr.op
 
     if op == "+" {
+      # Array + Array: concatenate
+      if typeOf(l) == "array" && typeOf(r) == "array" {
+        $ merged = l
+        $ mi = 0
+        while mi < length(r) {
+          $ merged = merged + [r[mi]]
+          $ mi = mi + 1
+        }
+        > { value: merged, error: "" }
+      }
       if typeOf(l) == "str" || typeOf(r) == "str" {
         > { value: to_string(l) + to_string(r), error: "" }
       }
@@ -705,6 +715,14 @@ import "./parser"
     # String key → object field access: obj["field"]
     if typeOf(ir.value) == "str" {
       > { value: cr.value[ir.value], error: "" }
+    }
+    # Integer key → string character access: "hello"[0] → "h"
+    if typeOf(cr.value) == "str" {
+      $ ci = to_int(ir.value)
+      if ci >= 0 && ci < length(cr.value) {
+        > { value: charAt(cr.value, ci), error: "" }
+      }
+      > { value: null, error: "string index out of bounds: " + toString(ci) }
     }
     # Integer key → array index access: arr[i]
     $ ci = to_int(ir.value)
@@ -1434,6 +1452,22 @@ import "./parser"
   # ── Test 90: iterate object keys and sum values dynamically ──
   $ t90_src = "$ obj = { a: 10, b: 20, c: 30 }\n$ ks = keys(obj)\n$ total = 0\nfor k in ks {\n  $ total = total + obj[k]\n}\n$ result = total"
   if run_test("iterate keys + dynamic field access", t90_src, 60) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 91: string indexing ──
+  $ t91_src = "$ s = \"hello\"\n$ result = s[1]"
+  if run_test("string indexing (s[1]=e)", t91_src, "e") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 92: string indexing first char ──
+  $ t92_src = "$ s = \"glyph\"\n$ result = s[0]"
+  if run_test("string indexing (s[0]=g)", t92_src, "g") { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 93: array concatenation ──
+  $ t93_src = "$ a = [1, 2, 3]\n$ b = [4, 5, 6]\n$ c = a + b\n$ result = c[3] + c[4] + c[5]"
+  if run_test("array concatenation ([1,2,3]+[4,5,6])", t93_src, 15) { $ passed = passed + 1 } else { $ failed = failed + 1 }
+
+  # ── Test 94: array concat + iteration ──
+  $ t94_src = "$ a = [10, 20]\n$ b = [30, 40]\n$ c = a + b\n$ total = 0\nfor v in c { $ total = total + v }\n$ result = total"
+  if run_test("array concat + iteration (sum=100)", t94_src, 100) { $ passed = passed + 1 } else { $ failed = failed + 1 }
 
   # ── Summary ──
   print("")
