@@ -353,7 +353,7 @@ async fn main() {
                 // Write VCC file
                 {
                     let data = readback_vcc_buffer.slice(..).get_mapped_range();
-                    std::fs::write("vcc_colony.rgba", &*data).unwrap();
+                    std::fs::write("/tmp/vcc_colony.rgba", &*data).unwrap();
                     drop(data);
                     readback_vcc_buffer.unmap();
                 }

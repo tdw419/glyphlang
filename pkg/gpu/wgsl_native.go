@@ -51,7 +51,7 @@ func startVCCServer() {
 		http.HandleFunc("/vcc/colony.rgba", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/octet-stream")
 			w.Header().Set("Access-Control-Allow-Origin", "*")
-			http.ServeFile(w, r, "vcc_colony.rgba")
+			http.ServeFile(w, r, "/tmp/vcc_colony.rgba")
 		})
 		go http.ListenAndServe(":8080", nil)
 		fmt.Println("[VCC] Texture server started at http://localhost:8080/vcc/colony.rgba")
