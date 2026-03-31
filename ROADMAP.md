@@ -11,7 +11,7 @@ Production readiness: **7.5/10** — core pipeline solid, needs quality pass and
 Priority: Code quality, testing gaps, CI/CD. Unblock v1.0.
 
 ### P1: CI/CD Pipeline
-- [ ] GitHub Actions: test on push/PR (go test ./...)
+- [x] GitHub Actions: test on push/PR (go test ./...)
 - [ ] GitHub Actions: lint enforcement (gofmt, golangci-lint)
 - [ ] GitHub Actions: build matrix (linux/mac/windows x amd64/arm64)
 - [ ] Coverage reporting (codecov or similar)
