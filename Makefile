@@ -1,4 +1,4 @@
-.PHONY: help build test bench clean docker deploy docs examples installer wasm coverage
+.PHONY: help build test bench clean docker deploy docs examples installer wasm coverage release release-dryrun
 
 # Default target
 help:
@@ -18,6 +18,8 @@ help:
 	@echo "  coverage      - Run tests with coverage report"
 	@echo "  fmt           - Format code"
 	@echo "  lint          - Run linters"
+	@echo "  release       - Create a release with GoReleaser (requires a git tag)"
+	@echo "  release-dryrun - Dry-run GoReleaser to validate config"
 
 # Version injection
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -156,3 +158,12 @@ run:
 dev:
 	@echo "Running Glyph in dev mode..."
 	go run ./cmd/glyph dev examples/rest-api/main.glyph --port 8080
+
+# Release targets (requires goreleaser: go install github.com/goreleaser/goreleaser/v2/cmd/goreleaser@latest)
+release:
+	@echo "Creating release with GoReleaser..."
+	goreleaser release --clean
+
+release-dryrun:
+	@echo "Dry-running GoReleaser..."
+	goreleaser release --snapshot --clean
