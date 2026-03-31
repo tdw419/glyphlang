@@ -117,7 +117,7 @@ func getPersistentRunner() (*PersistentRunner, error) {
 	}
 
 	scanner := bufio.NewScanner(stdoutPipe)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 16*1024*1024), 16*1024*1024) // 16MB for 65K VM results
 
 	globalRunner = &PersistentRunner{
 		cmd:    cmd,
