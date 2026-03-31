@@ -768,6 +768,23 @@ const OP_HALT          = 255
     > ""
   }
 
+  if expr.kind == "method_call" {
+    # Compile the callee expression (e.g. obj.field) -> pushes function object
+    $ err = compile_expression(c, expr.object)
+    if err != "" { > err }
+    # Then push arguments
+    $ i = 0
+    while i < length(expr.args) {
+      $ er = compile_expression(c, expr.args[i])
+      if er != "" { > er }
+      i = i + 1
+    }
+    # OP_CALL operand = arg count
+    emit_byte(c, OP_CALL)
+    emit_bytes4(c, length(expr.args))
+    > ""
+  }
+
   if expr.kind == "call" {
     # Push function name onto stack first
     $ idx = add_constant(c, expr.func_name)
