@@ -97,7 +97,7 @@ async fn main() {
             entry_point: "main",
         });
 
-        // Buffers
+        // 1. Pre-allocate ALL Persistent Buffers
         let config_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Config Buffer"),
             size: std::mem::size_of::<Config>() as u64,
@@ -136,7 +136,7 @@ async fn main() {
             mapped_at_creation: false,
         });
 
-        // Texture Bridge (Issue #67)
+        // VCC Texture
         let vcc_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("VCC Colony Texture"),
             size: wgpu::Extent3d { width: VCC_SIZE, height: VCC_SIZE, depth_or_array_layers: 1 },
@@ -164,7 +164,7 @@ async fn main() {
             ],
         });
 
-        // Readback Buffers
+        // 2. Pre-allocate ALL Readback Buffers
         let readback_spawn_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Readback Spawn Buffer"),
             size: spawn_buffer_size as u64,
@@ -209,6 +209,7 @@ async fn main() {
 
             let mut current_vms = job.num_vms as usize;
             
+            // 3. Reset GPU Substrate for new job
             let mut bytecode_u32 = Vec::new();
             for chunk in bytecode.chunks(4) {
                 let mut word = [0u8; 4];
@@ -223,6 +224,13 @@ async fn main() {
             let active_states = vec![VMState { pc: 0, sp: 0, halted: 0, error: 0, steps: 0, result_tag: 0, result_data: 0, pad: 0 }; current_vms];
             queue.write_buffer(&state_buffer, 0, bytemuck::cast_slice(&active_states));
 
+            // Reset Stacks/Vars for current_vms
+            let zero_data = vec![0u8; std::mem::size_of::<GpuValue>() * MAX_STACK * current_vms];
+            queue.write_buffer(&stacks_buffer, 0, &zero_data);
+            let zero_vars = vec![0u8; std::mem::size_of::<GpuValue>() * MAX_VARS * current_vms];
+            queue.write_buffer(&vars_buffer, 0, &zero_vars);
+
+            // 4. Multi-Pass Mitosis Loop
             for _pass in 0..MAX_PASSES {
                 let config = Config {
                     bytecode_len: bytecode.len() as u32,
@@ -245,6 +253,7 @@ async fn main() {
                 }
                 queue.submit(Some(encoder.finish()));
 
+                // Readback spawn count
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 encoder.copy_buffer_to_buffer(&spawn_buffer, 0, &readback_spawn_buffer, 0, spawn_buffer_size as u64);
                 queue.submit(Some(encoder.finish()));
@@ -263,6 +272,7 @@ async fn main() {
 
                 if spawn_count == 0 || current_vms >= MAX_VMS { break; }
 
+                // Initialise child VMs
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 encoder.copy_buffer_to_buffer(&state_buffer, 0, &readback_state_buffer, 0, (std::mem::size_of::<VMState>() * current_vms) as u64);
                 encoder.copy_buffer_to_buffer(&stacks_buffer, 0, &readback_stacks_buffer, 0, (std::mem::size_of::<GpuValue>() * MAX_STACK * current_vms) as u64);
@@ -317,36 +327,45 @@ async fn main() {
                 }
             }
 
-            // Read back VCC Texture (Issue #67)
+            // 5. Final Readbacks (Results + VCC Texture)
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            
+            // Read back VM results
+            encoder.copy_buffer_to_buffer(&state_buffer, 0, &readback_state_buffer, 0, (std::mem::size_of::<VMState>() * current_vms) as u64);
+            
+            // Read back VCC texture to buffer
             encoder.copy_texture_to_buffer(
                 wgpu::ImageCopyTexture { texture: &vcc_texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
                 wgpu::ImageCopyBuffer { buffer: &readback_vcc_buffer, layout: wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(VCC_SIZE * 4), rows_per_image: Some(VCC_SIZE) } },
                 wgpu::Extent3d { width: VCC_SIZE, height: VCC_SIZE, depth_or_array_layers: 1 }
             );
+            
             queue.submit(Some(encoder.finish()));
-            let (s, r) = futures_intrusive::channel::shared::oneshot_channel();
-            readback_vcc_buffer.slice(..).map_async(wgpu::MapMode::Read, move |v| s.send(v).unwrap());
-            device.poll(wgpu::Maintain::Wait);
-            if let Some(Ok(())) = r.receive().await {
-                let data = readback_vcc_buffer.slice(..).get_mapped_range();
-                std::fs::write("vcc_colony.rgba", &*data).unwrap();
-                drop(data);
-                readback_vcc_buffer.unmap();
-            }
 
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-            encoder.copy_buffer_to_buffer(&state_buffer, 0, &readback_state_buffer, 0, (std::mem::size_of::<VMState>() * current_vms) as u64);
-            queue.submit(Some(encoder.finish()));
-            let (s, r) = futures_intrusive::channel::shared::oneshot_channel();
-            readback_state_buffer.slice(..).map_async(wgpu::MapMode::Read, move |v| s.send(v).unwrap());
+            // Map and write results
+            let (s1, r1) = futures_intrusive::channel::shared::oneshot_channel();
+            let (s2, r2) = futures_intrusive::channel::shared::oneshot_channel();
+            readback_state_buffer.slice(..).map_async(wgpu::MapMode::Read, move |v| s1.send(v).unwrap());
+            readback_vcc_buffer.slice(..).map_async(wgpu::MapMode::Read, move |v| s2.send(v).unwrap());
             device.poll(wgpu::Maintain::Wait);
-            if let Some(Ok(())) = r.receive().await {
-                let data = readback_state_buffer.slice(..).get_mapped_range();
-                let results: &[VMState] = bytemuck::cast_slice(&data);
-                println!("{}", serde_json::to_string(&results[..current_vms]).unwrap());
-                drop(data);
-                readback_state_buffer.unmap();
+
+            if let (Some(Ok(())), Some(Ok(()))) = (r1.receive().await, r2.receive().await) {
+                // Write VCC file
+                {
+                    let data = readback_vcc_buffer.slice(..).get_mapped_range();
+                    std::fs::write("vcc_colony.rgba", &*data).unwrap();
+                    drop(data);
+                    readback_vcc_buffer.unmap();
+                }
+                
+                // Write thread results to stdout
+                {
+                    let data = readback_state_buffer.slice(..).get_mapped_range();
+                    let results: &[VMState] = bytemuck::cast_slice(&data);
+                    println!("{}", serde_json::to_string(&results[..current_vms]).unwrap());
+                    drop(data);
+                    readback_state_buffer.unmap();
+                }
             }
         }
     }
