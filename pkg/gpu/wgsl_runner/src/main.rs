@@ -34,6 +34,7 @@ struct GpuValue {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct SpawnRequest {
     parent_id: u32,
+    parent_pc: u32,
     pc_offset: i32,
 }
 
@@ -81,152 +82,139 @@ async fn main() {
     }, None).await.expect("Failed to create device");
 
     if is_daemon {
-        eprintln!("[GPU] Starting IPC daemon mode...");
-        let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+        eprintln!("[GPU] Starting IPC daemon mode with caching (Issue #66)...");
         
+        let wgsl_source = std::fs::read_to_string(shader_path).expect("Failed to read shader file");
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("GlyphLang Shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&wgsl_source)),
+        });
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Compute Pipeline"),
+            layout: None,
+            module: &shader,
+            entry_point: "main",
+        });
+
+        let config_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Config Buffer"),
+            size: std::mem::size_of::<Config>() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let bytecode_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Bytecode Buffer"),
+            size: (1024 * 1024) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("VMState Buffer"),
+            size: (std::mem::size_of::<VMState>() * MAX_VMS) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let stacks_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Stacks Buffer"),
+            size: (std::mem::size_of::<GpuValue>() * MAX_STACK * MAX_VMS) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let vars_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Vars Buffer"),
+            size: (std::mem::size_of::<GpuValue>() * MAX_VARS * MAX_VMS) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let spawn_buffer_size = 4 + (std::mem::size_of::<SpawnRequest>() * MAX_SPAWNS_PER_PASS);
+        let spawn_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Spawn Buffer"),
+            size: spawn_buffer_size as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let bind_group_layout = compute_pipeline.get_bind_group_layout(0);
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: config_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: bytecode_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: state_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 3, resource: stacks_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 4, resource: vars_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 5, resource: spawn_buffer.as_entire_binding() },
+            ],
+        });
+
+        let readback_spawn_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Readback Spawn Buffer"),
+            size: spawn_buffer_size as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let readback_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Readback State Buffer"),
+            size: (std::mem::size_of::<VMState>() * MAX_VMS) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let readback_stacks_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Readback Stacks Buffer"),
+            size: (std::mem::size_of::<GpuValue>() * MAX_STACK * MAX_VMS) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let readback_vars_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Readback Vars Buffer"),
+            size: (std::mem::size_of::<GpuValue>() * MAX_VARS * MAX_VMS) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
         while let Ok(Some(line)) = lines.next_line().await {
             let job: GlyphJob = match serde_json::from_str(&line) {
                 Ok(j) => j,
-                Err(e) => {
-                    eprintln!("[GPU] Invalid job JSON: {}", e);
-                    continue;
-                }
+                Err(e) => { eprintln!("[GPU] Invalid job JSON: {}", e); continue; }
             };
-
             let bytecode = match hex::decode(&job.bytecode_hex) {
                 Ok(b) => b,
-                Err(e) => {
-                    eprintln!("[GPU] Invalid hex bytecode: {}", e);
-                    continue;
-                }
+                Err(e) => { eprintln!("[GPU] Invalid hex bytecode: {}", e); continue; }
             };
-
-            let wgsl_source = match std::fs::read_to_string(shader_path) {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("[GPU] Failed to read shader: {}", e);
-                    continue;
-                }
-            };
-            
-            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("GlyphLang Shader"),
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&wgsl_source)),
-            });
-
-            let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("Compute Pipeline"),
-                layout: None,
-                module: &shader,
-                entry_point: "main",
-            });
 
             let mut current_vms = job.num_vms as usize;
             
-            let config = Config {
-                bytecode_len: bytecode.len() as u32,
-                num_constants: job.num_constants,
-                constants_offset: job.const_offset,
-                code_offset: job.code_offset,
-                num_vms: MAX_VMS as u32,
-                ..bytemuck::Zeroable::zeroed()
-            };
-            let config_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Config Buffer"),
-                contents: bytemuck::cast_slice(&[config]),
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            });
-
             let mut bytecode_u32 = Vec::new();
             for chunk in bytecode.chunks(4) {
                 let mut word = [0u8; 4];
                 word[..chunk.len()].copy_from_slice(chunk);
                 bytecode_u32.push(u32::from_le_bytes(word));
             }
-            let bytecode_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Bytecode Buffer"),
-                contents: bytemuck::cast_slice(&bytecode_u32),
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
-            });
+            queue.write_buffer(&bytecode_buffer, 0, bytemuck::cast_slice(&bytecode_u32));
 
-            let initial_states = vec![VMState { pc: 0, sp: 0, halted: 0, error: 0, steps: 0, result_tag: 0, result_data: 0, pad: 0 }; MAX_VMS];
-            let state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("VMState Buffer"),
-                size: (std::mem::size_of::<VMState>() * MAX_VMS) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            queue.write_buffer(&state_buffer, 0, bytemuck::cast_slice(&initial_states[..current_vms]));
-
-            let stacks_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Stacks Buffer"),
-                size: (std::mem::size_of::<GpuValue>() * MAX_STACK * MAX_VMS) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            let zero_stack = vec![0u8; std::mem::size_of::<GpuValue>() * MAX_STACK * MAX_VMS];
-            queue.write_buffer(&stacks_buffer, 0, &zero_stack);
-
-            let vars_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Vars Buffer"),
-                size: (std::mem::size_of::<GpuValue>() * MAX_VARS * MAX_VMS) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            let zero_vars = vec![0u8; std::mem::size_of::<GpuValue>() * MAX_VARS * MAX_VMS];
-            queue.write_buffer(&vars_buffer, 0, &zero_vars);
-
-            let spawn_buffer_size = 4 + (std::mem::size_of::<SpawnRequest>() * MAX_SPAWNS_PER_PASS);
-            let spawn_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Spawn Buffer"),
-                size: spawn_buffer_size as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-
-            let readback_spawn_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Readback Spawn Buffer"),
-                size: spawn_buffer_size as u64,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
-
-            let readback_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Readback State Buffer"),
-                size: (std::mem::size_of::<VMState>() * MAX_VMS) as u64,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
-
-            let readback_stacks_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Readback Stacks Buffer"),
-                size: (std::mem::size_of::<GpuValue>() * MAX_STACK * MAX_VMS) as u64,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
-
-            let readback_vars_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Readback Vars Buffer"),
-                size: (std::mem::size_of::<GpuValue>() * MAX_VARS * MAX_VMS) as u64,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
-
-            let bind_group_layout = compute_pipeline.get_bind_group_layout(0);
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: config_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: bytecode_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: state_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: stacks_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 4, resource: vars_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 5, resource: spawn_buffer.as_entire_binding() },
-                ],
-            });
+            let initial_states = vec![VMState { pc: 0, sp: 0, halted: 1, error: 0, steps: 0, result_tag: 0, result_data: 0, pad: 0 }; MAX_VMS];
+            queue.write_buffer(&state_buffer, 0, bytemuck::cast_slice(&initial_states));
+            
+            let active_states = vec![VMState { pc: 0, sp: 0, halted: 0, error: 0, steps: 0, result_tag: 0, result_data: 0, pad: 0 }; current_vms];
+            queue.write_buffer(&state_buffer, 0, bytemuck::cast_slice(&active_states));
 
             for _pass in 0..MAX_PASSES {
+                let config = Config {
+                    bytecode_len: bytecode.len() as u32,
+                    num_constants: job.num_constants,
+                    constants_offset: job.const_offset,
+                    code_offset: job.code_offset,
+                    num_vms: current_vms as u32,
+                    ..bytemuck::Zeroable::zeroed()
+                };
+                queue.write_buffer(&config_buffer, 0, bytemuck::cast_slice(&[config]));
                 queue.write_buffer(&spawn_buffer, 0, bytemuck::cast_slice(&[0u32]));
 
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -255,9 +243,7 @@ async fn main() {
                     count as usize
                 } else { 0 };
 
-                if spawn_count == 0 || current_vms >= MAX_VMS {
-                    break;
-                }
+                if spawn_count == 0 || current_vms >= MAX_VMS { break; }
 
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 encoder.copy_buffer_to_buffer(&state_buffer, 0, &readback_state_buffer, 0, (std::mem::size_of::<VMState>() * current_vms) as u64);
@@ -269,7 +255,6 @@ async fn main() {
                 let (s2, r2) = futures_intrusive::channel::shared::oneshot_channel();
                 let (s3, r3) = futures_intrusive::channel::shared::oneshot_channel();
                 let (s4, r4) = futures_intrusive::channel::shared::oneshot_channel();
-                
                 readback_state_buffer.slice(..).map_async(wgpu::MapMode::Read, move |v| s1.send(v).unwrap());
                 readback_stacks_buffer.slice(..).map_async(wgpu::MapMode::Read, move |v| s2.send(v).unwrap());
                 readback_vars_buffer.slice(..).map_async(wgpu::MapMode::Read, move |v| s3.send(v).unwrap());
@@ -279,13 +264,10 @@ async fn main() {
                 if let (Some(Ok(())), Some(Ok(())), Some(Ok(())), Some(Ok(()))) = (r1.receive().await, r2.receive().await, r3.receive().await, r4.receive().await) {
                     let state_data = readback_state_buffer.slice(..).get_mapped_range();
                     let current_states: &[VMState] = bytemuck::cast_slice(&state_data);
-                    
                     let stacks_data = readback_stacks_buffer.slice(..).get_mapped_range();
                     let current_stacks: &[GpuValue] = bytemuck::cast_slice(&stacks_data);
-                    
                     let vars_data = readback_vars_buffer.slice(..).get_mapped_range();
                     let current_vars: &[GpuValue] = bytemuck::cast_slice(&vars_data);
-                    
                     let spawn_data = readback_spawn_buffer.slice(..).get_mapped_range();
                     let requests: &[SpawnRequest] = bytemuck::cast_slice(&spawn_data[4..]);
                     
@@ -295,26 +277,18 @@ async fn main() {
                         if (req.parent_id as usize) < current_vms {
                             let parent = current_states[req.parent_id as usize];
                             new_states.push(VMState {
-                                pc: (parent.pc as i32 + req.pc_offset) as u32,
+                                pc: (req.parent_pc as i32 + req.pc_offset) as u32,
                                 sp: parent.sp,
-                                halted: 0,
-                                error: 0,
-                                steps: 0,
-                                result_tag: 0,
-                                result_data: 0,
-                                pad: 0,
+                                halted: 0, error: 0, steps: 0, result_tag: 0, result_data: 0, pad: 0,
                             });
-                            
                             let parent_stack = &current_stacks[req.parent_id as usize * MAX_STACK..(req.parent_id as usize + 1) * MAX_STACK];
                             let parent_vars = &current_vars[req.parent_id as usize * MAX_VARS..(req.parent_id as usize + 1) * MAX_VARS];
-                            
                             queue.write_buffer(&stacks_buffer, ((current_vms + i) * MAX_STACK * std::mem::size_of::<GpuValue>()) as u64, bytemuck::cast_slice(parent_stack));
                             queue.write_buffer(&vars_buffer, ((current_vms + i) * MAX_VARS * std::mem::size_of::<GpuValue>()) as u64, bytemuck::cast_slice(parent_vars));
                         }
                     }
                     drop(state_data); drop(stacks_data); drop(vars_data); drop(spawn_data);
                     readback_state_buffer.unmap(); readback_stacks_buffer.unmap(); readback_vars_buffer.unmap(); readback_spawn_buffer.unmap();
-
                     if !new_states.is_empty() {
                         queue.write_buffer(&state_buffer, (std::mem::size_of::<VMState>() * current_vms) as u64, bytemuck::cast_slice(&new_states));
                         current_vms += new_states.len();
@@ -328,11 +302,9 @@ async fn main() {
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
             encoder.copy_buffer_to_buffer(&state_buffer, 0, &readback_state_buffer, 0, (std::mem::size_of::<VMState>() * current_vms) as u64);
             queue.submit(Some(encoder.finish()));
-
             let (s, r) = futures_intrusive::channel::shared::oneshot_channel();
             readback_state_buffer.slice(..).map_async(wgpu::MapMode::Read, move |v| s.send(v).unwrap());
             device.poll(wgpu::Maintain::Wait);
-
             if let Some(Ok(())) = r.receive().await {
                 let data = readback_state_buffer.slice(..).get_mapped_range();
                 let results: &[VMState] = bytemuck::cast_slice(&data);

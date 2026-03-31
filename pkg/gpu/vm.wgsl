@@ -408,8 +408,8 @@ fn exec_step(vm_id: u32) {
             let offset_val = pop(vm_id); if (vm_states[vm_id].halted == 1u) { return; }
             let slot = atomicAdd(&spawn_requests[0], 1u);
             if (slot < 1024u) {
-                spawn_requests[1u + slot * 2u] = vm_id;
-                spawn_requests[2u + slot * 2u] = u32(offset_val.data);
+                spawn_requests[1u + slot * 3u] = vm_id;
+                spawn_requests[2u + slot * 3u] = pc; spawn_requests[3u + slot * 3u] = u32(offset_val.data);
             }
             push(vm_id, TAG_INT, i32(slot));
         }
