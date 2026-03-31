@@ -14,6 +14,21 @@ type Environment struct {
         Parent *Environment
 }
 
+
+func (e *Environment) Clone() *Environment {
+	if e == nil {
+		return nil
+	}
+	newEnv := &Environment{
+		Values: make(map[string]Value),
+		Parent: e.Parent.Clone(),
+	}
+	for k, v := range e.Values {
+		newEnv.Values[k] = v
+	}
+	return newEnv
+}
+
 func NewEnvironment(parent *Environment) *Environment {
         return &Environment{
                 Values: make(map[string]Value),

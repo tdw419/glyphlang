@@ -58,6 +58,8 @@ const OP_GET_FIELD     = 113
 const OP_SET_FIELD     = 114
 const OP_DEF_FUNC      = 115
 const OP_BUILD_ARRAY   = 128
+const OP_MITOSIS       = 192  # 0xC0
+const OP_MUTATOR       = 193  # 0xC1
 const OP_HALT          = 255
 
 # ─── Compiler Construction ────────────────────────────────────────
@@ -786,6 +788,23 @@ const OP_HALT          = 255
   }
 
   if expr.kind == "call" {
+    if expr.func_name == "__mitosis" {
+      if length(expr.args) < 1 { > "__mitosis expects 1 argument" }
+      $ err = compile_expression(c, expr.args[0])
+      if err != "" { > err }
+      emit_byte(c, OP_MITOSIS)
+      > ""
+    }
+    if expr.func_name == "__mutator" {
+      if length(expr.args) < 2 { > "__mutator expects 2 arguments" }
+      $ err1 = compile_expression(c, expr.args[0])
+      if err1 != "" { > err1 }
+      $ err2 = compile_expression(c, expr.args[1])
+      if err2 != "" { > err2 }
+      emit_byte(c, OP_MUTATOR)
+      > ""
+    }
+
     # Push function name onto stack first
     $ idx = add_constant(c, expr.func_name)
     emit_byte(c, OP_PUSH)

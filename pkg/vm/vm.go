@@ -108,6 +108,44 @@ type CallFrame struct {
 	env             *Environment     // Lexical environment
 }
 
+
+// Clone creates a deep copy of the VM state for parallel execution (mitosis).
+func (vm *VM) Clone() *VM {
+	newVM := &VM{
+		env:        vm.env.Clone(), // TODO: Deep copy environment if needed
+		globals:    vm.globals,
+		constants:  vm.constants,
+		builtins:   vm.builtins,
+		functions:  vm.functions,
+		pc:         vm.pc,
+		code:       vm.code,
+		halted:     vm.halted,
+		maxSteps:   vm.maxSteps,
+		profiler:   vm.profiler,
+		nextIterID: vm.nextIterID,
+	}
+
+	// Deep copy stack
+	newVM.stack = make([]Value, len(vm.stack))
+	copy(newVM.stack, vm.stack)
+
+	// Deep copy call stack
+	newVM.callStack = make([]CallFrame, len(vm.callStack))
+	copy(newVM.callStack, vm.callStack)
+
+	// Deep copy iterators
+	newVM.iterators = make(map[int]*Iterator)
+	for k, v := range vm.iterators {
+		newVM.iterators[k] = &Iterator{
+			collection: v.collection,
+			index:      v.index,
+			keys:       v.keys,
+		}
+	}
+
+	return newVM
+}
+
 // VM represents the virtual machine
 type VM struct {
 	stack      []Value
@@ -421,6 +459,10 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 		return vm.execAwait()
 	case OpTry:
 		return vm.execTry()
+	case OpMitosis:
+		return vm.execMitosis()
+	case OpMutator:
+		return vm.execMutator()
 	case OpTelemetry:
 		return vm.execTelemetry()
 	case OpHalt:
@@ -1580,6 +1622,43 @@ func (vm *VM) execCall() error {
 }
 
 // execTelemetry writes to the telemetry plane
+
+// execMutator modifies the bytecode at a relative offset.
+// This enables the Ouroboros pattern: self-modifying code.
+
+// execMitosis clones the current VM and starts parallel execution.
+// (Spatial S opcode)
+func (vm *VM) execMitosis() error {
+	_, err := vm.Pop() // spatial_offset
+	if err != nil { return err }
+	
+	// TODO: Implement actual parallel spawning.
+	// For now, just a stub that indicates success.
+	vm.Push(BoolValue{Val: true})
+	return nil
+}
+
+func (vm *VM) execMutator() error {
+	offset, err := vm.Pop()
+	if err != nil { return err }
+	val, err := vm.Pop()
+	if err != nil { return err }
+
+	iv, ok1 := val.(IntValue)
+	ov, ok2 := offset.(IntValue)
+	if !ok1 || !ok2 {
+		return fmt.Errorf("mutator expects integer value and offset")
+	}
+
+	target := vm.pc + int(ov.Val)
+	if target < 0 || target >= len(vm.code) {
+		return fmt.Errorf("mutator target out of bounds: %d", target)
+	}
+
+	vm.code[target] = byte(iv.Val)
+	return nil
+}
+
 func (vm *VM) execTelemetry() error {
 	val, err := vm.Pop()
 	if err != nil {
