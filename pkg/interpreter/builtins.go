@@ -41,6 +41,10 @@ func init() {
 		"startsWith":  builtinStartsWith,
 		"endsWith":    builtinEndsWith,
 		"indexOf":     builtinIndexOf,
+ 		"repeat":      builtinRepeat,
+		
+		"flatten":     builtinFlatten,
+		"range":       builtinRange,
 		"charAt":      builtinCharAt,
 		"charCodeAt":  builtinCharCodeAt,
 		"charAtCode":  builtinCharCodeAt,
@@ -1069,23 +1073,29 @@ func defaultLess(a, b interface{}, errOut *error) bool {
 
 func builtinReverse(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
 	if len(args) != 1 {
-		return nil, fmt.Errorf("reverse() expects 1 argument (array), got %d", len(args))
+		return nil, fmt.Errorf("reverse() expects 1 argument, got %d", len(args))
 	}
-	arrArg, err := i.EvaluateExpression(args[0], env)
+	val, err := i.EvaluateExpression(args[0], env)
 	if err != nil {
 		return nil, err
 	}
-	arr, ok := arrArg.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("reverse() expects an array argument, got %T", arrArg)
+	switch v := val.(type) {
+	case string:
+		runes := []rune(v)
+		for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+			runes[i], runes[j] = runes[j], runes[i]
+		}
+		return string(runes), nil
+	case []interface{}:
+		result := make([]interface{}, len(v))
+		for idx, elem := range v {
+			result[len(v)-1-idx] = elem
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("reverse() expects string or array, got %T", val)
 	}
-	result := make([]interface{}, len(arr))
-	for idx, elem := range arr {
-		result[len(arr)-1-idx] = elem
-	}
-	return result, nil
 }
-
 func builtinFlat(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("flat() expects 1 argument (array), got %d", len(args))
@@ -1701,4 +1711,70 @@ func vmValueToInterface(val vmPkg.Value) interface{} {
 	default:
 		return fmt.Sprintf("%v", val)
 	}
+}
+
+func builtinRepeat(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("repeat() expects 2 arguments, got %d", len(args))
+	}
+	strArg, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	countArg, err := i.EvaluateExpression(args[1], env)
+	if err != nil {
+		return nil, err
+	}
+	s, ok1 := strArg.(string)
+	n, ok2 := countArg.(int64)
+	if !ok1 || !ok2 {
+		return nil, fmt.Errorf("type error in repeat()")
+	}
+	return strings.Repeat(s, int(n)), nil
+}
+
+func builtinFlatten(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("flatten() expects 1 argument")
+	}
+	arrArg, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	arr, ok := arrArg.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("flatten() expects array")
+	}
+	var res []interface{}
+	for _, item := range arr {
+		if sub, ok := item.([]interface{}); ok {
+			res = append(res, sub...)
+		} else {
+			res = append(res, item)
+		}
+	}
+	return res, nil
+}
+
+func builtinRange(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) < 1 || len(args) > 2 {
+		return nil, fmt.Errorf("range() expects 1 or 2 arguments")
+	}
+	start := int64(0)
+	var stop int64
+	arg0, err := i.EvaluateExpression(args[0], env)
+	if err != nil { return nil, err }
+	if len(args) == 1 {
+		stop = arg0.(int64)
+	} else {
+		start = arg0.(int64)
+		arg1, err := i.EvaluateExpression(args[1], env)
+		if err != nil { return nil, err }
+		stop = arg1.(int64)
+	}
+	res := make([]interface{}, 0)
+	for val := start; val < stop; val++ {
+		res = append(res, val)
+	}
+	return res, nil
 }

@@ -4,6 +4,7 @@ import (
 	. "github.com/glyphlang/glyph/pkg/ast"
 
 	"math"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -1637,5 +1638,48 @@ func TestFloatComparisons(t *testing.T) {
 	}
 	if result != true {
 		t.Errorf("2.5 > 1.5 = %v, want true", result)
+	}
+}
+
+func TestStdlibExpansion(t *testing.T) {
+	i := NewInterpreter()
+	
+	// repeat
+	{
+		expr := FunctionCallExpr{
+			Name: "repeat",
+			Args: []Expr{
+				LiteralExpr{Value: StringLiteral{Value: "a"}},
+				LiteralExpr{Value: IntLiteral{Value: 3}},
+			},
+		}
+		res, err := i.EvaluateExpression(expr, i.globalEnv)
+		if err != nil || res != "aaa" { t.Errorf("repeat failed: %v, %v", res, err) }
+	}
+	
+	// reverse (string)
+	{
+		expr := FunctionCallExpr{
+			Name: "reverse",
+			Args: []Expr{
+				LiteralExpr{Value: StringLiteral{Value: "hello"}},
+			},
+		}
+		res, err := i.EvaluateExpression(expr, i.globalEnv)
+		if err != nil || res != "olleh" { t.Errorf("reverse failed: %v, %v", res, err) }
+	}
+	
+	// range
+	{
+		expr := FunctionCallExpr{
+			Name: "range",
+			Args: []Expr{
+				LiteralExpr{Value: IntLiteral{Value: 3}},
+			},
+		}
+		res, err := i.EvaluateExpression(expr, i.globalEnv)
+		if err != nil { t.Errorf("range failed: %v", err) }
+		expected := []interface{}{int64(0), int64(1), int64(2)}
+		if !reflect.DeepEqual(res, expected) { t.Errorf("range expected %v, got %v", expected, res) }
 	}
 }
