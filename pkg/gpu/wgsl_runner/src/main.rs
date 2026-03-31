@@ -9,6 +9,7 @@ const MAX_SPAWNS_PER_PASS: usize = 1024;
 const MAX_PASSES: usize = 8;
 const MAX_STACK: usize = 256;
 const MAX_VARS: usize = 64;
+const VCC_SIZE: u32 = 64;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, Serialize, Deserialize)]
@@ -82,7 +83,7 @@ async fn main() {
     }, None).await.expect("Failed to create device");
 
     if is_daemon {
-        eprintln!("[GPU] Starting IPC daemon mode with caching (Issue #66)...");
+        eprintln!("[GPU] Starting IPC daemon mode with VCC Texture Bridge (Issue #67)...");
         
         let wgsl_source = std::fs::read_to_string(shader_path).expect("Failed to read shader file");
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -96,41 +97,37 @@ async fn main() {
             entry_point: "main",
         });
 
+        // Buffers
         let config_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Config Buffer"),
             size: std::mem::size_of::<Config>() as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
         let bytecode_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Bytecode Buffer"),
             size: (1024 * 1024) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
         let state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("VMState Buffer"),
             size: (std::mem::size_of::<VMState>() * MAX_VMS) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
         let stacks_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Stacks Buffer"),
             size: (std::mem::size_of::<GpuValue>() * MAX_STACK * MAX_VMS) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
         let vars_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Vars Buffer"),
             size: (std::mem::size_of::<GpuValue>() * MAX_VARS * MAX_VMS) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
         let spawn_buffer_size = 4 + (std::mem::size_of::<SpawnRequest>() * MAX_SPAWNS_PER_PASS);
         let spawn_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Spawn Buffer"),
@@ -138,6 +135,19 @@ async fn main() {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+
+        // Texture Bridge (Issue #67)
+        let vcc_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("VCC Colony Texture"),
+            size: wgpu::Extent3d { width: VCC_SIZE, height: VCC_SIZE, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let vcc_view = vcc_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let bind_group_layout = compute_pipeline.get_bind_group_layout(0);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -150,9 +160,11 @@ async fn main() {
                 wgpu::BindGroupEntry { binding: 3, resource: stacks_buffer.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 4, resource: vars_buffer.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 5, resource: spawn_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::TextureView(&vcc_view) },
             ],
         });
 
+        // Readback Buffers
         let readback_spawn_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Readback Spawn Buffer"),
             size: spawn_buffer_size as u64,
@@ -174,6 +186,12 @@ async fn main() {
         let readback_vars_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Readback Vars Buffer"),
             size: (std::mem::size_of::<GpuValue>() * MAX_VARS * MAX_VMS) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let readback_vcc_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Readback VCC Buffer"),
+            size: (VCC_SIZE * VCC_SIZE * 4) as u64,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -297,6 +315,24 @@ async fn main() {
                     readback_state_buffer.unmap(); readback_stacks_buffer.unmap(); readback_vars_buffer.unmap(); readback_spawn_buffer.unmap();
                     break;
                 }
+            }
+
+            // Read back VCC Texture (Issue #67)
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            encoder.copy_texture_to_buffer(
+                wgpu::ImageCopyTexture { texture: &vcc_texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                wgpu::ImageCopyBuffer { buffer: &readback_vcc_buffer, layout: wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(VCC_SIZE * 4), rows_per_image: Some(VCC_SIZE) } },
+                wgpu::Extent3d { width: VCC_SIZE, height: VCC_SIZE, depth_or_array_layers: 1 }
+            );
+            queue.submit(Some(encoder.finish()));
+            let (s, r) = futures_intrusive::channel::shared::oneshot_channel();
+            readback_vcc_buffer.slice(..).map_async(wgpu::MapMode::Read, move |v| s.send(v).unwrap());
+            device.poll(wgpu::Maintain::Wait);
+            if let Some(Ok(())) = r.receive().await {
+                let data = readback_vcc_buffer.slice(..).get_mapped_range();
+                std::fs::write("vcc_colony.rgba", &*data).unwrap();
+                drop(data);
+                readback_vcc_buffer.unmap();
             }
 
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,7 +43,20 @@ type PersistentRunner struct {
 var (
 	globalRunner *PersistentRunner
 	runnerMu     sync.Mutex
+	serverOnce   sync.Once
 )
+
+func startVCCServer() {
+	serverOnce.Do(func() {
+		http.HandleFunc("/vcc/colony.rgba", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			http.ServeFile(w, r, "vcc_colony.rgba")
+		})
+		go http.ListenAndServe(":8080", nil)
+		fmt.Println("[VCC] Texture server started at http://localhost:8080/vcc/colony.rgba")
+	})
+}
 
 func getPersistentRunner() (*PersistentRunner, error) {
 	runnerMu.Lock()
@@ -51,6 +65,8 @@ func getPersistentRunner() (*PersistentRunner, error) {
 	if globalRunner != nil {
 		return globalRunner, nil
 	}
+
+	startVCCServer()
 
 	tmpShader, err := os.CreateTemp("", "glyph_substrate_*.wgsl")
 	if err != nil {

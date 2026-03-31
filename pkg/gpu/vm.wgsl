@@ -97,6 +97,7 @@ struct Config {
 @group(0) @binding(3) var<storage, read_write> stacks: array<GpuValue>;
 @group(0) @binding(4) var<storage, read_write> vars: array<GpuValue>;
 @group(0) @binding(5) var<storage, read_write> spawn_requests: array<atomic<u32>>;
+@group(0) @binding(6) var vcc_texture: texture_storage_2d<rgba8unorm, write>;
 
 // Helper: get stack base for a VM instance
 fn stack_base(vm_id: u32) -> u32 {
@@ -483,5 +484,55 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             break;
         }
         exec_step(vm_id);
+    write_vcc_pixel(vm_id);
     }
+}
+// VCC Texture Bridge - Hilbert Spatial Mapping
+fn rot(n: u32, x: u32, y: u32, rx: u32, ry: u32) -> vec2<u32> {
+    var out_x = x;
+    var out_y = y;
+    if (ry == 0u) {
+        if (rx == 1u) {
+            out_x = n - 1u - x;
+            out_y = n - 1u - y;
+        }
+        return vec2<u32>(out_y, out_x);
+    }
+    return vec2<u32>(out_x, out_y);
+}
+
+fn d2xy(n: u32, d: u32) -> vec2<u32> {
+    var x = 0u;
+    var y = 0u;
+    var t = d;
+    var s = 1u;
+    while (s < n) {
+        let rx = 1u & (t / 2u);
+        let ry = 1u & (t ^ rx);
+        let res = rot(s, x, y, rx, ry);
+        x = res.x + s * rx;
+        y = res.y + s * ry;
+        t = t / 4u;
+        s = s * 2u;
+    }
+    return vec2<u32>(x, y);
+}
+
+fn write_vcc_pixel(vm_id: u32) {
+    let pos = d2xy(64u, vm_id);
+    var color = vec4<f32>(0.08, 0.08, 0.1, 1.0);
+    
+    let state = vm_states[vm_id];
+    if (state.steps > 0u) {
+        if (state.error != 0u) {
+            color = vec4<f32>(1.0, 0.2, 0.2, 1.0);
+        } else if (state.halted == 0u) {
+            color = vec4<f32>(0.2, 1.0, 0.4, 1.0);
+        } else {
+            let intensity = clamp(f32(state.result_data) / 100.0, 0.4, 1.0);
+            color = vec4<f32>(0.2, 0.6, intensity, 1.0);
+        }
+    }
+    
+    textureStore(vcc_texture, pos, color);
 }
