@@ -63,7 +63,7 @@ func TestE2E_WGSL_Adaptive(t *testing.T) {
 	// fmt.Println(wgsl)
 
 	// 4. Execute on GPU
-	results, err := gpu.ExecuteMultiWGSL(wgsl, numRoutes, numWorkgroups)
+	results, err := gpu.ExecuteMultiWGSL([]byte(wgsl), numRoutes, numWorkgroups)
 	if err != nil {
 		t.Skipf("Skipping GPU execution test: %v", err)
 		return
