@@ -88,6 +88,8 @@ func init() {
 		"telemetry":   builtinTelemetry,
 		"args":        builtinArgs,
 		"exists":      builtinExists,
+		"__mutator":   builtinMutator,
+		"__mitosis":   builtinMitosis,
 	}
 }
 
@@ -1777,4 +1779,65 @@ func builtinRange(i *Interpreter, args []Expr, env *Environment) (interface{}, e
 		res = append(res, val)
 	}
 	return res, nil
+}
+
+// builtinMutator implements __mutator(value, offset) — the self-modification primitive.
+// In interpreted mode, this records a mutation that can be read back via the mutation table.
+// Returns the value that was written (acting as a passthrough for chaining).
+func builtinMutator(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("__mutator() expects 2 arguments (value, offset), got %d", len(args))
+	}
+	valArg, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	offsetArg, err := i.EvaluateExpression(args[1], env)
+	if err != nil {
+		return nil, err
+	}
+
+	val, ok1 := valArg.(int64)
+	offset, ok2 := offsetArg.(int64)
+	if !ok1 || !ok2 {
+		return nil, fmt.Errorf("__mutator() expects integer arguments, got %T and %T", valArg, offsetArg)
+	}
+
+	// Store the mutation in the global environment so it can be read later.
+	// Walk up to the global scope so mutations are visible across function calls.
+	globalEnv := env
+	for globalEnv.parent != nil {
+		globalEnv = globalEnv.parent
+	}
+	mutationsRaw, _ := globalEnv.Get("__mutations")
+	var mutations map[int64]int64
+	if mutationsRaw != nil {
+		mutations, _ = mutationsRaw.(map[int64]int64)
+	}
+	if mutations == nil {
+		mutations = make(map[int64]int64)
+	}
+	mutations[offset] = val
+	globalEnv.Define("__mutations", mutations)
+
+	if os.Getenv("GLYPH_DEBUG") == "true" {
+		fmt.Printf("[MUTATOR] Wrote value %d at offset %d\n", val, offset)
+	}
+	return val, nil
+}
+
+// builtinMitosis implements __mitosis(spatial_offset) — the thread-fork primitive.
+// In interpreted mode, this always returns true (parent path), since the interpreter
+// runs single-threaded. The child concept is simulated by the mutation table.
+func builtinMitosis(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) < 1 {
+		return nil, fmt.Errorf("__mitosis() expects at least 1 argument, got %d", len(args))
+	}
+	_, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+
+	// Always return true = parent path (interpreter is single-threaded)
+	return true, nil
 }
