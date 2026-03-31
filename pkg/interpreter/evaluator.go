@@ -247,6 +247,18 @@ func (i *Interpreter) evaluateArrayIndexExpr(expr ArrayIndexExpr, env *Environme
 		return nil, fmt.Errorf("key %q not found in object", keyStr)
 	}
 
+	// Handle int-keyed maps (e.g., map[int64]int64 from __mutations)
+	if m, ok := arrayVal.(map[int64]int64); ok {
+		key, ok := indexVal.(int64)
+		if !ok {
+			return nil, fmt.Errorf("int-map key must be an integer, got %T", indexVal)
+		}
+		if val, exists := m[key]; exists {
+			return val, nil
+		}
+		return int64(0), nil // return zero value for missing keys
+	}
+
 	return nil, fmt.Errorf("cannot index %T", arrayVal)
 }
 

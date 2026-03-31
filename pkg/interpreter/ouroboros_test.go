@@ -249,3 +249,96 @@ func TestMutatorRejectsNonIntegerArgs(t *testing.T) {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
+
+// TestOuroborosScriptExecution loads and executes the full ouroboros.glyph
+// example, verifying it runs without errors and produces the expected output
+// demonstrating self-modification.
+func TestOuroborosScriptExecution(t *testing.T) {
+	source := `! main() {
+  $ _ = print("=== Ouroboros: Self-Evolving Assembler ===")
+
+  # Phase 1: Fork
+  $ is_parent = __mitosis(0)
+  $ _ = print("[fork] is_parent =", is_parent)
+
+  # Phase 2: Self-modify
+  $ _ = print("[mutator] Writing value 42 at offset 7 ...")
+  $ written = __mutator(42, 7)
+  $ _ = print("[mutator] Confirmed write:", written)
+
+  # Phase 3: Read back mutation table
+  $ mutations = __mutations
+  $ patched = mutations[7]
+  $ _ = print("[evolve] Mutation table at offset 7:", patched)
+
+  # Phase 4: Verify self-modification
+  if patched == 42 {
+    $ _ = print("=== SELF-MODIFICATION CONFIRMED ===")
+    $ _ = print("Code at offset 7 is now 42 (was 0 at compile time)")
+    $ _ = print("Execution trace demonstrates code that did not exist at compile time.")
+  } else {
+    $ _ = print("ERROR: Self-modification failed, offset 7 =")
+    $ _ = print(patched)
+  }
+}
+@ command run {
+  main()
+}`
+
+	output, interp, err := parseLoadExecute(source)
+	if err != nil {
+		t.Fatalf("ouroboros script execution failed: %v", err)
+	}
+
+	// Verify the execution trace demonstrates self-modification
+	expectedStrings := []string{
+		"=== Ouroboros: Self-Evolving Assembler ===",
+		"[fork] is_parent = true",
+		"[mutator] Confirmed write: 42",
+		"[evolve] Mutation table at offset 7: 42",
+		"=== SELF-MODIFICATION CONFIRMED ===",
+		"did not exist at compile time",
+	}
+	for _, expected := range expectedStrings {
+		if !strings.Contains(output, expected) {
+			t.Errorf("expected output to contain %q, got:\n%s", expected, output)
+		}
+	}
+
+	// Verify the mutation table is populated correctly
+	mutationsRaw, getErr := interp.globalEnv.Get("__mutations")
+	if getErr != nil {
+		t.Fatalf("expected __mutations in global env: %v", getErr)
+	}
+	mutations := mutationsRaw.(map[int64]int64)
+	if mutations[7] != 42 {
+		t.Errorf("mutations[7] = %d, want 42", mutations[7])
+	}
+}
+
+// TestIntKeyedMapIndexing verifies that maps with integer keys can be
+// indexed using array-index syntax (e.g., myMap[7]).
+func TestIntKeyedMapIndexing(t *testing.T) {
+	source := `! main() {
+  $ m = __mutator(100, 0)
+  $ m2 = __mutator(200, 1)
+  $ mutations = __mutations
+  $ v0 = mutations[0]
+  $ v1 = mutations[1]
+  $ _ = print("v0:", v0, "v1:", v1)
+}
+@ command run {
+  main()
+}`
+
+	output, _, err := parseLoadExecute(source)
+	if err != nil {
+		t.Fatalf("int-keyed map indexing failed: %v", err)
+	}
+	if !strings.Contains(output, "v0: 100") {
+		t.Errorf("expected 'v0: 100' in output, got: %s", output)
+	}
+	if !strings.Contains(output, "v1: 200") {
+		t.Errorf("expected 'v1: 200' in output, got: %s", output)
+	}
+}
