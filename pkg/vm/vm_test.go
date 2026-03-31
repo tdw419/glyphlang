@@ -1542,3 +1542,50 @@ func TestOpDefFuncParamErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestOpMutatorHalt(t *testing.T) {
+	// Test: Use MUTATOR to write an OP_HALT over an OP_ADD
+	constants := []Value{IntValue{Val: 255}, IntValue{Val: 0}}
+	bytecode := createBytecodeHeader(constants)
+	c255, c0 := uint32(0), uint32(1)
+	
+	bytecode = addInstruction(bytecode, OpPush, &c255)
+	bytecode = addInstruction(bytecode, OpPush, &c0)
+	bytecode = append(bytecode, byte(OpMutator))
+	// This OP_ADD will be turned into OP_HALT (255) by the previous instruction
+	bytecode = append(bytecode, byte(OpAdd))
+	
+	vm := NewVM()
+	_, err := vm.Execute(bytecode)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+}
+
+func TestOpMitosis(t *testing.T) {
+	// Test: Use MITOSIS to branch parent and child
+	constants := []Value{IntValue{Val: 0}}
+	bytecode := createBytecodeHeader(constants)
+	c0 := uint32(0)
+	
+	bytecode = addInstruction(bytecode, OpPush, &c0)
+	bytecode = append(bytecode, byte(OpMitosis))
+	
+	// Parent path continues, Child branches
+	jumpPos := len(bytecode)
+	bytecode = append(bytecode, byte(OpJumpIfFalse), 0, 0, 0, 0)
+	
+	// Parent: Halt
+	bytecode = append(bytecode, byte(OpHalt))
+	
+	// Child path
+	childStart := uint32(len(bytecode))
+	binary.LittleEndian.PutUint32(bytecode[jumpPos+1:], childStart)
+	bytecode = append(bytecode, byte(OpHalt))
+	
+	vm := NewVM()
+	_, err := vm.Execute(bytecode)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+}

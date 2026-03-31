@@ -1,0 +1,45 @@
+import "/home/jericho/zion/projects/aipm/repos/glyphlang/bootstrap/parser"
+import "/home/jericho/zion/projects/aipm/repos/glyphlang/bootstrap/compiler"
+
+! main() {
+  $ _ = print("=== Compiler Spatial Opcodes Test ===")
+  
+  # Test 1: __mutator
+  $ src = "$ _ = __mutator(255, 0)\n$ result = 1 + 2"
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" { $ _ = print("Parse error: ", pr.error) > false }
+  
+  $ c = compiler.new_compiler()
+  $ cr = compiler.compile(c, pr.mod, "/home/jericho/zion/projects/aipm/repos/glyphlang/bootstrap/")
+  if cr.error != "" { $ _ = print("Compile error: ", cr.error) > false }
+  
+  $ _ = print("Executing mutated bytecode...")
+  $ res = vmExec(cr.bytecode)
+  $ _ = print("✅ Mutator Test PASSED")
+  
+  # Test 2: __mitosis
+  $ src2 = "$ m = __mitosis(0)\nif m { > 100 } else { > 200 }"
+  $ p2 = parser.new_parser(src2)
+  $ pr2 = parser.parse(p2)
+  if pr2.error != "" { $ _ = print("Parse error: ", pr2.error) > false }
+  
+  $ c2 = compiler.new_compiler()
+  $ cr2 = compiler.compile(c2, pr2.mod, "/home/jericho/zion/projects/aipm/repos/glyphlang/bootstrap/")
+  if cr2.error != "" { $ _ = print("Compile error: ", cr2.error) > false }
+  
+  $ res2 = vmExec(cr2.bytecode)
+  $ _ = print("Mitosis result (parent): ", res2)
+  
+  if res2 == 100 {
+    $ _ = print("✅ Mitosis Test PASSED")
+    > true
+  }
+  
+  $ _ = print("❌ Mitosis Test FAILED")
+  > false
+}
+
+@ command run {
+  main()
+}
