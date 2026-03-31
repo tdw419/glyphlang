@@ -7,6 +7,20 @@ import (
 )
 
 // Value represents a runtime value
+
+// Environment represents a scope for variables
+type Environment struct {
+        Values map[string]Value
+        Parent *Environment
+}
+
+func NewEnvironment(parent *Environment) *Environment {
+        return &Environment{
+                Values: make(map[string]Value),
+                Parent: parent,
+        }
+}
+
 type Value interface {
 	Type() string
 }
@@ -94,6 +108,7 @@ type FunctionValue struct {
 	CodeLength int      // Length of the function body bytecode
 	Bytecode   []byte   // Optional: independent bytecode blob for this function
 	Constants  []Value  // Optional: constant pool for the independent bytecode
+	Closure    *Environment // Captured environment
 }
 
 func (v FunctionValue) Type() string { return "function" }

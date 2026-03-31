@@ -105,13 +105,13 @@ type CallFrame struct {
 	returnPC        int              // Program counter to return to
 	returnBytecode  []byte           // Bytecode buffer to return to
 	returnConstants []Value          // Constant pool to return to
-	locals          map[string]Value // Caller's local variables
+	env             *Environment     // Lexical environment
 }
 
 // VM represents the virtual machine
 type VM struct {
 	stack      []Value
-	locals     map[string]Value
+	env        *Environment
 	globals    map[string]Value
 	constants  []Value
 	builtins   map[string]BuiltinFunc
@@ -142,7 +142,7 @@ func (vm *VM) SetProfiler(p ProfileRecorder) {
 func NewVM() *VM {
 	vm := &VM{
 		stack:      make([]Value, 0, 256),
-		locals:     make(map[string]Value),
+		env:        NewEnvironment(nil),
 		globals:    make(map[string]Value),
 		constants:  make([]Value, 0),
 		builtins:   make(map[string]BuiltinFunc),
@@ -748,10 +748,12 @@ func (vm *VM) execLoadVar() error {
 		return fmt.Errorf("variable name must be a string, got %T", nameVal)
 	}
 
-	// Try locals first, then globals
-	if val, exists := vm.locals[name.Val]; exists {
-		vm.Push(val)
-		return nil
+	// Try lexical environment first, then globals
+	for cur := vm.env; cur != nil; cur = cur.Parent {
+		if val, exists := cur.Values[name.Val]; exists {
+			vm.Push(val)
+			return nil
+		}
 	}
 	if val, exists := vm.globals[name.Val]; exists {
 		vm.Push(val)
@@ -783,7 +785,15 @@ func (vm *VM) execStoreVar() error {
 		return err
 	}
 
-	vm.locals[name.Val] = val
+	// Lexical scope update: search for existing variable to update
+	for cur := vm.env; cur != nil; cur = cur.Parent {
+		if _, exists := cur.Values[name.Val]; exists {
+			cur.Values[name.Val] = val
+			return nil
+		}
+	}
+	// If not found in parent scopes, define in current local scope
+	vm.env.Values[name.Val] = val
 	return nil
 }
 
@@ -1398,12 +1408,17 @@ func (vm *VM) execDefFunc() error {
 	}
 
 	// Register the function (body starts at current PC)
-	vm.functions[nameVal.Val] = FunctionValue{
+	// Capture current environment as closure
+	fn := FunctionValue{
 		Name:       nameVal.Val,
 		ParamNames: paramNames,
 		CodeOffset: vm.pc,
 		CodeLength: int(bodyLength),
+		Closure:    vm.env,
 	}
+	vm.functions[nameVal.Val] = fn
+	// Also define it as a variable in current scope to support returning functions
+	vm.env.Values[nameVal.Val] = fn
 
 	// Skip over the function body
 	vm.pc += int(bodyLength)
@@ -1425,7 +1440,7 @@ func (vm *VM) execReturn() error {
 
 	// Restore caller state
 	vm.pc = frame.returnPC
-	vm.locals = frame.locals
+	vm.env = frame.env
 	vm.code = frame.returnBytecode
 	vm.constants = frame.returnConstants
 
@@ -1433,6 +1448,43 @@ func (vm *VM) execReturn() error {
 }
 
 // execCall performs a function call
+
+func (vm *VM) executeFunction(fn FunctionValue, args []Value) error {
+	// Save current frame
+	vm.callStack = append(vm.callStack, CallFrame{
+		returnPC:        vm.pc,
+		returnBytecode:  vm.code,
+		returnConstants: vm.constants,
+		env:             vm.env,
+	})
+
+	// Set up new environment with parameters, capturing closure if present
+	vm.env = NewEnvironment(fn.Closure)
+	for i, paramName := range fn.ParamNames {
+		if i < len(args) {
+			vm.env.Values[paramName] = args[i]
+		}
+	}
+
+	if fn.Bytecode != nil {
+		// Switch to modular bytecode and its constant pool
+		vm.code = fn.Bytecode
+		if fn.Constants != nil {
+			vm.constants = fn.Constants
+		}
+		layout, err := parseBytecodeLayout(vm.code)
+		if err != nil {
+			return fmt.Errorf("failed to call modular function %s: %w", fn.Name, err)
+		}
+		vm.pc = int(layout.CodeOffset)
+	} else {
+		// Stay in current bytecode
+		vm.pc = fn.CodeOffset
+	}
+
+	return nil
+}
+
 func (vm *VM) execCall() error {
 	operand, err := vm.readOperand()
 	if err != nil {
@@ -1457,6 +1509,11 @@ func (vm *VM) execCall() error {
 		return err
 	}
 
+	// Handle direct function value (closures)
+	if fn, ok := fnVal.(FunctionValue); ok {
+		return vm.executeFunction(fn, args)
+	}
+
 	// Get function name
 	fnName, ok := fnVal.(StringValue)
 	if !ok {
@@ -1473,6 +1530,15 @@ func (vm *VM) execCall() error {
 		return nil
 	}
 
+	// Look up in environment (for closures stored in variables)
+	for cur := vm.env; cur != nil; cur = cur.Parent {
+		if val, exists := cur.Values[fnName.Val]; exists {
+			if fn, ok := val.(FunctionValue); ok {
+				return vm.executeFunction(fn, args)
+			}
+		}
+	}
+
 	// Look up user-defined function
 	if fn, exists := vm.functions[fnName.Val]; exists {
 		// Save current frame
@@ -1480,14 +1546,14 @@ func (vm *VM) execCall() error {
 			returnPC:        vm.pc,
 			returnBytecode:  vm.code,
 			returnConstants: vm.constants,
-			locals:          vm.locals,
+			env:             vm.env,
 		})
 
-		// Set up new locals with parameters
-		vm.locals = make(map[string]Value)
+		// Set up new environment with parameters, capturing closure if present
+		vm.env = NewEnvironment(fn.Closure)
 		for i, paramName := range fn.ParamNames {
 			if i < len(args) {
-				vm.locals[paramName] = args[i]
+				vm.env.Values[paramName] = args[i]
 			}
 		}
 
@@ -1647,7 +1713,7 @@ func parseBytecodeLayout(bytecode []byte) (*bytecodeLayout, error) {
 
 // SetLocal sets a local variable value (used for route parameters and injections)
 func (vm *VM) SetLocal(name string, value Value) {
-	vm.locals[name] = value
+	vm.env.Values[name] = value
 }
 
 // RegisterFunction registers a compiled function with the VM
@@ -1712,13 +1778,13 @@ func (vm *VM) IteratorCount() int {
 
 // LocalsCount returns the number of local variables
 func (vm *VM) LocalsCount() int {
-	return len(vm.locals)
+	return len(vm.env.Values)
 }
 
 // Reset clears the VM state for reuse
 func (vm *VM) Reset() {
 	vm.stack = vm.stack[:0]
-	vm.locals = make(map[string]Value)
+	vm.env = NewEnvironment(nil)
 	vm.constants = vm.constants[:0]
 	vm.iterators = make(map[int]*Iterator)
 	vm.nextIterID = 0
@@ -2404,8 +2470,8 @@ func (vm *VM) execAsync() error {
 	copy(constantsCopy, vm.constants)
 
 	// Snapshot maps before launching goroutine to avoid concurrent reads
-	localsCopy := make(map[string]Value, len(vm.locals))
-	for k, v := range vm.locals {
+	localsCopy := make(map[string]Value, len(vm.env.Values))
+	for k, v := range vm.env.Values {
 		localsCopy[k] = v
 	}
 	globalsCopy := make(map[string]Value, len(vm.globals))
@@ -2428,7 +2494,7 @@ func (vm *VM) execAsync() error {
 		// Create a new VM for the async execution
 		asyncVM := NewVM()
 		asyncVM.constants = constantsCopy
-		asyncVM.locals = localsCopy
+		asyncVM.env = &Environment{Values: localsCopy}
 		asyncVM.globals = globalsCopy
 		asyncVM.builtins = builtinsCopy
 

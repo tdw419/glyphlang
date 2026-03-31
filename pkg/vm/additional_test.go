@@ -2065,8 +2065,8 @@ func TestSetLocal(t *testing.T) {
 	vm := NewVM()
 	vm.SetLocal("test", IntValue{Val: 42})
 
-	if val, ok := vm.locals["test"]; !ok || val.(IntValue).Val != 42 {
-		t.Errorf("Expected local 'test' to be 42, got %v", vm.locals["test"])
+	if val, ok := vm.env.Values["test"]; !ok || val.(IntValue).Val != 42 {
+		t.Errorf("Expected local 'test' to be 42, got %v", vm.env.Values["test"])
 	}
 }
 

@@ -3,6 +3,7 @@
 # Transforms AST into VM bytecode.
 
 import "./ast"
+import "./parser"
 
 # ─── Compiler State ────────────────────────────────────────────────
 
@@ -76,14 +77,86 @@ const OP_HALT          = 255
 
 # ─── Bytecode header emission ─────────────────────────────────────
 
-! compile(c: Compiler, mod: ast.Module) -> CompileResult {
+
+# resolve_import_path computes the full file path and new base directory
+# for an import relative to the current base_path.
+! resolve_import_path(raw_path: str, base_path: str) -> any {
+  # Strip leading "./" from raw_path
+  $ clean = raw_path
+  if startsWith(raw_path, "./") {
+    $ clean = substring(raw_path, 2, length(raw_path))
+  }
+  $ resolved = base_path + clean + ".glyph"
+  # new_base = directory portion of resolved file
+  $ new_base = base_path
+  $ last_slash = 0
+  $ j = length(resolved) - 1
+  while j >= 0 {
+    if substring(resolved, j, j + 1) == "/" {
+      $ last_slash = j + 1
+      $ j = -1
+    }
+    $ j = j - 1
+  }
+  if last_slash > 0 {
+    $ new_base = substring(resolved, 0, last_slash)
+  }
+  > { file_path: resolved, new_base: new_base }
+}
+
+! has_key(obj: any, key: str) -> bool {
+  $ ks = keys(obj)
   $ i = 0
-  while i < length(mod.items) {
-    $ item = mod.items[i]
-    $ err = compile_item(c, item)
-    if err != "" { > { bytecode: [], error: err } }
+  while i < length(ks) {
+    if ks[i] == key { > true }
+    $ i = i + 1
+  }
+  > false
+}
+
+! compile_module(c: Compiler, mod: any, base_path: str, visited: any) -> str {
+  if visited == null {
+    $ visited = {}
+  }
+  $ items = mod.items
+  $ i = 0
+  while i < length(items) {
+    $ item = items[i]
+
+    if item.kind == "import" {
+      $ rp = resolve_import_path(item.import_path, base_path)
+      $ resolved_path = rp.file_path
+      $ new_base = rp.new_base
+      if has_key(visited, resolved_path) {
+        # Skip circular imports
+        $ i = i + 1
+        continue
+      }
+      $ visited[resolved_path] = true
+      $ src = readFile(resolved_path)
+      if length(src) == 0 {
+        > "import not found: " + resolved_path
+      }
+      $ ip = parser.new_parser(src)
+      $ ipr = parser.parse(ip)
+      if ipr.error != "" {
+        > "import parse error (" + resolved_path + "): " + ipr.error
+      }
+      $ err = compile_module(c, ipr.mod, new_base, visited)
+      if err != "" { > err }
+    } else {
+      $ err = compile_item(c, item)
+      if err != "" { > err }
+    }
     i = i + 1
   }
+  > ""
+}
+
+! compile(c: Compiler, mod: ast.Module, base_path: str) -> CompileResult {
+  if base_path == null { $ base_path = "./" }
+  $ err = compile_module(c, mod, base_path, null)
+  if err != "" { > { bytecode: [], error: err } }
 
   emit_byte(c, OP_HALT)
 
@@ -384,6 +457,10 @@ const OP_HALT          = 255
 # ─── Statement Compilation ────────────────────────────────────────
 
 ! compile_statement(c: Compiler, stmt: ast.Statement) -> str {
+  if stmt.kind == "function" {
+    > compile_item(c, stmt)
+  }
+
   if stmt.kind == "assign" {
     $ err = compile_expression(c, stmt.value)
     if err != "" { > err }
