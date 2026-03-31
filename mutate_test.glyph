@@ -1,0 +1,4 @@
+! main() {
+    mutate(17, 10)
+    return 1
+}

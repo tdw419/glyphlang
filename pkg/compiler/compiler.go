@@ -1002,6 +1002,35 @@ func (c *Compiler) compileArrayIndex(expr *ast.ArrayIndexExpr) error {
 // compileFunctionCall compiles a function call
 func (c *Compiler) compileFunctionCall(expr *ast.FunctionCallExpr) error {
 	// Check for WebSocket functions first (ws.*)
+        if expr.Name == "spawn" && len(expr.Args) == 1 {
+                if err := c.compileExpression(expr.Args[0]); err != nil {
+                        return err
+                }
+                c.emit(vm.OpMitosis)
+                return nil
+        }
+
+        if expr.Name == "mutate" && len(expr.Args) == 2 {
+                if err := c.compileExpression(expr.Args[0]); err != nil {
+                        return err
+                }
+                if err := c.compileExpression(expr.Args[1]); err != nil {
+                        return err
+                }
+                c.emit(vm.OpMutator)
+                return nil
+        }
+
+        if expr.Name == "telemetry" && len(expr.Args) == 2 {
+                if err := c.compileExpression(expr.Args[0]); err != nil {
+                        return err
+                }
+                if err := c.compileExpression(expr.Args[1]); err != nil {
+                        return err
+                }
+                c.emit(vm.OpTelemetry)
+                return nil
+        }
 	if strings.HasPrefix(expr.Name, "ws.") {
 		handled, err := c.compileFunctionCallForWs(expr)
 		if err != nil {

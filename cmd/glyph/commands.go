@@ -66,11 +66,18 @@ func runCompile(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("compilation failed: %w", err)
 			}
 			break
-		}
+                }
+                if fn, ok := item.(*ast.Function); ok {
+                        bytecode, err = c.CompileFunction(fn)
+                        if err != nil {
+                                return fmt.Errorf("compilation failed: %w", err)
+                        }
+                        break
+                }
 	}
 
 	if bytecode == nil {
-		return fmt.Errorf("no routes found in module")
+		return fmt.Errorf("no runnable item found in module")
 	}
 
 	compilationTime := time.Since(start)

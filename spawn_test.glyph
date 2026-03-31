@@ -1,0 +1,4 @@
+! main() {
+    spawn(0)
+    return 10
+}

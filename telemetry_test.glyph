@@ -1,0 +1,4 @@
+! main() {
+    telemetry(0, 42)
+    return 1
+}

@@ -460,6 +460,25 @@ func (b *Builder) buildUnaryOp(e ast.UnaryOpExpr) (*Value, error) {
 }
 func (b *Builder) buildCall(e ast.FunctionCallExpr) (*Value, error) {
 	// Special handle builtins that map to SSA ops
+        if e.Name == "spawn" && len(e.Args) == 1 {
+                offset, err := b.buildExpr(e.Args[0])
+                if err != nil {
+                        return nil, err
+                }
+                return b.emit(OpMitosis, TypeInt, offset), nil
+        }
+
+        if e.Name == "mutate" && len(e.Args) == 2 {
+                val, err := b.buildExpr(e.Args[0])
+                if err != nil {
+                        return nil, err
+                }
+                offset, err := b.buildExpr(e.Args[1])
+                if err != nil {
+                        return nil, err
+                }
+                return b.emit(OpMutator, TypeVoid, val, offset), nil
+        }
 	if e.Name == "telemetry" && len(e.Args) == 2 {
 		slot, err := b.buildExpr(e.Args[0])
 		if err != nil {
