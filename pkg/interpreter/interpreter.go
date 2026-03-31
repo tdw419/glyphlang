@@ -1173,3 +1173,31 @@ func matchesFilter(name, filter string) bool {
 	}
 	return strings.Contains(name, filter)
 }
+
+// ExecuteFunction executes a function by name with provided arguments
+func (i *Interpreter) ExecuteFunction(name string, args []interface{}) (interface{}, error) {
+	fn, ok := i.functions[name]
+	if !ok {
+		return nil, fmt.Errorf("function %s not found", name)
+	}
+
+	env := NewChildEnvironment(i.globalEnv)
+
+	for idx, param := range fn.Params {
+		if idx < len(args) {
+			env.Define(param.Name, args[idx])
+		} else {
+			env.Define(param.Name, nil)
+		}
+	}
+
+	result, err := i.executeStatements(fn.Body, env)
+	if err != nil {
+		if val, isReturn := unwrapReturn(err); isReturn {
+			return val, nil
+		}
+		return nil, err
+	}
+
+	return result, nil
+}

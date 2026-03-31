@@ -271,6 +271,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	if !useBytecode {
 		useBytecode = filepath.Ext(filePath) == ".glyphc"
 	}
+        useExec, _ := cmd.Flags().GetBool("exec")
 
 	if useBytecode {
 		printInfo(fmt.Sprintf("Running bytecode %s...", filePath))
@@ -321,6 +322,33 @@ func runRun(cmd *cobra.Command, args []string) error {
 		printInfo(fmt.Sprintf("Execution time: %s", execTime))
 		printInfo(fmt.Sprintf("Result: %v", result))
 
+        // Running source file in exec mode
+        if useExec {
+                if useGPU {
+                        return runGPU(cmd, args)
+                }
+                // CPU exec (one-off execution)
+                source, err := os.ReadFile(filePath)
+                if err != nil { return err }
+                module, err := parseSource(string(source))
+                if err != nil { return err }
+                interp := newConfiguredInterpreter()
+                if err := interp.LoadModuleWithPath(*module, filepath.Dir(filePath)); err != nil { return err }
+                start := time.Now()
+                result, err := interp.ExecuteFunction("main", nil)
+                if err != nil {
+                        for _, item := range module.Items {
+                                if fn, ok := item.(*ast.Function); ok {
+                                        result, err = interp.ExecuteFunction(fn.Name, nil)
+                                        break
+                                }
+                        }
+                }
+                if err != nil { return fmt.Errorf("execution failed: %w", err) }
+                printSuccess("Code executed successfully")
+                printInfo(fmt.Sprintf("Result: %v (time: %s)", result, time.Since(start)))
+                return nil
+        }
 		return nil
 	}
 
