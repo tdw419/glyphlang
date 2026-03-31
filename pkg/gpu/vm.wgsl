@@ -96,6 +96,7 @@ struct Config {
 @group(0) @binding(2) var<storage, read_write> vm_states: array<VMState>;
 @group(0) @binding(3) var<storage, read_write> stacks: array<GpuValue>;
 @group(0) @binding(4) var<storage, read_write> vars: array<GpuValue>;
+@group(0) @binding(5) var<storage, read_write> spawn_requests: array<atomic<u32>>;
 
 // Helper: get stack base for a VM instance
 fn stack_base(vm_id: u32) -> u32 {
@@ -404,13 +405,13 @@ fn exec_step(vm_id: u32) {
         }
 
         case OP_MITOSIS: {
-            // S opcode: spawn adjacent thread from current VM.
-            // In GPU compute, threads are homogeneous — OP_MITOSIS records the
-            // spawn intent by pushing the current vm_id as the child "thread ID"
-            // so the parent can track it. Actual tile-spawning is a host-side concern.
-            // We pop the spatial offset from the stack and push back the vm_id.
-            let _offset = pop(vm_id);
-            push(vm_id, TAG_INT, i32(vm_id));
+            let offset_val = pop(vm_id);
+            let slot = atomicAdd(&spawn_requests[0], 1u);
+            if (slot < 1024u) {
+                spawn_requests[1u + slot * 2u] = vm_id;
+                spawn_requests[2u + slot * 2u] = u32(offset_val.data);
+            }
+            push(vm_id, TAG_INT, i32(slot));
         }
 
         case OP_TELEMETRY: {
