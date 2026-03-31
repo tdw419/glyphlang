@@ -66,6 +66,7 @@ to rapidly build high-performance, secure backend applications.`,
 	runCmd.Flags().Bool("bytecode", false, "Execute bytecode (.glyphc) file")
 	runCmd.Flags().Bool("interpret", false, "Use tree-walking interpreter instead of compiler (fallback mode)")
 	runCmd.Flags().Bool("gpu", false, "Execute routes on GPU compute shaders (parallel execution)")
+        runCmd.Flags().Bool("exec", false, "Execute code and exit without starting HTTP server")
 
 	// Dev command
 	var devCmd = &cobra.Command{
@@ -110,11 +111,10 @@ Example:
 
   # Run it:
   glyph exec my-cli.glyph hello --name "World"`,
-		Args: cobra.MinimumNArgs(2),
+		Args: cobra.MinimumNArgs(1),
 		RunE: runExec,
 	}
-
-	// List commands - list all commands in a GLYPH file
+        execCmd.Flags().Bool("gpu", false, "Execute command on GPU compute shaders")
 	var listCmdsCmd = &cobra.Command{
 		Use:   "commands <file>",
 		Short: "List all CLI commands defined in a GLYPH file",

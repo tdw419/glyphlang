@@ -374,7 +374,8 @@ func opcodeToString(op vm.Opcode) string {
 		vm.OpWsGetUptime:     "WS_GET_UPTIME",
 		vm.OpMitosis:         "MITOSIS",
 		vm.OpMutator:         "MUTATOR",
-		vm.OpHalt:            "HALT",
+		vm.OpTelemetry:       "TELEMETRY",
+                vm.OpHalt:            "HALT",
 	}
 
 	if name, ok := names[op]; ok {

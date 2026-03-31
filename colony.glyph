@@ -1,25 +1,5 @@
-// colony.glyph (V7 - Braced Assembly)
-// Genesis program for Geometry OS Spatial Substrate
-
-:main {
-    LDI r0, 6
-    CALL :proliferate
-    LDI r3, 10
-    HALT
-}
-
-:proliferate {
-    JZ r0, :leaf
-    SUB r0, r0, 1
-    
-    LDI r1, 0
-    S r1
-    
-    CALL :proliferate
-    RET
-}
-
-:leaf {
-    LDI r2, 99
-    RET
+! main() {
+    spawn(0)
+    spawn(0)
+    return 42
 }
