@@ -197,12 +197,12 @@ fn load_constant(const_idx: u32) -> GpuValue {
         return GpuValue(TAG_NULL, 0);
     } else if ctype == CONST_INT {
         // Read 8-byte int, truncate to i32 for GPU
-        let hi = read_u32(offset);
-        let lo = read_u32(offset + 4u);
+        let lo = read_u32(offset);
+        let hi = read_u32(offset + 4u);
         return GpuValue(TAG_INT, i32(lo));
     } else if ctype == CONST_FLOAT {
-        let hi = read_u32(offset);
-        let lo = read_u32(offset + 4u);
+        let lo = read_u32(offset);
+        let hi = read_u32(offset + 4u);
         // Approximate: use low 32 bits as float bits
         return GpuValue(TAG_FLOAT, i32(lo));
     } else if ctype == CONST_BOOL {
@@ -375,25 +375,25 @@ fn exec_step(vm_id: u32) {
         }
 
         case OP_JUMP: {
-            let target = read_u32(base + pc + 1u);
-            next_pc = target;
+            let target_val = read_u32(base + pc + 1u);
+            next_pc = target_val;
         }
 
         case OP_JUMP_IF_FALSE: {
-            let target = read_u32(base + pc + 1u);
+            let target_val = read_u32(base + pc + 1u);
             next_pc = pc + 5u;
             let cond = pop(vm_id);
             if cond.data == 0 {
-                next_pc = target;
+                next_pc = target_val;
             }
         }
 
         case OP_JUMP_IF_TRUE: {
-            let target = read_u32(base + pc + 1u);
+            let target_val = read_u32(base + pc + 1u);
             next_pc = pc + 5u;
             let cond = pop(vm_id);
             if cond.data != 0 {
-                next_pc = target;
+                next_pc = target_val;
             }
         }
 
@@ -405,7 +405,7 @@ fn exec_step(vm_id: u32) {
         }
 
         case OP_MITOSIS: {
-            let offset_val = pop(vm_id);
+            let offset_val = pop(vm_id); if (vm_states[vm_id].halted == 1u) { return; }
             let slot = atomicAdd(&spawn_requests[0], 1u);
             if (slot < 1024u) {
                 spawn_requests[1u + slot * 2u] = vm_id;
@@ -424,17 +424,17 @@ fn exec_step(vm_id: u32) {
             // M opcode: self-modify bytecode at PC + offset using atomic write.
             // Pops value then offset from stack. Writes value byte to
             // bytecode_buffer[base + pc + offset].
-            let offset_val = pop(vm_id);
+            let offset_val = pop(vm_id); if (vm_states[vm_id].halted == 1u) { return; }
             let write_val = pop(vm_id);
-            let target = base + pc + u32(offset_val.data);
-            if target >= config.code_offset + config.bytecode_len {
+            let target_val = base + pc + u32(offset_val.data);
+            if target_val >= config.code_offset + config.bytecode_len {
                 vm_states[vm_id].error = ERR_MUTATOR_OOB;
                 vm_states[vm_id].halted = 1u;
             } else {
-                // In real wgpu-native: atomicStore(&bytecode[target], u32(write_val.data))
+                // In real wgpu-native: atomicStore(&bytecode[target_val], u32(write_val.data))
                 // For the WGSL storage buffer model, we write via the u32 array:
-                let word_idx = target / 4u;
-                let byte_idx = target % 4u;
+                let word_idx = target_val / 4u;
+                let byte_idx = target_val % 4u;
                 let shift = byte_idx * 8u;
                 let mask = ~(0xFFu << shift);
                 let old = bytecode[word_idx];
