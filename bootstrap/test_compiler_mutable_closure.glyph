@@ -1,0 +1,28 @@
+import "./parser"
+import "./compiler"
+
+! main() {
+  print("=== Compiler Mutable Closure Test ===")
+  $ src = "! make_counter() -> any {\n  $ count = 0\n  ! inc() -> int {\n    $ count = count + 1\n    > count\n  }\n  > inc\n}\n$ c = make_counter()\n$ r1 = c()\n$ r2 = c()\nprint(r1)\nprint(r2)\n> r1 + r2"
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" { print("Parse error: " + pr.error) > false }
+  
+  $ c = compiler.new_compiler()
+  $ cr = compiler.compile(c, pr.mod)
+  if cr.error != "" { print("Compile error: " + cr.error) > false }
+  
+  $ res = vmExec(cr.bytecode)
+  print("Result: " + toString(res))
+  
+  if res == 3 {
+    print("✅ Mutable Closure Test PASSED")
+    > true
+  }
+  print("❌ Mutable Closure Test FAILED: expected 3, got " + toString(res))
+  > false
+}
+
+@ command run {
+  main()
+}
