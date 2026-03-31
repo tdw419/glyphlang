@@ -187,6 +187,92 @@ func TestDockerfileGoreleaserValid(t *testing.T) {
 	}
 }
 
+// TestGoReleaserDockerSection verifies the goreleaser dockers section is
+// configured to build and publish multi-arch container images using
+// the Dockerfile.goreleaser.
+func TestGoReleaserDockerSection(t *testing.T) {
+	data, err := os.ReadFile("../.goreleaser.yml")
+	if err != nil {
+		t.Fatalf("read .goreleaser.yml: %v", err)
+	}
+
+	var config map[string]interface{}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		t.Fatalf("parse .goreleaser.yml: %v", err)
+	}
+
+	dockers, ok := config["dockers"].([]interface{})
+	if !ok || len(dockers) == 0 {
+		t.Fatal("expected non-empty dockers section in goreleaser config")
+	}
+
+	// Should have separate images for amd64 and arm64
+	seenArch := map[string]bool{}
+	for i, d := range dockers {
+		docker, ok := d.(map[string]interface{})
+		if !ok {
+			t.Fatalf("dockers[%d] should be a map", i)
+		}
+
+		// Must reference the Dockerfile
+		if df, _ := docker["dockerfile"].(string); df != "Dockerfile.goreleaser" {
+			t.Errorf("dockers[%d] should reference Dockerfile.goreleaser, got %q", i, df)
+		}
+
+		// Must have image templates
+		imgs, ok := docker["image_templates"].([]interface{})
+		if !ok || len(imgs) == 0 {
+			t.Errorf("dockers[%d] should have image_templates", i)
+		}
+
+		// Must use OCI labels
+		flags, _ := docker["build_flag_templates"].([]interface{})
+		hasLabel := false
+		for _, f := range flags {
+			if s, _ := f.(string); strings.Contains(s, "org.opencontainers.image") {
+				hasLabel = true
+			}
+		}
+		if !hasLabel {
+			t.Errorf("dockers[%d] should set OCI image labels", i)
+		}
+
+		// Track architectures
+		for _, f := range flags {
+			if s, _ := f.(string); strings.Contains(s, "linux/amd64") {
+				seenArch["amd64"] = true
+			}
+			if s, _ := f.(string); strings.Contains(s, "linux/arm64") {
+				seenArch["arm64"] = true
+			}
+		}
+	}
+
+	if !seenArch["amd64"] {
+		t.Error("dockers section should build amd64 image")
+	}
+	if !seenArch["arm64"] {
+		t.Error("dockers section should build arm64 image")
+	}
+
+	// Verify docker_manifests for multi-arch manifest
+	manifests, ok := config["docker_manifests"].([]interface{})
+	if !ok || len(manifests) == 0 {
+		t.Fatal("expected docker_manifests section for multi-arch images")
+	}
+
+	hasLatest := false
+	for _, m := range manifests {
+		manifest, _ := m.(map[string]interface{})
+		if nt, _ := manifest["name_template"].(string); strings.Contains(nt, "latest") {
+			hasLatest = true
+		}
+	}
+	if !hasLatest {
+		t.Error("docker_manifests should include a :latest tag manifest")
+	}
+}
+
 // TestMakefileVersionInjection verifies Makefile has matching version injection
 // so local builds and goreleaser use the same mechanism.
 func TestMakefileVersionInjection(t *testing.T) {

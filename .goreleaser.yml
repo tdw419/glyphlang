@@ -60,6 +60,38 @@ changelog:
       - Merge remote-tracking branch
       - Revert
 
+dockers:
+  - image_templates:
+      - "ghcr.io/tdw419/glyph:{{ .Version }}-amd64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+  - image_templates:
+      - "ghcr.io/tdw419/glyph:{{ .Version }}-arm64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+
+docker_manifests:
+  - name_template: "ghcr.io/tdw419/glyph:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/tdw419/glyph:{{ .Version }}-amd64"
+      - "ghcr.io/tdw419/glyph:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/tdw419/glyph:latest"
+    image_templates:
+      - "ghcr.io/tdw419/glyph:{{ .Version }}-amd64"
+      - "ghcr.io/tdw419/glyph:{{ .Version }}-arm64"
+
 release:
   github:
     owner: tdw419
