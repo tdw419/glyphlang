@@ -33,6 +33,8 @@ const OP_BUILD_OBJECT: u32 = 0x70u;
 const OP_GET_FIELD: u32    = 0x71u;
 const OP_SET_FIELD: u32    = 0x72u;
 const OP_BUILD_ARRAY: u32  = 0x80u;
+const OP_MITOSIS: u32     = 0xC0u;  // S opcode: spawn adjacent thread
+const OP_MUTATOR: u32     = 0xC1u;  // M opcode: self-modify bytecode
 const OP_HALT: u32         = 0xFFu;
 
 // Constants for VM dimensions
@@ -52,6 +54,9 @@ const TAG_NULL: u32  = 0u;
 const TAG_INT: u32   = 1u;
 const TAG_FLOAT: u32 = 2u;
 const TAG_BOOL: u32  = 3u;
+
+// Error codes
+const ERR_MUTATOR_OOB: u32 = 5u;
 
 // Packed value: tag in high 4 bits, data in low 28 bits (for integers)
 // For floats, we use bitcast from f32 in a second word
@@ -86,7 +91,7 @@ struct Config {
 
 // Bindings
 @group(0) @binding(0) var<storage, read> config: Config;
-@group(0) @binding(1) var<storage, read> bytecode: array<u32>;
+@group(0) @binding(1) var<storage, read_write> bytecode: array<u32>;
 @group(0) @binding(2) var<storage, read_write> vm_states: array<VMState>;
 @group(0) @binding(3) var<storage, read_write> stacks: array<GpuValue>;
 @group(0) @binding(4) var<storage, read_write> vars: array<GpuValue>;
@@ -395,6 +400,39 @@ fn exec_step(vm_id: u32) {
             vm_states[vm_id].result_tag = val.tag;
             vm_states[vm_id].result_data = val.data;
             vm_states[vm_id].halted = 1u;
+        }
+
+        case OP_MITOSIS: {
+            // S opcode: spawn adjacent thread from current VM.
+            // In GPU compute, threads are homogeneous — OP_MITOSIS records the
+            // spawn intent by pushing the current vm_id as the child "thread ID"
+            // so the parent can track it. Actual tile-spawning is a host-side concern.
+            // We pop the spatial offset from the stack and push back the vm_id.
+            let _offset = pop(vm_id);
+            push(vm_id, TAG_INT, i32(vm_id));
+        }
+
+        case OP_MUTATOR: {
+            // M opcode: self-modify bytecode at PC + offset using atomic write.
+            // Pops value then offset from stack. Writes value byte to
+            // bytecode_buffer[base + pc + offset].
+            let offset_val = pop(vm_id);
+            let write_val = pop(vm_id);
+            let target = base + pc + u32(offset_val.data);
+            if target >= config.code_offset + config.bytecode_len {
+                vm_states[vm_id].error = ERR_MUTATOR_OOB;
+                vm_states[vm_id].halted = 1u;
+            } else {
+                // In real wgpu-native: atomicStore(&bytecode[target], u32(write_val.data))
+                // For the WGSL storage buffer model, we write via the u32 array:
+                let word_idx = target / 4u;
+                let byte_idx = target % 4u;
+                let shift = byte_idx * 8u;
+                let mask = ~(0xFFu << shift);
+                let old = bytecode[word_idx];
+                let new_word = (old & mask) | ((u32(write_val.data) & 0xFFu) << shift);
+                bytecode[word_idx] = new_word;
+            }
         }
 
         case OP_HALT: {

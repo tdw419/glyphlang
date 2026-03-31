@@ -453,6 +453,16 @@ func TestShaderSourceEmbedded(t *testing.T) {
 	if !containsStr(src, "exec_step") {
 		t.Fatal("shader missing exec_step function")
 	}
+	// Verify spatial opcodes are synchronized in WGSL substrate (issue #19)
+	if !containsStr(src, "OP_MITOSIS") {
+		t.Fatal("shader missing OP_MITOSIS spatial opcode")
+	}
+	if !containsStr(src, "OP_MUTATOR") {
+		t.Fatal("shader missing OP_MUTATOR spatial opcode")
+	}
+	if !containsStr(src, "ERR_MUTATOR_OOB") {
+		t.Fatal("shader missing ERR_MUTATOR_OOB error code")
+	}
 }
 
 func containsStr(s, sub string) bool {
@@ -691,6 +701,112 @@ func TestMutatorSelfModify(t *testing.T) {
 	// Steps should be small since we halt early
 	if result.Steps == 0 {
 		t.Fatal("expected some steps to execute")
+	}
+}
+
+// TestSpatialOpcodesIntegration verifies the full spatial execution pipeline:
+// Go CPU VM handles MITOSIS and MUTATOR opcodes, WGSL shader declares them,
+// and IsGPUCompatible accepts them. This test ties together the CPU fallback
+// dispatcher with the WGSL substrate synchronization required by issue #19.
+func TestSpatialOpcodesIntegration(t *testing.T) {
+	d := NewDispatcher()
+	src := d.ShaderSource()
+
+	// 1. Verify WGSL shader has the spatial opcode constants
+	if !containsStr(src, "OP_MITOSIS") {
+		t.Fatal("WGSL shader missing OP_MITOSIS declaration")
+	}
+	if !containsStr(src, "OP_MUTATOR") {
+		t.Fatal("WGSL shader missing OP_MUTATOR declaration")
+	}
+
+	// 2. Verify WGSL shader has case handlers for both opcodes
+	if !containsStr(src, "case OP_MITOSIS") {
+		t.Fatal("WGSL shader missing OP_MITOSIS handler")
+	}
+	if !containsStr(src, "case OP_MUTATOR") {
+		t.Fatal("WGSL shader missing OP_MUTATOR handler")
+	}
+
+	// 3. Verify WGSL bytecode buffer is read_write for mutator self-modification
+	if !containsStr(src, "storage, read_write> bytecode") {
+		t.Fatal("WGSL shader bytecode buffer must be read_write for MUTATOR opcode")
+	}
+
+	// 4. Exercise MUTATOR through CPU fallback: self-modify ADD → SUB
+	// Program: push 10, push 3, mutator(ADD→SUB), ADD, HALT
+	// The mutator replaces the ADD opcode at a known offset with SUB (0x11).
+	// After mutation, 10 - 3 = 7 instead of 10 + 3 = 13.
+	constants := []interface{}{10, 3, 0x11, 2} // value 10, 3, opcode SUB, offset 2
+	var code []byte
+	// 0-4:  push 10 (const 0)
+	// 5-9:  push 3  (const 1)
+	// 10-14: push SUB opcode 0x11 (const 2)
+	// 15-19: push offset 2 (const 3)
+	// 20:   MUTATOR (0xC1) — writes 0x11 to code[20+2] = code[22]
+	// 21:   NOP padding
+	// 22:   ADD (0x10) — will be overwritten to SUB (0x11) by mutator
+	// 23:   HALT
+	code = append(code, pushConst(0)...) // push 10
+	code = append(code, pushConst(1)...) // push 3
+	code = append(code, pushConst(2)...) // push 0x11 (SUB opcode)
+	code = append(code, pushConst(3)...) // push offset=2
+	code = append(code, 0xC1)            // 20: MUTATOR
+	code = append(code, 0x00)            // 21: padding
+	code = append(code, 0x10)            // 22: ADD (will become SUB)
+	code = append(code, 0xFF)            // 23: HALT
+
+	bc := buildBytecode(constants, code)
+	if !IsGPUCompatible(bc) {
+		t.Fatal("spatial bytecode should be GPU compatible")
+	}
+
+	result, err := d.ExecuteOne(bc)
+	if err != nil {
+		t.Fatalf("ExecuteOne error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("VM error: %v", result.Error)
+	}
+	// After mutator changes ADD→SUB: 10 - 3 = 7
+	if result.IntVal != 7 {
+		t.Fatalf("expected 7 (mutated ADD→SUB), got %d", result.IntVal)
+	}
+
+	// 5. Exercise MITOSIS through CPU fallback
+	// Program: push offset 0, MITOSIS (pushes vmID), push 100, ADD, HALT
+	// Result = vmID(0) + 100 = 100
+	mitoConstants := []interface{}{0, 100}
+	var mitoCode []byte
+	mitoCode = append(mitoCode, pushConst(0)...) // push offset 0
+	mitoCode = append(mitoCode, 0xC0)            // MITOSIS — pops offset, pushes vmID
+	mitoCode = append(mitoCode, pushConst(1)...) // push 100
+	mitoCode = append(mitoCode, 0x10)            // ADD
+	mitoCode = append(mitoCode, 0xFF)            // HALT
+
+	mitoResult, err := d.ExecuteOne(buildBytecode(mitoConstants, mitoCode))
+	if err != nil {
+		t.Fatalf("MITOSIS ExecuteOne error: %v", err)
+	}
+	if mitoResult.Error != nil {
+		t.Fatalf("MITOSIS VM error: %v", mitoResult.Error)
+	}
+	if mitoResult.IntVal != 100 {
+		t.Fatalf("expected 100 (vmID + 100), got %d", mitoResult.IntVal)
+	}
+
+	// 6. Verify spatial opcodes with parallel VMs
+	parallelResults, err := d.Execute(buildBytecode(mitoConstants, mitoCode), 10)
+	if err != nil {
+		t.Fatalf("parallel MITOSIS error: %v", err)
+	}
+	for i, r := range parallelResults {
+		if r.Error != nil {
+			t.Fatalf("parallel VM %d error: %v", i, r.Error)
+		}
+		if r.IntVal != 100 {
+			t.Fatalf("parallel VM %d: expected 100, got %d", i, r.IntVal)
+		}
 	}
 }
 
