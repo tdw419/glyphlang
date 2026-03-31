@@ -1,4 +1,4 @@
-.PHONY: help build test bench clean docker deploy docs examples installer wasm
+.PHONY: help build test bench clean docker deploy docs examples installer wasm coverage
 
 # Default target
 help:
@@ -15,6 +15,7 @@ help:
 	@echo "  examples      - Run example applications"
 	@echo "  installer     - Build Windows installer (requires Inno Setup)"
 	@echo "  wasm          - Build WASM playground"
+	@echo "  coverage      - Run tests with coverage report"
 	@echo "  fmt           - Format code"
 	@echo "  lint          - Run linters"
 
@@ -62,11 +63,14 @@ test-short:
 	@echo "Running Go tests (short mode)..."
 	go test ./... -v -short
 
-test-coverage:
+test-coverage: coverage
+	@echo "HTML report: coverage.html"
+
+coverage:
 	@echo "Running tests with coverage..."
-	go test ./... -coverprofile=coverage.out -covermode=atomic
+	go test ./... -coverprofile=coverage.out -covermode=atomic -timeout 120s
+	go tool cover -func=coverage.out
 	go tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report: coverage.html"
 
 # Benchmark targets
 bench:

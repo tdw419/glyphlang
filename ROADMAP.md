@@ -14,7 +14,7 @@ Priority: Code quality, testing gaps, CI/CD. Unblock v1.0.
 - [x] GitHub Actions: test on push/PR (go test ./...)
 - [ ] GitHub Actions: lint enforcement (gofmt, golangci-lint)
 - [ ] GitHub Actions: build matrix (linux/mac/windows x amd64/arm64)
-- [ ] Coverage reporting (codecov or similar)
+- [x] Coverage reporting (codecov or similar)
 - [ ] Release automation (goreleaser on tag push)
 
 ### P2: Code Quality (13 items from CODE_REVIEW_ISSUES.md)
