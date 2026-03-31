@@ -361,7 +361,7 @@ async fn main() {
             if let (Some(Ok(())), Some(Ok(()))) = (r1.receive().await, r2.receive().await) {
                 {
                     let data = readback_vcc_buffer.slice(..).get_mapped_range();
-                    std::fs::write("/tmp/vcc_colony.rgba", &*data).unwrap();
+                    std::fs::write("/dev/shm/vcc_colony.rgba", &*data).unwrap();
                     drop(data);
                     readback_vcc_buffer.unmap();
                 }

@@ -105,6 +105,17 @@ func runGPU(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	dispatcher := gpu.NewDispatcher()
+	useLive, _ := cmd.Flags().GetBool("live")
+	if useLive {
+		bold.Println("Live execution mode started. Press Ctrl+C to stop.")
+		for {
+			start := time.Now()
+			_, err := dispatcher.Execute(bytecode, numVMs)
+			if err != nil { return err }
+			fmt.Printf("\rFrame: %v (VMs: %d)    ", time.Since(start), numVMs)
+			time.Sleep(16 * time.Millisecond)
+		}
+	}
 	start := time.Now()
 	results, err := dispatcher.Execute(bytecode, numVMs)
 	elapsed := time.Since(start)

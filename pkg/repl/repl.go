@@ -10,6 +10,8 @@ import (
 
 	"github.com/glyphlang/glyph/pkg/ast"
 	"github.com/glyphlang/glyph/pkg/interpreter"
+	"github.com/glyphlang/glyph/pkg/gpu"
+	"github.com/glyphlang/glyph/pkg/compiler"
 	"github.com/glyphlang/glyph/pkg/parser"
 )
 
@@ -21,6 +23,8 @@ type REPL struct {
 	writer  io.Writer
 	running bool
 	version string
+	useGPU     bool
+	dispatcher *gpu.Dispatcher
 	// inputBuffer holds incomplete multi-line input
 	inputBuffer strings.Builder
 	// lineNumber tracks the current input line for prompts
@@ -28,7 +32,11 @@ type REPL struct {
 }
 
 // New creates a new REPL instance.
-func New(reader io.Reader, writer io.Writer, version string) *REPL {
+func New(reader io.Reader, writer io.Writer, version string, useGPU bool) *REPL {
+	var dispatcher *gpu.Dispatcher
+	if useGPU {
+		dispatcher = gpu.NewDispatcher()
+	}
 	interp := interpreter.NewInterpreter()
 	// Set up the parse function for module resolution
 	interp.GetModuleResolver().SetParseFunc(func(source string) (*ast.Module, error) {
@@ -48,6 +56,8 @@ func New(reader io.Reader, writer io.Writer, version string) *REPL {
 		writer:     writer,
 		running:    false,
 		version:    version,
+		useGPU:     useGPU,
+		dispatcher: dispatcher,
 		lineNumber: 1,
 	}
 }
@@ -227,6 +237,18 @@ func (r *REPL) detectInputType(input string) inputType {
 
 // evaluateExpression evaluates an expression and prints the result.
 func (r *REPL) evaluateExpression(input string) error {
+	if r.useGPU {
+		c := compiler.NewSSACompiler()
+		expr, err := r.parseExpression(input)
+		if err != nil { return err }
+		fn := &ast.Function{Name: "repl", Body: []ast.Statement{&ast.ReturnStatement{Value: expr}}}
+		bytecode, err := c.CompileFunction(fn)
+		if err != nil { return err }
+		results, err := r.dispatcher.Execute(bytecode, 1)
+		if err != nil { return err }
+		r.printResult(results[0].IntVal)
+		return nil
+	}
 	// Parse the expression
 	expr, err := r.parseExpression(input)
 	if err != nil {

@@ -67,6 +67,7 @@ to rapidly build high-performance, secure backend applications.`,
 	runCmd.Flags().Bool("interpret", false, "Use tree-walking interpreter instead of compiler (fallback mode)")
 	runCmd.Flags().Bool("gpu", false, "Execute routes on GPU compute shaders (parallel execution)")
         runCmd.Flags().Int("vms", 1, "Number of parallel VM instances")
+        runCmd.Flags().Bool("live", false, "Continuous execution mode for real-time visualization")
         runCmd.Flags().Bool("exec", false, "Execute code and exit without starting HTTP server")
 
 	// Dev command
@@ -352,10 +353,12 @@ Commands:
 Examples:
   glyph repl              # Start REPL`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			r := repl.New(os.Stdin, os.Stdout, version)
+			useGPU, _ := cmd.Flags().GetBool("gpu")
+			r := repl.New(os.Stdin, os.Stdout, version, useGPU)
 			return r.Start()
 		},
 	}
+        replCmd.Flags().Bool("gpu", false, "Use GPU compute shaders for expression evaluation")
 
 	// Test command
 	var testCmd = &cobra.Command{
@@ -471,6 +474,7 @@ Runs one or more parallel VM instances via WebGPU compute shaders.`,
 	}
 	gpuCmd.Flags().Int("vms", 1, "Number of parallel VM instances")
 	gpuCmd.Flags().Bool("shader", false, "Print the WGSL compute shader source")
+        gpuCmd.Flags().Bool("live", false, "Continuous execution mode")
 	gpuCmd.Flags().Bool("spatial", false, "Show Hilbert curve spatial grid visualization")
 	rootCmd.AddCommand(gpuCmd)
 	rootCmd.AddCommand(profileCmd)
