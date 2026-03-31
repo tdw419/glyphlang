@@ -211,6 +211,7 @@ func opcodeName(op byte) string {
 		0x70: "OBJ", 0x71: "GETF", 0x72: "SETF", 0x73: "DEFF",
 		0x80: "ARR",
 		0x90: "HTTP",
+		0xC0: "MITOSIS", 0xC1: "MUTATOR", 0xC2: "TELEMETRY",
 		0xFF: "HALT",
 	}
 	if name, ok := names[op]; ok {

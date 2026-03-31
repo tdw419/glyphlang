@@ -35,6 +35,7 @@ const OP_SET_FIELD: u32    = 0x72u;
 const OP_BUILD_ARRAY: u32  = 0x80u;
 const OP_MITOSIS: u32     = 0xC0u;  // S opcode: spawn adjacent thread
 const OP_MUTATOR: u32     = 0xC1u;  // M opcode: self-modify bytecode
+const OP_TELEMETRY: u32   = 0xC2u;  // T opcode: write telemetry, pop and discard
 const OP_HALT: u32         = 0xFFu;
 
 // Constants for VM dimensions
@@ -410,6 +411,12 @@ fn exec_step(vm_id: u32) {
             // We pop the spatial offset from the stack and push back the vm_id.
             let _offset = pop(vm_id);
             push(vm_id, TAG_INT, i32(vm_id));
+        }
+
+        case OP_TELEMETRY: {
+            // T opcode: pop a value and discard it (write to telemetry buffer).
+            // The telemetry sink is a host-side concern; the shader just pops.
+            _ = pop(vm_id);
         }
 
         case OP_MUTATOR: {
