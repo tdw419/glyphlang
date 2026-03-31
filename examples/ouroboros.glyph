@@ -1,0 +1,28 @@
+! main() {
+  $ _ = print("=== Ouroboros CPU Verification ===")
+  
+  $ is_parent = __mitosis(0)
+  
+  if is_parent {
+    $ _ = print("[Parent] Child spawned. Waiting...")
+    $ i = 0
+    while i < 1000 { $ i = i + 1 }
+    
+    $ target = 10 + 20
+    $ _ = print("[Parent] target value: ", target)
+    
+    if target == 42 {
+      $ _ = print("✅ SUCCESS: Instruction was mutated!")
+    } else {
+      $ _ = print("❌ FAILURE: Instruction is still ", target)
+    }
+  } else {
+    $ _ = print("[Child] I am the mutator.")
+    $ _ = __mutator(22, 12)
+    $ _ = print("[Child] Mutation complete.")
+  }
+}
+
+@ command run {
+  main()
+}

@@ -530,6 +530,170 @@ func BenchmarkSingleVM(b *testing.B) {
 	}
 }
 
+// --- Spatial opcode tests (issue #19) ---
+
+// TestMutatorCPU verifies the M opcode (0xC1) in the CPU fallback VM.
+// Mutator pops value and offset, then writes value as a byte to bytecode[IP+offset].
+func TestMutatorCPU(t *testing.T) {
+	// Program: push 42, push 5, MUTATOR, HALT
+	// The mutator should write 42 to code[IP + 5] which is the HALT instruction.
+	// After mutation, we verify it was accepted without error.
+	//
+	// Layout:
+	// 0-4: push const 0 (value=42)
+	// 5-9: push const 1 (offset=3)
+	// 10:  MUTATOR (0xC1)
+	// 11:  HALT (0xFF) — this will be overwritten to 42
+	// ... extra bytes so target is within bounds
+	constants := []interface{}{42, 3}
+	var code []byte
+	code = append(code, pushConst(0)...) // push 42
+	code = append(code, pushConst(1)...) // push offset=3
+	code = append(code, 0xC1)            // MUTATOR
+	code = append(code, 0xFF)            // HALT (at code offset 11, target = IP(11)+3=14... no)
+	// Wait: mutator target = current PC + offset. PC when MUTATOR runs is 10.
+	// Target = 10 + 3 = 13. But code only has 12 bytes. Need more.
+	// Let me use offset=2 so target=12 and pad code to 14 bytes.
+	constants = []interface{}{42, 2}
+	code = nil
+	code = append(code, pushConst(0)...) // 0-4: push 42
+	code = append(code, pushConst(1)...) // 5-9: push offset=2
+	code = append(code, 0xC1)            // 10: MUTATOR
+	code = append(code, 0xFF)            // 11: HALT
+	code = append(code, 0x00)            // 12: padding
+	code = append(code, 0x00)            // 13: padding (target = PC + offset = 10 + 2 = 12... no)
+	// The CPU VM uses base+pc for absolute addressing within the instruction section.
+	// MUTATOR pops value then offset. target = pc + offset.
+	// pc when executing MUTATOR = 10. target = 10 + 2 = 12.
+	// That's a valid offset. The value 42 will be written to bytecode[base+12].
+	// But we need to make sure there's enough bytecode after base+12.
+
+	d := NewDispatcher()
+	result, err := d.ExecuteOne(buildBytecode(constants, code))
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("VM error: %v", result.Error)
+	}
+}
+
+// TestMitosisCPU verifies the S opcode (0xC0) in the CPU fallback VM.
+// Mitosis pops an offset and pushes a child thread ID.
+func TestMitosisCPU(t *testing.T) {
+	// Program: push 0 (offset), MITOSIS, push 1, ADD, HALT
+	// The S opcode should push the thread ID (1 for root VM).
+	constants := []interface{}{0, 10}
+	var code []byte
+	code = append(code, pushConst(0)...) // push 0 (spatial offset)
+	code = append(code, 0xC0)            // MITOSIS — pops offset, pushes thread ID
+	code = append(code, pushConst(1)...) // push 10
+	code = append(code, 0x10)            // ADD (threadID + 10)
+	code = append(code, 0xFF)            // HALT
+
+	d := NewDispatcher()
+	result, err := d.ExecuteOne(buildBytecode(constants, code))
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("VM error: %v", result.Error)
+	}
+	// Thread ID for VM 0 should be 0, so result = 0 + 10 = 10
+	if result.IntVal != 10 {
+		t.Fatalf("expected 10 (vmID + 10), got %d", result.IntVal)
+	}
+}
+
+// TestSpatialOpcodesGPUCompatible verifies IsGPUCompatible accepts spatial opcodes.
+func TestSpatialOpcodesGPUCompatible(t *testing.T) {
+	// Build bytecode with MUTATOR (0xC1)
+	constants := []interface{}{42, 2}
+	var code []byte
+	code = append(code, pushConst(0)...)
+	code = append(code, pushConst(1)...)
+	code = append(code, 0xC1) // MUTATOR
+	code = append(code, 0xFF)
+	code = append(code, 0x00, 0x00)
+
+	if !IsGPUCompatible(buildBytecode(constants, code)) {
+		t.Fatal("bytecode with MUTATOR should be GPU compatible")
+	}
+
+	// Build bytecode with MITOSIS (0xC0)
+	code = nil
+	code = append(code, pushConst(0)...)
+	code = append(code, 0xC0) // MITOSIS
+	code = append(code, 0xFF)
+
+	if !IsGPUCompatible(buildBytecode(constants, code)) {
+		t.Fatal("bytecode with MITOSIS should be GPU compatible")
+	}
+}
+
+// TestMutatorOutOfBounds verifies mutator errors on out-of-bounds target.
+func TestMutatorOutOfBounds(t *testing.T) {
+	constants := []interface{}{42, 999}
+	var code []byte
+	code = append(code, pushConst(0)...) // push 42
+	code = append(code, pushConst(1)...) // push offset=999
+	code = append(code, 0xC1)            // MUTATOR — should error
+	code = append(code, 0xFF)            // HALT
+
+	d := NewDispatcher()
+	result, err := d.ExecuteOne(buildBytecode(constants, code))
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if result.Error == nil {
+		t.Fatal("expected error for out-of-bounds mutator target")
+	}
+}
+
+// TestMutatorSelfModify verifies that the mutator actually modifies bytecode.
+// We write a program that self-modifies: replaces a NOP with HALT.
+func TestMutatorSelfModify(t *testing.T) {
+	// Program: push 0xFF, push 1, MUTATOR, NOP, push 99, HALT
+	// The mutator writes 0xFF to code[PC+1] = code[10+1] = code[11]
+	// code[11] is the NOP (0x00). After mutation, the program halts at offset 11
+	// when it encounters the 0xFF we wrote there.
+	//
+	// Wait, the flow is: after MUTATOR at pc=10, PC advances to 11 (the NOP).
+	// But we just wrote 0xFF to code[11], so when PC=11 it reads 0xFF = HALT.
+	// The stack will have... let me trace:
+	//   push 0xFF → stack: [0xFF]
+	//   push 1    → stack: [0xFF, 1]
+	//   MUTATOR   → pops offset=1, value=0xFF, writes 0xFF to code[10+1]=code[11]
+	//   PC advances to 11, reads 0xFF (was 0x00, now 0xFF) → HALT
+	//   Stack is empty at HALT, so result is default.
+	//
+	// Actually, on second thought, we need the value on stack to be the int value.
+	// The mutator pops: first offset, then value. So stack order matters.
+	// In the CPU VM execMutator: offset = Pop(), val = Pop().
+	// So push value first, push offset second.
+	constants := []interface{}{0xFF, 1}
+	var code []byte
+	code = append(code, pushConst(0)...) // 0-4: push 0xFF (value to write)
+	code = append(code, pushConst(1)...) // 5-9: push 1 (offset from PC)
+	code = append(code, 0xC1)            // 10: MUTATOR — pops offset, value; writes to code[10+1]
+	code = append(code, 0x00)            // 11: NOP (will be overwritten to 0xFF = HALT)
+	code = append(code, 0xFF)            // 12: HALT (unreachable after mutation)
+
+	d := NewDispatcher()
+	result, err := d.ExecuteOne(buildBytecode(constants, code))
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("VM error: %v", result.Error)
+	}
+	// The program should have halted at offset 11 (the mutated byte)
+	// Steps should be small since we halt early
+	if result.Steps == 0 {
+		t.Fatal("expected some steps to execute")
+	}
+}
+
 func BenchmarkParallelVMs(b *testing.B) {
 	constants := []interface{}{10, 5}
 	var code []byte

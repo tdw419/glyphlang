@@ -46,6 +46,14 @@ const (
 	ErrStackUnderflow uint32 = 2
 	ErrDivByZero      uint32 = 3
 	ErrMaxSteps       uint32 = 4
+	ErrMutatorOOB     uint32 = 5 // mutator target out of bounds
+)
+
+// Spatial opcodes (synchronized with pkg/vm/vm.go)
+const (
+	OpMitosisByte byte = 0xC0 // S opcode: clone VM state into new thread
+	OpMutatorByte byte = 0xC1 // M opcode: self-modify code at PC + offset
+	OpTelemetryByte byte = 0xC2 // telemetry write
 )
 
 // Config matches the WGSL Config struct layout (8 x u32 = 32 bytes)
@@ -599,6 +607,27 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int) Result 
 			}
 			state.Halted = 1
 
+		case 0xC1: // OP_MUTATOR — self-modify code at PC + offset
+			if state.SP < 2 {
+				state.Error = ErrStackUnderflow
+				state.Halted = 1
+				break
+			}
+			offset := stack[state.SP-1] // top of stack = offset
+			val := stack[state.SP-2]    // second = value to write
+			state.SP -= 2
+			target := int(state.PC) + int(offset.Data)
+			if target < 0 || target >= len(bytecode)-base {
+				state.Error = ErrMutatorOOB
+				state.Halted = 1
+				break
+			}
+			bytecode[base+target] = byte(val.Data)
+
+		case 0xC0: // OP_MITOSIS — no-op in GPU CPU fallback (handled by MitosisVM)
+			// Spatial thread spawn is handled by the MitosisVM layer,
+			// not by individual GPU VM instances.
+
 		case 0xFF: // OP_HALT
 			if state.SP > 0 {
 				val := stack[state.SP-1]
@@ -705,7 +734,7 @@ func IsGPUCompatible(bytecode []byte) bool {
 		// Check if opcode is supported
 		supported := false
 		switch op {
-		case 0x01, 0x02, 0x10, 0x11, 0x12, 0x13, 0x14, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x40, 0x41, 0x50, 0x51, 0x52, 0x61, 0xFF:
+		case 0x00, 0x01, 0x02, 0x10, 0x11, 0x12, 0x13, 0x14, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x40, 0x41, 0x50, 0x51, 0x52, 0x61, 0xC0, 0xC1, 0xFF:
 			supported = true
 		}
 
