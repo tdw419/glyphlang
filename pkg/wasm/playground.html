@@ -215,6 +215,7 @@ fn fib(n: int): int {
 fib(10)</textarea>
             <div class="toolbar">
                 <button class="primary" onclick="runCode()">▶ Run</button>
+                <button onclick="runSpatial()">🧬 Spatial</button>
                 <button onclick="compileCode()">📦 Compile</button>
                 <button onclick="clearAll()">🗑 Clear</button>
                 <div class="examples">
@@ -224,6 +225,7 @@ fib(10)</textarea>
                         <option value="fib">Fibonacci</option>
                         <option value="factorial">Factorial</option>
                         <option value="route">HTTP Route</option>
+                        <option value="spatial">Spatial Opcodes</option>
                     </select>
                 </div>
             </div>
@@ -291,7 +293,29 @@ GET /users/:id {
 }
 
 // This would create a route handler
-// Access via: GET /users/123`
+// Access via: GET /users/123`,
+            
+            spatial: `// Spatial Opcodes — Self-Modifying Code
+// MITOSIS (0xC0): Clone execution thread at offset
+// MUTATOR (0xC1): Modify bytecode at runtime
+
+// This example demonstrates the pipeline that
+// test_compiler_spatial.glyph uses. Spatial opcodes
+// enable the Ouroboros pattern: programs that rewrite
+// their own bytecode during execution.
+//
+// Compile this to see spatial opcodes in the bytecode:
+// OP_MITOSIS and OP_MUTATOR are embedded when using
+// __mitosis() and __mutator() intrinsics.
+
+fn process(n: int): int {
+    if n <= 0 {
+        return 1
+    }
+    return n * process(n - 1)
+}
+
+process(5)`
         };
         
         let wasmReady = false;
@@ -328,6 +352,44 @@ GET /users/:id {
                 } else {
                     showOutput(result.error, true);
                     setStatus('outputStatus', 'Error', false);
+                }
+            } catch (e) {
+                showOutput('Error: ' + e.message, true);
+                setStatus('outputStatus', 'Error', false);
+            }
+        }
+        
+        function runSpatial() {
+            if (!wasmReady) {
+                showOutput('WASM not loaded yet...', true);
+                return;
+            }
+            
+            const source = document.getElementById('editor').value;
+            showOutput('Running spatial analysis...');
+            
+            try {
+                // Check if spatial API is available
+                if (typeof glyphSpatialExec === 'function') {
+                    const result = JSON.parse(glyphSpatialExec(source));
+                    
+                    if (result.success) {
+                        let output = `Result: ${JSON.stringify(result.result, null, 2)}\n`;
+                        output += `\n--- Spatial Diagnostics ---\n`;
+                        output += `Threads:   ${result.threads}\n`;
+                        output += `Mutations: ${result.mutations}\n`;
+                        output += `Time:      ${result.time_ms}ms\n`;
+                        showOutput(output);
+                        setStatus('outputStatus', `Spatial ${result.time_ms}ms`, true);
+                    } else {
+                        showOutput(result.error, true);
+                        setStatus('outputStatus', 'Error', false);
+                    }
+                } else {
+                    // Fallback to regular run with spatial info
+                    const caps = JSON.parse(glyphVersion());
+                    showOutput(`Spatial execution requires glyphSpatialExec API.\nVersion: ${caps}`);
+                    setStatus('outputStatus', 'Unavailable', false);
                 }
             } catch (e) {
                 showOutput('Error: ' + e.message, true);
@@ -406,6 +468,10 @@ GET /users/:id {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 e.preventDefault();
                 runCode();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Enter') {
+                e.preventDefault();
+                runSpatial();
             }
         });
     </script>

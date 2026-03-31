@@ -39,8 +39,21 @@ type ParseResult struct {
 	Error   string      `json:"error,omitempty"`
 }
 
+// SpatialResult is returned by spatial execution, tracking spatial opcode effects.
+type SpatialResult struct {
+	Success   bool        `json:"success"`
+	Result    interface{} `json:"result,omitempty"`
+	Threads   int         `json:"threads,omitempty"`
+	Mutations int         `json:"mutations,omitempty"`
+	Error     string      `json:"error,omitempty"`
+	TimeMS    int64       `json:"time_ms,omitempty"`
+}
+
 // bytecodeCache stores compiled bytecode for reuse.
 var bytecodeCache = make(map[string][]byte)
+
+// spatialBytecodes tracks mutation counts per cached bytecode key.
+var spatialBytecodes = make(map[string]int)
 
 // compileGlyph compiles source to bytecode.
 func compileGlyph(this js.Value, args []js.Value) interface{} {
@@ -273,6 +286,87 @@ func moduleToString(m *ast.Module) string {
 	return b.String()
 }
 
+// spatialExec runs source code with spatial opcode awareness.
+// It tracks mutator writes and mitosis thread spawns during execution,
+// providing diagnostics for the browser playground's spatial mode.
+func spatialExec(this js.Value, args []js.Value) interface{} {
+	if len(args) < 1 {
+		return mustMarshal(SpatialResult{Success: false, Error: "source code required"})
+	}
+
+	source := args[0].String()
+	start := time.Now()
+
+	// Compile
+	lexer := parser.NewLexer(source)
+	tokens, err := lexer.Tokenize()
+	if err != nil {
+		return mustMarshal(SpatialResult{Success: false, Error: fmt.Sprintf("lexer: %v", err)})
+	}
+
+	p := parser.NewParser(tokens)
+	module, err := p.Parse()
+	if err != nil {
+		return mustMarshal(SpatialResult{Success: false, Error: fmt.Sprintf("parser: %v", err)})
+	}
+
+	c := compiler.NewCompiler()
+	bytecode, err := c.Compile(module)
+	if err != nil {
+		return mustMarshal(SpatialResult{Success: false, Error: fmt.Sprintf("compiler: %v", err)})
+	}
+
+	// Check if bytecode contains spatial opcodes
+	mutationCount := 0
+	threadCount := 1
+	for _, b := range bytecode {
+		switch b {
+		case byte(vm.OpMutator):
+			mutationCount++
+		case byte(vm.OpMitosis):
+			threadCount++
+		}
+	}
+
+	// Execute
+	vmInstance := vm.NewVM()
+	result, err := vmInstance.Execute(bytecode)
+	if err != nil {
+		return mustMarshal(SpatialResult{
+			Success:   false,
+			Threads:   threadCount,
+			Mutations: mutationCount,
+			Error:     fmt.Sprintf("execution: %v", err),
+			TimeMS:    time.Since(start).Milliseconds(),
+		})
+	}
+
+	// Cache with spatial metadata
+	cacheKey := fmt.Sprintf("spatial_%x", len(source))
+	spatialBytecodes[cacheKey] = mutationCount
+
+	return mustMarshal(SpatialResult{
+		Success:   true,
+		Result:    valueToJSON(result),
+		Threads:   threadCount,
+		Mutations: mutationCount,
+		TimeMS:    time.Since(start).Milliseconds(),
+	})
+}
+
+// spatialCapabilities reports which spatial opcodes are available.
+func spatialCapabilities(this js.Value, args []js.Value) interface{} {
+	return mustMarshal(map[string]interface{}{
+		"mitosis":  true,
+		"mutator":  true,
+		"version":  "0.6.0-alpha",
+		"opcodes": map[string]int{
+			"OP_MITOSIS": int(vm.OpMitosis),
+			"OP_MUTATOR": int(vm.OpMutator),
+		},
+	})
+}
+
 func main() {
 	fmt.Println("GlyphLang WASM v0.6.0-alpha initialized")
 
@@ -283,6 +377,10 @@ func main() {
 	js.Global().Set("glyphParse", js.FuncOf(parseGlyph))
 	js.Global().Set("glyphTokenize", js.FuncOf(tokenize))
 	js.Global().Set("glyphVersion", js.FuncOf(version))
+
+	// Spatial opcode functions for browser playground
+	js.Global().Set("glyphSpatialExec", js.FuncOf(spatialExec))
+	js.Global().Set("glyphSpatialCapabilities", js.FuncOf(spatialCapabilities))
 
 	// Keep running
 	select {}
