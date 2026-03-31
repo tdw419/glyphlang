@@ -224,17 +224,17 @@ fn exec_step(vm_id: u32) {
     let pc = vm_states[vm_id].pc;
     let base = config.code_offset;
 
-    if pc >= config.bytecode_len {
+    if pc >= config.code_offset + config.bytecode_len {
         vm_states[vm_id].halted = 1u;
         return;
     }
 
-    let op = read_byte(base + pc);
+    let op = read_byte(pc);
     var next_pc = pc + 1u;
 
     switch op {
         case OP_PUSH: {
-            let const_idx = read_u32(base + pc + 1u);
+            let const_idx = read_u32(pc + 1u);
             next_pc = pc + 5u;
             let val = load_constant(const_idx);
             push(vm_id, val.tag, val.data);
@@ -360,7 +360,7 @@ fn exec_step(vm_id: u32) {
         }
 
         case OP_STORE_VAR: {
-            let var_idx = read_u32(base + pc + 1u);
+            let var_idx = read_u32(pc + 1u);
             next_pc = pc + 5u;
             let val = pop(vm_id);
             let vidx = vars_base(vm_id) + (var_idx % MAX_VARS);
@@ -368,7 +368,7 @@ fn exec_step(vm_id: u32) {
         }
 
         case OP_LOAD_VAR: {
-            let var_idx = read_u32(base + pc + 1u);
+            let var_idx = read_u32(pc + 1u);
             next_pc = pc + 5u;
             let vidx = vars_base(vm_id) + (var_idx % MAX_VARS);
             let val = vars[vidx];
@@ -376,12 +376,12 @@ fn exec_step(vm_id: u32) {
         }
 
         case OP_JUMP: {
-            let target_val = read_u32(base + pc + 1u);
+            let target_val = read_u32(pc + 1u);
             next_pc = target_val;
         }
 
         case OP_JUMP_IF_FALSE: {
-            let target_val = read_u32(base + pc + 1u);
+            let target_val = read_u32(pc + 1u);
             next_pc = pc + 5u;
             let cond = pop(vm_id);
             if cond.data == 0 {
@@ -390,7 +390,7 @@ fn exec_step(vm_id: u32) {
         }
 
         case OP_JUMP_IF_TRUE: {
-            let target_val = read_u32(base + pc + 1u);
+            let target_val = read_u32(pc + 1u);
             next_pc = pc + 5u;
             let cond = pop(vm_id);
             if cond.data != 0 {
@@ -424,10 +424,10 @@ fn exec_step(vm_id: u32) {
         case OP_MUTATOR: {
             // M opcode: self-modify bytecode at PC + offset using atomic write.
             // Pops value then offset from stack. Writes value byte to
-            // bytecode_buffer[base + pc + offset].
+            // bytecode_buffer[pc + offset].
             let offset_val = pop(vm_id); if (vm_states[vm_id].halted == 1u) { return; }
             let write_val = pop(vm_id);
-            let target_val = base + pc + u32(offset_val.data);
+            let target_val = pc + u32(offset_val.data);
             if target_val >= config.code_offset + config.bytecode_len {
                 vm_states[vm_id].error = ERR_MUTATOR_OOB;
                 vm_states[vm_id].halted = 1u;
@@ -519,7 +519,7 @@ fn d2xy(n: u32, d: u32) -> vec2<u32> {
 }
 
 fn write_vcc_pixel(vm_id: u32) {
-    let pos = d2xy(64u, vm_id);
+    let pos = d2xy(256u, vm_id);
     var color = vec4<f32>(0.08, 0.08, 0.1, 1.0);
     
     let state = vm_states[vm_id];

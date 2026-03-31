@@ -66,6 +66,7 @@ to rapidly build high-performance, secure backend applications.`,
 	runCmd.Flags().Bool("bytecode", false, "Execute bytecode (.glyphc) file")
 	runCmd.Flags().Bool("interpret", false, "Use tree-walking interpreter instead of compiler (fallback mode)")
 	runCmd.Flags().Bool("gpu", false, "Execute routes on GPU compute shaders (parallel execution)")
+        runCmd.Flags().Int("vms", 1, "Number of parallel VM instances")
         runCmd.Flags().Bool("exec", false, "Execute code and exit without starting HTTP server")
 
 	// Dev command

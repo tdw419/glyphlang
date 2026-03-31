@@ -38,6 +38,8 @@ func init() {
 		"replace":     builtinReplace,
 		"substring":   builtinSubstring,
 		"length":      builtinLength,
+		"spawn":       builtinSpawn,
+		"mutate":      builtinMutate,
 		"startsWith":  builtinStartsWith,
 		"endsWith":    builtinEndsWith,
 		"indexOf":     builtinIndexOf,
@@ -1839,5 +1841,19 @@ func builtinMitosis(i *Interpreter, args []Expr, env *Environment) (interface{},
 	}
 
 	// Always return true = parent path (interpreter is single-threaded)
+	return true, nil
+}
+
+func builtinSpawn(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("spawn() takes exactly 1 argument (spatial offset), got %d", len(args))
+	}
+	return true, nil
+}
+
+func builtinMutate(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("mutate() takes exactly 2 arguments (value, offset), got %d", len(args))
+	}
 	return true, nil
 }

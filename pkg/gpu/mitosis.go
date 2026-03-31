@@ -136,7 +136,7 @@ func (m *MitosisVM) runThread(bytecode []byte, config *Config, w spawnWork) Thre
 		}
 
 		// Delegate to standard execution
-		result := m.dispatcher.runOneVM(bytecode, config, 0)
+		result, _ := m.dispatcher.runOneVM(bytecode, config, 0, 0, nil, nil)
 		return ThreadResult{
 			ThreadID: w.threadID,
 			ParentID: w.parentID,

@@ -24,6 +24,18 @@ type WGSLExecutionResult struct {
 	ResultData int32  `json:"result_data"`
 }
 
+type JobTimings struct {
+	InitMS     float64 `json:"init_ms"`
+	ComputeMS  float64 `json:"compute_ms"`
+	ReadbackMS float64 `json:"readback_ms"`
+	TotalMS    float64 `json:"total_ms"`
+}
+
+type JobResponse struct {
+	Results []WGSLExecutionResult `json:"results"`
+	Timings JobTimings            `json:"timings_ms"`
+}
+
 type GlyphJob struct {
 	BytecodeHex    string `json:"bytecode_hex"`
 	NumVMs         uint32 `json:"num_vms"`
@@ -156,28 +168,32 @@ func (r *PersistentRunner) Submit(bytecode []byte, numVMs, workgroupCount int) (
 		return nil, fmt.Errorf("GPU runner scan failed: %v", r.stdout.Err())
 	}
 
-	return parseResults(r.stdout.Bytes(), numVMs)
-}
-
-func parseResults(output []byte, numVMs int) ([]Result, error) {
-	var res []WGSLExecutionResult
-	if err := json.Unmarshal(output, &res); err != nil {
-		return nil, fmt.Errorf("failed to parse WGSL result: %w (output: %s)", err, string(output))
+	var resp JobResponse
+	if err := json.Unmarshal(r.stdout.Bytes(), &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse job response: %w", err)
 	}
 
-	results := make([]Result, len(res))
-	for i, r := range res {
+	// Print timings if in debug mode or for benchmark
+	fmt.Fprintf(os.Stderr, "[GPU] Timings: Init: %.2fms, Compute: %.2fms, Readback: %.2fms, Total: %.2fms\n",
+		resp.Timings.InitMS, resp.Timings.ComputeMS, resp.Timings.ReadbackMS, resp.Timings.TotalMS)
+
+	results := make([]Result, len(resp.Results))
+	for i, res := range resp.Results {
 		results[i] = Result{
-			Tag:    r.ResultTag,
-			IntVal: int64(r.ResultData),
-			Steps:  r.Steps,
+			Tag:    res.ResultTag,
+			IntVal: int64(res.ResultData),
+			Steps:  res.Steps,
 		}
-		if r.Error != 0 {
-			results[i].Error = fmt.Errorf("GPU error code: %d", r.Error)
+		if res.Error != 0 {
+			results[i].Error = fmt.Errorf("GPU error code: %d", res.Error)
 		}
 	}
 
 	return results, nil
+}
+
+func parseResults(output []byte, numVMs int) ([]Result, error) {
+	return nil, fmt.Errorf("parseResults is legacy")
 }
 
 func ExecuteWGSL(wgslSource string) (*Result, error) {

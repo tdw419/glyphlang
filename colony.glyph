@@ -1,5 +1,19 @@
 ! main() {
     spawn(0)
     spawn(0)
-    return 42
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    return 65536
 }
