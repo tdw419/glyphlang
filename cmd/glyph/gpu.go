@@ -20,6 +20,7 @@ func runGPU(cmd *cobra.Command, args []string) error {
 	}
 
 	numVMs, _ := cmd.Flags().GetInt("vms")
+	if numVMs == 0 { numVMs = 1 }
 	showShader, _ := cmd.Flags().GetBool("shader")
 	showSpatial, _ := cmd.Flags().GetBool("spatial")
 

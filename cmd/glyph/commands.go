@@ -321,6 +321,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 		printSuccess("Bytecode executed successfully")
 		printInfo(fmt.Sprintf("Execution time: %s", execTime))
 		printInfo(fmt.Sprintf("Result: %v", result))
+                return nil
+        }
+
 
         // Running source file in exec mode
         if useExec {
@@ -349,8 +352,6 @@ func runRun(cmd *cobra.Command, args []string) error {
                 printInfo(fmt.Sprintf("Result: %v (time: %s)", result, time.Since(start)))
                 return nil
         }
-		return nil
-	}
 
 	// Running source file - use shared server startup logic
 	if useGPU {
