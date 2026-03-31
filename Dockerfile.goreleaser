@@ -1,0 +1,7 @@
+FROM scratch
+LABEL org.opencontainers.image.title=glyph
+LABEL org.opencontainers.image.source=https://github.com/tdw419/glyphlang
+
+COPY glyph /usr/local/bin/glyph
+
+ENTRYPOINT ["/usr/local/bin/glyph"]
