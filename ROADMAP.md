@@ -26,7 +26,7 @@ Priority: Code quality, testing gaps, CI/CD. Unblock v1.0.
 - [ ] P2-6: Replace stub test assertions with real tests
 - [x] P2-7: Resolve remaining TODO comments
 - [ ] P2-8: Dead code cleanup
-- [ ] P2-9: Consistent pointer vs value types in compiler
+- [x] P2-9: Consistent pointer vs value types in compiler
 - [x] P2-10: Inject version via ldflags (remove hardcoded string)
 - [x] P2-11: Enforce gofmt in CI (covered by CI/CD above)
 - [x] P2-12: Remove os.Exit() from non-main functions

@@ -748,59 +748,71 @@ func (c *Compiler) compileSwitchStatement(stmt *ast.SwitchStatement) error {
 	return nil
 }
 
-// compileExpression compiles an expression
-func (c *Compiler) compileExpression(expr ast.Expr) error {
+// normalizeExpression converts pointer-typed expressions to their value form.
+// This mirrors normalizeStatement: the parser produces value types, but other
+// call sites (JIT, LSP, tests) construct pointer types. After normalization,
+// compileExpression needs only one case per type.
+func normalizeExpression(expr ast.Expr) ast.Expr {
 	switch e := expr.(type) {
 	case *ast.LiteralExpr:
-		return c.compileLiteral(e)
+		return *e
+	case *ast.VariableExpr:
+		return *e
+	case *ast.BinaryOpExpr:
+		return *e
+	case *ast.UnaryOpExpr:
+		return *e
+	case *ast.ObjectExpr:
+		return *e
+	case *ast.ArrayExpr:
+		return *e
+	case *ast.FieldAccessExpr:
+		return *e
+	case *ast.FunctionCallExpr:
+		return *e
+	case *ast.ArrayIndexExpr:
+		return *e
+	case *ast.MatchExpr:
+		return *e
+	case *ast.AsyncExpr:
+		return *e
+	case *ast.AwaitExpr:
+		return *e
+	case *ast.TryExpression:
+		return *e
+	default:
+		return expr
+	}
+}
+
+// compileExpression compiles an expression
+func (c *Compiler) compileExpression(expr ast.Expr) error {
+	expr = normalizeExpression(expr)
+	switch e := expr.(type) {
 	case ast.LiteralExpr:
 		return c.compileLiteral(&e)
-	case *ast.VariableExpr:
-		return c.compileVariable(e)
 	case ast.VariableExpr:
 		return c.compileVariable(&e)
-	case *ast.BinaryOpExpr:
-		return c.compileBinaryOp(e)
 	case ast.BinaryOpExpr:
 		return c.compileBinaryOp(&e)
-	case *ast.ObjectExpr:
-		return c.compileObject(e)
 	case ast.ObjectExpr:
 		return c.compileObject(&e)
-	case *ast.ArrayExpr:
-		return c.compileArray(e)
 	case ast.ArrayExpr:
 		return c.compileArray(&e)
-	case *ast.FieldAccessExpr:
-		return c.compileFieldAccess(e)
 	case ast.FieldAccessExpr:
 		return c.compileFieldAccess(&e)
-	case *ast.FunctionCallExpr:
-		return c.compileFunctionCall(e)
 	case ast.FunctionCallExpr:
 		return c.compileFunctionCall(&e)
-	case *ast.ArrayIndexExpr:
-		return c.compileArrayIndex(e)
 	case ast.ArrayIndexExpr:
 		return c.compileArrayIndex(&e)
-	case *ast.UnaryOpExpr:
-		return c.compileUnaryOp(e)
 	case ast.UnaryOpExpr:
 		return c.compileUnaryOp(&e)
-	case *ast.MatchExpr:
-		return c.compileMatchExpr(e)
 	case ast.MatchExpr:
 		return c.compileMatchExpr(&e)
-	case *ast.AsyncExpr:
-		return c.compileAsyncExpr(e)
 	case ast.AsyncExpr:
 		return c.compileAsyncExpr(&e)
-	case *ast.AwaitExpr:
-		return c.compileAwaitExpr(e)
 	case ast.AwaitExpr:
 		return c.compileAwaitExpr(&e)
-	case *ast.TryExpression:
-		return c.compileTryExpr(e)
 	case ast.TryExpression:
 		return c.compileTryExpr(&e)
 	default:
