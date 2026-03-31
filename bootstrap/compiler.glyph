@@ -11,8 +11,10 @@ import "./ast"
   instructions: [int]!
   symbol_table: any!
   scopes: [any]!
+  loop_stack: [any]!
   current_scope: int!
   label_counter: int!
+  jump_patches: [int]!
 }
 
 : CompileResult {
@@ -66,7 +68,9 @@ const OP_HALT          = 255
     symbol_table: {},
     scopes: [{}],
     current_scope: 0,
-    label_counter: 0
+    label_counter: 0,
+    jump_patches: [],
+    loop_stack: []
   }
 }
 
@@ -84,6 +88,28 @@ const OP_HALT          = 255
   emit_byte(c, OP_HALT)
 
   $ header = build_header(c)
+  $ hlen = length(header)
+  
+  # Finalize all jump targets with header offset
+  $ ji = 0
+  while ji < length(c.jump_patches) {
+    $ pos = c.jump_patches[ji]
+    # Read current target (little-endian uint32)
+    $ b0 = c.instructions[pos]
+    $ b1 = c.instructions[pos+1]
+    $ b2 = c.instructions[pos+2]
+    $ b3 = c.instructions[pos+3]
+    $ target = b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+    
+    $ new_target = target + hlen
+    $ nb = intToBytes4(new_target)
+    $ c.instructions[pos] = nb[0]
+    $ c.instructions[pos+1] = nb[1]
+    $ c.instructions[pos+2] = nb[2]
+    $ c.instructions[pos+3] = nb[3]
+    $ ji = ji + 1
+  }
+
   > { bytecode: header + c.instructions, error: "" }
 }
 
@@ -217,6 +243,7 @@ const OP_HALT          = 255
   emit_byte(c, op)
   $ pos = length(c.instructions)
   emit_bytes4(c, 0)
+  $ c.jump_patches = c.jump_patches + [pos]
   > pos
 }
 
@@ -347,7 +374,7 @@ const OP_HALT          = 255
   if item.kind == "from_import" { > "" }
 
   # Try compiling as a statement for top-level script-like code
-  if item.kind == "for_in" || item.kind == "if" || item.kind == "while" || item.kind == "assign" || item.kind == "expression" {
+  if item.kind == "for_in" || item.kind == "if" || item.kind == "while" || item.kind == "assign" || item.kind == "expression" || item.kind == "return" {
     > compile_statement(c, item)
   }
 
@@ -403,6 +430,11 @@ const OP_HALT          = 255
 
   if stmt.kind == "while" {
     $ start_pos = length(c.instructions)
+    
+    # Push loop context for break/continue
+    $ loop_ctx = { start_pos: start_pos, break_jumps: [] }
+    $ c.loop_stack = c.loop_stack + [loop_ctx]
+
     $ err = compile_expression(c, stmt.while_condition)
     if err != "" { > err }
     $ jump_false_pos = emit_jump(c, OP_JUMP_IF_FALSE)
@@ -415,6 +447,7 @@ const OP_HALT          = 255
     }
 
     $ loop_jump = emit_jump(c, OP_JUMP)
+    # target is relative to instructions start, will be offset in compile()
     $ b = intToBytes4(start_pos)
     $ c.instructions[loop_jump] = b[0]
     $ c.instructions[loop_jump + 1] = b[1]
@@ -422,6 +455,24 @@ const OP_HALT          = 255
     $ c.instructions[loop_jump + 3] = b[3]
 
     patch_jump(c, jump_false_pos)
+    
+    # Patch all break jumps to the end of the loop
+    $ bj = loop_ctx.break_jumps
+    $ j = 0
+    while j < length(bj) {
+      patch_jump(c, bj[j])
+      j = j + 1
+    }
+    
+    # Pop loop context
+    $ ns = []
+    $ si = 0
+    while si < length(c.loop_stack) - 1 {
+      ns = ns + [c.loop_stack[si]]
+      si = si + 1
+    }
+    $ c.loop_stack = ns
+    
     > ""
   }
 
@@ -472,8 +523,26 @@ const OP_HALT          = 255
     > ""
   }
 
-  if stmt.kind == "break" { > "" }
-  if stmt.kind == "continue" { > "" }
+  if stmt.kind == "break" {
+    if length(c.loop_stack) == 0 { > "break outside of loop" }
+    $ top_idx = length(c.loop_stack) - 1
+    $ loop_ctx = c.loop_stack[top_idx]
+    $ jump_pos = emit_jump(c, OP_JUMP)
+    $ loop_ctx.break_jumps = loop_ctx.break_jumps + [jump_pos]
+    > ""
+  }
+  if stmt.kind == "continue" {
+    if length(c.loop_stack) == 0 { > "continue outside of loop" }
+    $ top_idx = length(c.loop_stack) - 1
+    $ loop_ctx = c.loop_stack[top_idx]
+    $ jump_pos = emit_jump(c, OP_JUMP)
+    $ b = intToBytes4(loop_ctx.start_pos)
+    $ c.instructions[jump_pos] = b[0]
+    $ c.instructions[jump_pos + 1] = b[1]
+    $ c.instructions[jump_pos + 2] = b[2]
+    $ c.instructions[jump_pos + 3] = b[3]
+    > ""
+  }
 
   if stmt.kind == "for_in" {
     # 1. Compile the iterable expression → collection on stack
@@ -503,6 +572,10 @@ const OP_HALT          = 255
 
     # 6. Loop start
     $ loop_start = length(c.instructions)
+    
+    # Push loop context for break/continue
+    $ loop_ctx = { start_pos: loop_start, break_jumps: [] }
+    $ c.loop_stack = c.loop_stack + [loop_ctx]
 
     # 7. Load iterator, check has_next
     emit_byte(c, OP_LOAD_VAR)
@@ -514,7 +587,7 @@ const OP_HALT          = 255
     emit_byte(c, OP_LOAD_VAR)
     emit_bytes4(c, iter_idx)
     emit_byte(c, OP_ITER_NEXT)
-    emit_byte(c, has_key)
+    emit_bytes4(c, has_key)
 
     # 9. Store value variable (top of stack)
     emit_byte(c, OP_STORE_VAR)
@@ -536,6 +609,7 @@ const OP_HALT          = 255
 
     # 12. Jump back to loop start
     $ loop_jump = emit_jump(c, OP_JUMP)
+    # target is relative to instructions start, will be offset in compile()
     $ b = intToBytes4(loop_start)
     $ c.instructions[loop_jump] = b[0]
     $ c.instructions[loop_jump + 1] = b[1]
@@ -544,6 +618,24 @@ const OP_HALT          = 255
 
     # 13. Patch jump to end
     patch_jump(c, jump_end_pos)
+    
+    # Patch all break jumps to the end of the loop
+    $ bj = loop_ctx.break_jumps
+    $ j = 0
+    while j < length(bj) {
+      patch_jump(c, bj[j])
+      j = j + 1
+    }
+    
+    # Pop loop context
+    $ ns = []
+    $ si = 0
+    while si < length(c.loop_stack) - 1 {
+      ns = ns + [c.loop_stack[si]]
+      si = si + 1
+    }
+    $ c.loop_stack = ns
+    
     > ""
   }
 
@@ -556,8 +648,7 @@ const OP_HALT          = 255
   if expr.kind == "literal" {
     $ val = expr.literal_value
     $ boxed = {kind: "literal", type: expr.literal_type, value: val}
-    $ c.constants = c.constants + [boxed]
-    $ idx = length(c.constants) - 1
+    $ idx = add_constant(c, boxed)
     emit_byte(c, OP_PUSH)
     emit_bytes4(c, idx)
     > ""

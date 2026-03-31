@@ -1,0 +1,34 @@
+import "./parser"
+import "./compiler"
+
+! main() {
+  print("=== Compiler Object Test ===")
+  $ src = "$ obj = { x: 10, y: 20 }\n> obj.x + obj.y"
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" {
+    print("Parse error: " + pr.error)
+    > false
+  }
+  
+  $ c = compiler.new_compiler()
+  $ cr = compiler.compile(c, pr.mod)
+  if cr.error != "" {
+    print("Compile error: " + cr.error)
+    > false
+  }
+  
+  $ res = vmExec(cr.bytecode)
+  print("Result: " + toString(res))
+  
+  if res == 30 {
+    print("✅ Object Test PASSED")
+    > true
+  }
+  print("❌ Object Test FAILED: expected 30, got " + toString(res))
+  > false
+}
+
+@ command run {
+  main()
+}

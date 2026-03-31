@@ -1,0 +1,34 @@
+import "./parser"
+import "./compiler"
+
+! main() {
+  print("=== Compiler Recursive Factorial Test ===")
+  $ src = "! fact(n: int) -> int {\n  if n <= 1 { > 1 }\n  > n * fact(n - 1)\n}\n> fact(5)"
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" {
+    print("Parse error: " + pr.error)
+    > false
+  }
+  
+  $ c = compiler.new_compiler()
+  $ cr = compiler.compile(c, pr.mod)
+  if cr.error != "" {
+    print("Compile error: " + cr.error)
+    > false
+  }
+  
+  $ res = vmExec(cr.bytecode)
+  print("Result: " + toString(res))
+  
+  if res == 120 {
+    print("✅ Factorial Test PASSED")
+    > true
+  }
+  print("❌ Factorial Test FAILED: expected 120, got " + toString(res))
+  > false
+}
+
+@ command run {
+  main()
+}

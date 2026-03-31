@@ -1,0 +1,35 @@
+import "./parser"
+import "./compiler"
+
+! main() {
+  print("=== Compiler For-In (Key, Value) Test ===")
+  $ src = "$ arr = [10, 20, 30]\n$ total = 0\nfor i, x in arr {\n  $ total = total + i + x\n}\n> total"
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" {
+    print("Parse error: " + pr.error)
+    > false
+  }
+  
+  $ c = compiler.new_compiler()
+  $ cr = compiler.compile(c, pr.mod)
+  if cr.error != "" {
+    print("Compile error: " + cr.error)
+    > false
+  }
+  
+  $ res = vmExec(cr.bytecode)
+  print("Result: " + toString(res))
+  
+  # (0+10) + (1+20) + (2+30) = 63
+  if res == 63 {
+    print("✅ For-In (Key, Value) Test PASSED")
+    > true
+  }
+  print("❌ For-In (Key, Value) Test FAILED: expected 63, got " + toString(res))
+  > false
+}
+
+@ command run {
+  main()
+}

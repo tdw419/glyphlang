@@ -1,0 +1,36 @@
+import "./parser"
+import "./compiler"
+
+! main() {
+  print("=== Compiler E2E Test ===")
+  $ src = "> 10 + 20 + 12"
+  $ p = parser.new_parser(src)
+  $ pr = parser.parse(p)
+  if pr.error != "" {
+    print("Parse error: " + pr.error)
+    > false
+  }
+  
+  $ c = compiler.new_compiler()
+  $ cr = compiler.compile(c, pr.mod)
+  if cr.error != "" {
+    print("Compile error: " + cr.error)
+    > false
+  }
+  
+  print("Bytecode length: " + toString(length(cr.bytecode)))
+  
+  $ res = vmExec(cr.bytecode)
+  print("Result: " + toString(res))
+  
+  if res == 42 {
+    print("✅ Compiler E2E Test PASSED")
+    > true
+  }
+  print("❌ Compiler E2E Test FAILED: expected 42, got " + toString(res))
+  > false
+}
+
+@ command run {
+  main()
+}
