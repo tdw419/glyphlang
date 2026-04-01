@@ -70,25 +70,39 @@ import "./vm"
         print("  FAIL: expected 0, got " + toString(r3))
     }
 
-    # Test 4: Iterate all elements and sum [10, 20]
+    # Test 4: Iterate all elements and sum [10, 20] using LOAD/STORE_VAR
     $ total = total + 1
     print("Test 4: sum [10, 20] via full iteration")
+    # Constants: [0]=10, [1]=20, [2]=0 (accumulator)
+    # Globals: slot 3=acc, slot 4=__iter_0, slot 5=x
     $ code4 = [
+        # acc = 0
+        OP_PUSH, 2,0,0,0,
+        OP_STORE_VAR, 3,0,0,0,
+        # Build array [10, 20]
         OP_PUSH, 0,0,0,0,
         OP_PUSH, 1,0,0,0,
         OP_BUILD_ARRAY, 2,0,0,0,
         OP_GET_ITER,
-        OP_DUP,
-        OP_ITER_NEXT, 0,             # val=10
-        OP_SWAP,
-        OP_DUP,
-        OP_ITER_NEXT, 0,             # val=20
-        OP_SWAP,
-        OP_POP,
+        OP_STORE_VAR, 4,0,0,0,
+        # loop start (PC=31)
+        OP_LOAD_VAR, 4,0,0,0,
+        OP_ITER_HAS_NEXT,
+        OP_JUMP_IF_FALSE, 75,0,0,0,
+        OP_LOAD_VAR, 4,0,0,0,
+        OP_ITER_NEXT, 0,
+        OP_STORE_VAR, 5,0,0,0,
+        # acc = acc + x
+        OP_LOAD_VAR, 3,0,0,0,
+        OP_LOAD_VAR, 5,0,0,0,
         OP_ADD,
+        OP_STORE_VAR, 3,0,0,0,
+        OP_JUMP, 31,0,0,0,
+        # end (PC=75)
+        OP_LOAD_VAR, 3,0,0,0,
         OP_HALT
     ]
-    $ r4 = vm.exec(code4, [10, 20])
+    $ r4 = vm.exec(code4, [10, 20, 0])
     if r4 == 30 {
         print("  PASS: sum = " + toString(r4))
         $ passed = passed + 1

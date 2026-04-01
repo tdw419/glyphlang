@@ -166,26 +166,27 @@ const OP_HALT          = 255
   $ hlen = length(header)
   
   # Finalize all jump targets with header offset
+  # Work on a copy so c.instructions keeps raw offsets for testing
+  $ patched = c.instructions
   $ ji = 0
   while ji < length(c.jump_patches) {
     $ pos = c.jump_patches[ji]
     # Read current target (little-endian uint32)
-    $ b0 = c.instructions[pos]
-    $ b1 = c.instructions[pos+1]
-    $ b2 = c.instructions[pos+2]
-    $ b3 = c.instructions[pos+3]
+    $ b0 = patched[pos]
+    $ b1 = patched[pos+1]
+    $ b2 = patched[pos+2]
+    $ b3 = patched[pos+3]
     $ target = b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
     
     $ new_target = target + hlen
     $ nb = intToBytes4(new_target)
-    $ c.instructions[pos] = nb[0]
-    $ c.instructions[pos+1] = nb[1]
-    $ c.instructions[pos+2] = nb[2]
-    $ c.instructions[pos+3] = nb[3]
+    $ pfx = slice(patched, 0, pos)
+    $ sfx = slice(patched, pos + 4, length(patched))
+    $ patched = pfx + nb + sfx
     $ ji = ji + 1
   }
 
-  > { bytecode: header + c.instructions, error: "" }
+  > { bytecode: header + patched, error: "" }
 }
 
 ! build_header(c: Compiler) -> [int] {
@@ -666,7 +667,7 @@ const OP_HALT          = 255
     emit_byte(c, OP_LOAD_VAR)
     emit_bytes4(c, iter_idx)
     emit_byte(c, OP_ITER_NEXT)
-    emit_bytes4(c, has_key)
+    emit_byte(c, has_key)
 
     # 9. Store value variable (top of stack)
     emit_byte(c, OP_STORE_VAR)
