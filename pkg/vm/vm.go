@@ -77,6 +77,9 @@ const (
 	OpKill  Opcode = 0xC4 // Terminate process by PID
 	OpWait  Opcode = 0xC5 // Block until target process becomes zombie, reap it
 
+	// Syscall dispatch opcode
+	OpSyscall Opcode = 0xDD // Unified syscall: next byte is syscall number (0x00-0xFF)
+
 	// Heap memory management opcodes
 	OpAlloc    Opcode = 0xE0 // Allocate heap block: pops size, pushes pointer
 	OpFree     Opcode = 0xE1 // Free heap block: pops pointer
@@ -206,6 +209,8 @@ func (vm *VM) SetProfiler(p ProfileRecorder) {
 
 // NewVM creates a new virtual machine
 func NewVM() *VM {
+	syscallTableOnce.Do(initSyscallTable)
+
 	heap := NewHeap()
 	vm := &VM{
 		stack:      make([]Value, 0, 256),
@@ -553,6 +558,8 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 		return vm.execSemWait()
 	case OpSemSignal:
 		return vm.execSemSignal()
+	case OpSyscall:
+		return vm.execSyscall()
 	case OpAlloc:
 		return vm.execAlloc()
 	case OpFree:

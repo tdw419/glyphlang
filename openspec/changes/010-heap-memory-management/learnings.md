@@ -65,3 +65,15 @@
 - **[pattern]** (from SEC-3) [modified] openspec/changes/010-heap-memory-management/learnings.md
 - **[pattern]** (from SEC-3) [modified] openspec/changes/010-heap-memory-management/tasks.md
 - **[discovery]** (from SEC-3) Agent strategy: modified 4 files, 9 tests added, all passing
+
+- **[pattern]** (from SEC-3) [modified] pkg/vm/heap.go
+
+- **[pattern]** (from SEC-3) [modified] pkg/vm/vm.go
+
+- **[pattern]** (from SEC-3) [modified] pkg/vm/heap_test.go
+
+- **[pattern]** (from SEC-3) [modified] openspec/changes/010-heap-memory-management/learnings.md
+
+- **[pattern]** (from SEC-3) [modified] openspec/changes/010-heap-memory-management/tasks.md
+
+- **[discovery]** (from SEC-3) Agent strategy: modified 5 files, fix attempt

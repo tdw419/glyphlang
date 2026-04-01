@@ -1,14 +1,14 @@
-id: 011-syscall-interface
-title: "Formal numbered syscall dispatch table with capability permissions"
-status: draft
-priority: medium
 depends_on:
-  - 007-virtual-filesystem
-  - 008-process-model
-  - 010-heap-memory-management
-labels:
-  - autospec
-  - spec-defined
-  - syscalls
-  - os-vision
+- 007-virtual-filesystem
+- 008-process-model
+- 010-heap-memory-management
 github_issues: []
+id: 011-syscall-interface
+labels:
+- autospec
+- spec-defined
+- syscalls
+- os-vision
+priority: medium
+status: in_progress
+title: Formal numbered syscall dispatch table with capability permissions

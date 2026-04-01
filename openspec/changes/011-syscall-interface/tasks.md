@@ -1,9 +1,9 @@
 # Tasks: Formal Syscall Interface
 
 ## 1. Syscall dispatch mechanism
-- [ ] 1.1 Add `OpSyscall` (0xD0) to the VM opcode table. When decoded, read the next byte as the syscall number (0x00–0xFF). Look up the syscall handler in the dispatch table. Call it with arguments from the operand stack.
-- [ ] 1.2 Implement the syscall dispatch table as a function array indexed by syscall number. Register handlers for syscalls 0x00–0x0F. Unregistered entries return ENOSYS.
-- [ ] 1.3 Update the Go compiler: change code generation for builtins like `print()`, `len()`, and file operations to emit `[0xD0, syscall_number]` instead of dedicated opcodes. Keep old opcodes working during migration with a deprecation path.
+- [x] 1.1 Add `OpSyscall` (0xDD) to the VM opcode table. When decoded, read the next byte as the syscall number (0x00–0xFF). Look up the syscall handler in the dispatch table. Call it with arguments from the operand stack.
+- [x] 1.2 Implement the syscall dispatch table as a function array indexed by syscall number. Register handlers for syscalls 0x00–0x0F. Unregistered entries return ENOSYS.
+- [ ] 1.3 Update the Go compiler: change code generation for builtins like `print()`, `len()`, and file operations to emit `[0xDD, syscall_number]` instead of dedicated opcodes. Keep old opcodes working during migration with a deprecation path.
 
 ## 2. Capability-based permissions
 - [ ] 2.1 Add a capability bitmask (uint16) to the Process struct (from change 008). Define the 7 capability bits (CAP_FS, CAP_PROC, CAP_MEM, CAP_IPC, CAP_IO, CAP_TIME, CAP_GPU).
