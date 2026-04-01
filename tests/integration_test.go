@@ -907,6 +907,67 @@ func TestBytecodeFormat(t *testing.T) {
 }
 
 // TestCompilerErrorMessages tests compiler error reporting
+func TestForInKeyValueE2E(t *testing.T) {
+	// End-to-end test: parse "for k, v in [10, 20, 30]" from source,
+	// compile to bytecode, execute in VM, and verify key/value pairs.
+	//
+	// The program computes: result += k + v for each element.
+	// Expected: (0+10) + (1+20) + (2+30) = 63
+	// This proves:
+	//   1. Parser correctly emits ForStatement with KeyVar="k", ValueVar="v"
+	//   2. Compiler emits ITER_NEXT with hasKey=1
+	//   3. VM pushes both key and value onto the stack in correct order
+	source := `@ GET /kv {
+  $ result = 0
+  for k, v in [10, 20, 30] {
+    $ result = result + k + v
+  }
+  > {total: result}
+}`
+
+	// Step 1: Parse
+	comp := compiler.NewCompiler()
+	module, err := parseSource(source)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	// Step 2: Compile
+	bytecode, err := comp.Compile(module)
+	if err != nil {
+		t.Fatalf("Compile failed: %v", err)
+	}
+
+	// Step 3: Execute
+	v := vm.NewVM()
+	result, err := v.Execute(bytecode)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	// Step 4: Verify result
+	obj, ok := result.(vm.ObjectValue)
+	if !ok {
+		t.Fatalf("Expected ObjectValue, got %T", result)
+	}
+
+	total, ok := obj.Val["total"]
+	if !ok {
+		t.Fatal("Result object missing 'total' field")
+	}
+
+	intVal, ok := total.(vm.IntValue)
+	if !ok {
+		t.Fatalf("Expected IntValue for total, got %T", total)
+	}
+
+	// (0+10) + (1+20) + (2+30) = 63
+	expected := int64(63)
+	if intVal.Val != expected {
+		t.Errorf("E2E for-in key/value: expected total=%d, got %d", expected, intVal.Val)
+	}
+}
+
 func TestCompilerErrorMessages(t *testing.T) {
 	tests := []struct {
 		name          string

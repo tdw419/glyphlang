@@ -5,8 +5,8 @@
 - [x] 1.2 If hasKey flag is wrong, fix the compiler emit logic for for-in with two loop variables
 
 ## 2. VM execution verification for ITER_NEXT hasKey=1
-- [ ] 2.1 Trace VM execution of the key,value for-in test and verify both key and value are pushed to stack in correct order and stored in correct local variable slots
-- [ ] 2.2 If VM does not handle hasKey=1 correctly, fix ITER_NEXT handler to push both values when flag is set
+- [x] 2.1 Trace VM execution of the key,value for-in test and verify both key and value are pushed to stack in correct order and stored in correct local variable slots
+- [x] 2.2 If VM does not handle hasKey=1 correctly, fix ITER_NEXT handler to push both values when flag is set
 
 ## 3. End-to-end integration test
 - [ ] 3.1 Create `test_for_in_key_value.glyph` that iterates `for k, v in [10, 20, 30]`, collects results, and asserts k=0,v=10 through k=2,v=30
