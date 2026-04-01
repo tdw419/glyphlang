@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"encoding/binary"
 	"github.com/glyphlang/glyph/pkg/ast"
 	"math"
 	"testing"
@@ -4261,5 +4262,101 @@ func TestCompileStatement_ValidationPtrType(t *testing.T) {
 	err := c.compileStatement(validationStmt)
 	if err != nil {
 		t.Fatalf("compileStatement(*ValidationStatement) failed: %v", err)
+	}
+}
+
+// TestCompileForInKeyValueBytecode verifies that the compiler emits
+// ITER_NEXT with hasKey=1 for "for k, v in expr" syntax and that the
+// full end-to-end pipeline (parse -> compile -> VM) produces correct results.
+func TestCompileForInKeyValueBytecode(t *testing.T) {
+	route := &ast.Route{
+		Body: []ast.Statement{
+			&ast.AssignStatement{
+				Target: "result",
+				Value:  &ast.LiteralExpr{Value: ast.IntLiteral{Value: 0}},
+			},
+			&ast.ForStatement{
+				KeyVar:   "k",
+				ValueVar: "v",
+				Iterable: &ast.ArrayExpr{
+					Elements: []ast.Expr{
+						&ast.LiteralExpr{Value: ast.IntLiteral{Value: 10}},
+						&ast.LiteralExpr{Value: ast.IntLiteral{Value: 20}},
+						&ast.LiteralExpr{Value: ast.IntLiteral{Value: 30}},
+					},
+				},
+				Body: []ast.Statement{
+					&ast.AssignStatement{
+						Target: "result",
+						Value: &ast.BinaryOpExpr{
+							Op: ast.Add,
+							Left: &ast.BinaryOpExpr{
+								Op:    ast.Add,
+								Left:  &ast.VariableExpr{Name: "result"},
+								Right: &ast.VariableExpr{Name: "k"},
+							},
+							Right: &ast.VariableExpr{Name: "v"},
+						},
+					},
+				},
+			},
+			&ast.ReturnStatement{
+				Value: &ast.VariableExpr{Name: "result"},
+			},
+		},
+	}
+
+	c := NewCompiler()
+	bytecode, err := c.CompileRoute(route)
+	if err != nil {
+		t.Fatalf("CompileRoute() error: %v", err)
+	}
+
+	// --- Bytecode verification ---
+	// Find the instruction section in the full bytecode.
+	// Layout: magic(4) + version(4) + constCount(4) + constants... + strPoolCount(4) + strPool... + instrCount(4) + instructions
+	// We need to skip the header to get to instructions. Use parseBytecodeLayout if available,
+	// or scan the raw c.code (instruction bytes before header is prepended).
+
+	// Scan c.code (the raw instruction buffer) for OpIterNext (0x54)
+	// Each instruction with an operand is: opcode(1) + operand(4)
+	// Each instruction without operand is: opcode(1)
+	// OpIterHasNext (0x55) has no operand, OpIterNext (0x54) has a 4-byte operand.
+	foundIterNext := false
+	iterNextOperand := uint32(0)
+	for i := 0; i < len(c.code); {
+		op := c.code[i]
+		if op == byte(vm.OpIterNext) {
+			if i+5 <= len(c.code) {
+				foundIterNext = true
+				iterNextOperand = binary.LittleEndian.Uint32(c.code[i+1 : i+5])
+			}
+			break
+		}
+		if hasOperand(op) {
+			i += 5 // opcode + 4-byte operand
+		} else {
+			i += 1 // opcode only
+		}
+	}
+
+	if !foundIterNext {
+		t.Fatal("ITER_NEXT opcode not found in compiled bytecode")
+	}
+	if iterNextOperand != 1 {
+		t.Errorf("ITER_NEXT operand: expected hasKey=1, got %d", iterNextOperand)
+	}
+
+	// --- End-to-end execution verification ---
+	// result = 0 + (0+10) + (1+20) + (2+30) = 63
+	vmInstance := vm.NewVM()
+	result, err := vmInstance.Execute(bytecode)
+	if err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+
+	expected := vm.IntValue{Val: 63}
+	if !valuesEqual(result, expected) {
+		t.Errorf("E2E result: expected %v, got %v", expected, result)
 	}
 }

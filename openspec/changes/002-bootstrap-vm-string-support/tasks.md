@@ -9,6 +9,6 @@
 - [x] 2.2 Update compiler to emit `OP_LOAD_STRING` for string literals with the string stored in a constant pool section of the bytecode
 
 ## 3. Implement OP_ADD type dispatch for strings
-- [ ] 3.1 Modify OP_ADD handler: if both operands are INT_TAG, do integer add; if either is STRING_TAG, convert both to string representation and concatenate, pushing result as STRING_TAG
-- [ ] 3.2 Write test: `a = "hello" + " " + "world"` compiles and executes to produce `"hello world"` via the VM
-- [ ] 3.3 Write test: `a = "count: " + str(42)` produces `"count: 42"` (int-to-string coercion in concatenation)
+- [x] 3.1 Modify OP_ADD handler: if both operands are INT_TAG, do integer add; if either is STRING_TAG, convert both to string representation and concatenate, pushing result as STRING_TAG
+- [x] 3.2 Write test: `a = "hello" + " " + "world"` compiles and executes to produce `"hello world"` via the VM
+- [x] 3.3 Write test: `a = "count: " + str(42)` produces `"count: 42"` (int-to-string coercion in concatenation)
