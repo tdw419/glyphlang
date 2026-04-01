@@ -23,7 +23,7 @@ func TestGPUMitosisMultiPass(t *testing.T) {
 	constants := []interface{}{6, 42}
 	var code []byte
 	code = append(code, pushConst(0)...) // 0-4: push 6
-	code = append(code, OpMitosis)       // 5: S opcode
+	code = append(code, OpMitosisByte)       // 5: S opcode
 	code = append(code, 0xFF)            // 6: HALT (parent)
 	for i := 0; i < 4; i++ { code = append(code, 0x00) } // 7-10: NOPs
 	code = append(code, pushConst(1)...) // 11-15: push 42

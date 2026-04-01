@@ -595,7 +595,6 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 		state.Steps++
 	}
 
-	fmt.Printf("[DEBUG] runOneVM vmID=%d: Halted=%d, PC=%d, SP=%d, Tag=%d, Data=%d\n", vmID, state.Halted, state.PC, state.SP, state.ResultTag, state.ResultData)
 	return stateToResult(&state), spawns
 }
 

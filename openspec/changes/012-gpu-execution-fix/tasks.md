@@ -1,9 +1,9 @@
 # Tasks: Fix Broken GPU Execution Path
 
 ## 1. Fix constant encoding mismatch
-- [ ] 1.1 Audit the Go compiler's constant encoding in `pkg/compiler/`: identify the exact format and byte width of emitted constants. Document the current encoding (8-byte u64 per constant, little-endian).
-- [ ] 1.2 Audit the WGSL shader's constant loading in `vm.wgsl`: identify how it reads from the constant table. Document the current decoding (likely 4-byte u32 reads with wrong stride).
-- [ ] 1.3 Align the two: update the WGSL shader to read 8-byte constants with the correct stride and byte offset. Update the Rust runner's constant buffer preparation to match. Verify with a simple test program that prints a constant.
+- [x] 1.1 Audit the Go compiler's constant encoding in `pkg/compiler/`: identify the exact format and byte width of emitted constants. Document the current encoding (8-byte u64 per constant, little-endian).
+- [x] 1.2 Audit the WGSL shader's constant loading in `vm.wgsl`: identify how it read from the constant table. Document the current decoding (likely 4-byte u32 readss with wrong stride).
+- [x] 1.3 Align the two: update the WGSL shader to read 8-byte constants with the correct stride and byte offset. Update the Rust runner's constant buffer preparation to match. Verify with a simple test program that prints a constant.
 
 ## 2. Complete missing WGSL opcodes
 - [ ] 2.1 Diff the Go compiler's opcode set (`pkg/compiler/opcodes.go` or equivalent) against the WGSL shader's switch/match statement. List all opcodes emitted by the compiler that are not handled by the shader.

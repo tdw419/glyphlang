@@ -17,7 +17,7 @@ func TestCPUMitosis(t *testing.T) {
 	constants := []interface{}{5, 42}
 	var code []byte
 	code = append(code, pushConst(0)...) // 0-4: push 5
-	code = append(code, OpMitosis)       // 5: S opcode
+	code = append(code, OpMitosisByte)       // 5: S opcode
 	code = append(code, 0xFF)            // 6: HALT (parent)
 	for i := 0; i < 4; i++ { code = append(code, 0x00) } // 7-10: NOPs
 	code = append(code, pushConst(1)...) // 11-15: push 42
@@ -40,8 +40,8 @@ func TestCPUMitosis(t *testing.T) {
 
 	fmt.Printf("CPU results: %+v\n", results)
 
-	if results[0].IntVal != 0 {
-		t.Errorf("parent expected 0, got %d", results[0].IntVal)
+	if results[0].IntVal != 1 {
+		t.Errorf("parent expected 1 (spawn slot), got %d", results[0].IntVal)
 	}
 
 	if results[1].IntVal != 42 {

@@ -18,7 +18,7 @@ func TestMitosisGPUFallbackWarning(t *testing.T) {
 	constants := []interface{}{1, 99}
 	var code []byte
 	code = append(code, pushConst(0)...) // 0-4: push 1 (offset)
-	code = append(code, OpMitosis)       // 5: S opcode
+	code = append(code, OpMitosisByte)       // 5: S opcode
 	code = append(code, 0xFF)            // 6: HALT (parent)
 	code = append(code, pushConst(1)...) // 7-11: push 99
 	code = append(code, 0xFF)            // 12: HALT (child)
@@ -76,7 +76,7 @@ func TestMitosisGPUFallbackNoWarningWithoutError(t *testing.T) {
 	constants := []interface{}{1, 99}
 	var code []byte
 	code = append(code, pushConst(0)...) // push 1 (offset)
-	code = append(code, OpMitosis)       // S opcode
+	code = append(code, OpMitosisByte)       // S opcode
 	code = append(code, 0xFF)            // HALT (parent)
 	code = append(code, pushConst(1)...) // push 99
 	code = append(code, 0xFF)            // HALT (child)
@@ -108,7 +108,7 @@ func TestMitosisGPUFallbackResultsCorrect(t *testing.T) {
 	constants := []interface{}{1, 99}
 	var code []byte
 	code = append(code, pushConst(0)...) // push 1 (offset)
-	code = append(code, OpMitosis)       // S opcode
+	code = append(code, OpMitosisByte)       // S opcode
 	code = append(code, 0xFF)            // HALT (parent)
 	code = append(code, pushConst(1)...) // push 99
 	code = append(code, 0xFF)            // HALT (child)

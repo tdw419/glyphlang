@@ -44,7 +44,7 @@ func TestMitosisSpawn(t *testing.T) {
 	constants := []interface{}{1, 99}
 	var code []byte
 	code = append(code, pushConst(0)...) // 0-4: push 1 (offset)
-	code = append(code, OpMitosis)       // 5: S opcode
+	code = append(code, OpMitosisByte)       // 5: S opcode
 	code = append(code, 0xFF)            // 6: HALT (parent)
 	code = append(code, pushConst(1)...) // 7-11: push 99
 	code = append(code, 0xFF)            // 12: HALT (child)
@@ -90,9 +90,9 @@ func TestMitosisMaxThreads(t *testing.T) {
 	constants := []interface{}{5, 5}
 	var code []byte
 	code = append(code, pushConst(0)...) // push offset
-	code = append(code, OpMitosis)       // spawn 1
+	code = append(code, OpMitosisByte)       // spawn 1
 	code = append(code, pushConst(1)...) // push offset
-	code = append(code, OpMitosis)       // spawn 2 (should be ignored due to limit)
+	code = append(code, OpMitosisByte)       // spawn 2 (should be ignored due to limit)
 	code = append(code, 0xFF)            // HALT
 
 	m := NewMitosisVM(2) // max 2 threads total

@@ -31,8 +31,11 @@ const MAX_STACK: u32 = 256u;
 const MAX_VARS: u32  = 64u;
 const MAX_STEPS: u32 = 100000u;
 
+const CONST_NULL: u32  = 0u;
 const CONST_INT: u32   = 1u;
 const CONST_FLOAT: u32 = 2u;
+const CONST_BOOL: u32  = 3u;
+const CONST_STRING: u32 = 4u;
 const OP_TELEMETRY: u32 = 0xC2u;
 const OP_SYSCALL: u32 = 0xDDu;
 
@@ -72,14 +75,34 @@ fn pop(vm_id: u32) -> GpuValue {
 
 fn load_constant(const_idx: u32) -> GpuValue {
     var offset = config.constants_offset;
+    // Skip preceding constants with correct stride per type
     for (var i = 0u; i < const_idx; i = i + 1u) {
         let ctype = read_byte(offset);
         offset = offset + 1u;
-        if (ctype == CONST_INT || ctype == CONST_FLOAT) { offset = offset + 8u; }
+        if (ctype == CONST_INT || ctype == CONST_FLOAT) {
+            offset = offset + 8u;  // 8-byte payload
+        } else if (ctype == CONST_BOOL) {
+            offset = offset + 1u;  // 1-byte payload
+        } else if (ctype == CONST_STRING) {
+            let slen = read_u32(offset);
+            offset = offset + 4u + slen;
+        }
+        // CONST_NULL (0): no payload bytes
     }
     let ctype = read_byte(offset);
     offset = offset + 1u;
-    if (ctype == CONST_INT) { return GpuValue(TAG_INT, i32(read_u32(offset))); }
+    if (ctype == CONST_INT) {
+        return GpuValue(TAG_INT, i32(read_u32(offset)));
+    }
+    if (ctype == CONST_FLOAT) {
+        // Store as f32 bits in data field (lower 32 bits of f64 → f32)
+        let lo = read_u32(offset);
+        return GpuValue(TAG_FLOAT, i32(lo));
+    }
+    if (ctype == CONST_BOOL) {
+        return GpuValue(TAG_BOOL, i32(read_byte(offset)));
+    }
+    // CONST_NULL or CONST_STRING → null on GPU
     return GpuValue(TAG_NULL, 0);
 }
 
@@ -115,7 +138,15 @@ fn exec_step(vm_id: u32) {
             vm_states[vm_id].error = 3u; // 3 = syscall trap
             vm_states[vm_id].halted = 1u;
         }
-        case 0xFFu: { vm_states[vm_id].halted = 1u; }
+        case 0xFFu: {
+            let sp = vm_states[vm_id].sp;
+            if (sp > 0u) {
+                let val = stacks[vm_id * MAX_STACK + sp - 1u];
+                vm_states[vm_id].result_tag = val.tag;
+                vm_states[vm_id].result_data = val.data;
+            }
+            vm_states[vm_id].halted = 1u;
+        }
         default: { vm_states[vm_id].halted = 1u; }
     }
     vm_states[vm_id].pc = next_pc;

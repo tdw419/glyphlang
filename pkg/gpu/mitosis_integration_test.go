@@ -48,25 +48,25 @@ func TestMitosisIntegration4Children(t *testing.T) {
 	// Spawn 0: push pid(0), push offset(38), MITOSIS, POP
 	code = append(code, pushConst(0)...) // 0-4: push 0 (pid)
 	code = append(code, pushConst(4)...) // 5-9: push 38 (offset)
-	code = append(code, OpMitosis)       // 10: MITOSIS → child at 49
+	code = append(code, OpMitosisByte)       // 10: MITOSIS → child at 49
 	code = append(code, 0x02)            // 11: POP (discard child ID)
 
 	// Spawn 1: push pid(1), push offset(26), MITOSIS, POP
 	code = append(code, pushConst(1)...) // 12-16: push 1 (pid)
 	code = append(code, pushConst(5)...) // 17-21: push 26 (offset)
-	code = append(code, OpMitosis)       // 22: MITOSIS → child at 49
+	code = append(code, OpMitosisByte)       // 22: MITOSIS → child at 49
 	code = append(code, 0x02)            // 23: POP
 
 	// Spawn 2: push pid(2), push offset(14), MITOSIS, POP
 	code = append(code, pushConst(2)...) // 24-28: push 2 (pid)
 	code = append(code, pushConst(6)...) // 29-33: push 14 (offset)
-	code = append(code, OpMitosis)       // 34: MITOSIS → child at 49
+	code = append(code, OpMitosisByte)       // 34: MITOSIS → child at 49
 	code = append(code, 0x02)            // 35: POP
 
 	// Spawn 3: push pid(3), push offset(2), MITOSIS, POP
 	code = append(code, pushConst(3)...) // 36-40: push 3 (pid)
 	code = append(code, pushConst(2)...) // 41-45: push 2 (offset — reuse const[2])
-	code = append(code, OpMitosis)       // 46: MITOSIS → child at 49
+	code = append(code, OpMitosisByte)       // 46: MITOSIS → child at 49
 	code = append(code, 0x02)            // 47: POP
 
 	// Parent HALT

@@ -7,7 +7,7 @@ import (
 )
 
 // buildBytecode creates a minimal GLYP bytecode with given constants and instructions.
-// Format: "GLYP" + version(4 LE) + constCount(4 LE) + constants... + instrCount(4 LE) + code...
+// Format: "GLYP" + version(4 LE) + constCount(4 LE) + constants... + strPoolCount(4 LE) + strPool... + instrCount(4 LE) + code...
 func buildBytecode(constants []interface{}, code []byte) []byte {
 	buf := []byte("GLYP")
 
@@ -57,6 +57,11 @@ func buildBytecode(constants []interface{}, code []byte) []byte {
 		}
 	}
 
+	// String pool count (0 — no separate string pool in test helpers)
+	spc := make([]byte, 4)
+	binary.LittleEndian.PutUint32(spc, 0)
+	buf = append(buf, spc...)
+
 	// Instruction count (little-endian)
 	ic := make([]byte, 4)
 	binary.LittleEndian.PutUint32(ic, uint32(len(code)))
@@ -100,6 +105,75 @@ func jumpIfFalse(target uint32) []byte {
 	operand := make([]byte, 4)
 	binary.LittleEndian.PutUint32(operand, target)
 	return append(b, operand...)
+}
+
+// TestConstantEncodingMismatch_CPU verifies that the CPU path correctly loads
+// constants of all types from the bytecode. This test is the reference — the
+// GPU/WGSL path must produce identical results.
+func TestConstantEncodingMismatch_CPU(t *testing.T) {
+	d := NewDispatcher()
+	d.hasGPU = false // force CPU path
+
+	// Helper: load one constant by index and return it
+	loadAndReturn := func(constIdx uint32) []byte {
+		return append(pushConst(constIdx), 0x61) // PUSH constIdx; RETURN
+	}
+
+	// Mixed pool: null, int(42), float(1.0), bool(true) — verifies correct stride
+	mixedPool := []interface{}{nil, 42, float64(1.0), true}
+
+	tests := []struct {
+		name      string
+		constants []interface{}
+		idx       uint32
+		wantTag   uint32
+		wantInt   int64  // checked when wantTag == TagInt
+		wantFloat uint32 // checked when wantTag == TagFloat (Float32 bits)
+		wantBool  bool   // checked when wantTag == TagBool
+	}{
+		{"int constant", []interface{}{42}, 0, TagInt, 42, 0, false},
+		{"int64 constant", []interface{}{int64(99)}, 0, TagInt, 99, 0, false},
+		{"float constant", []interface{}{float64(3.5)}, 0, TagFloat, 0, math.Float32bits(float32(3.5)), false},
+		{"bool true", []interface{}{true}, 0, TagBool, 0, 0, true},
+		{"bool false", []interface{}{false}, 0, TagBool, 0, 0, false},
+		{"null constant", []interface{}{nil}, 0, TagNull, 0, 0, false},
+		{"mixed: null at 0", mixedPool, 0, TagNull, 0, 0, false},
+		{"mixed: int at 1", mixedPool, 1, TagInt, 42, 0, false},
+		{"mixed: float at 2", mixedPool, 2, TagFloat, 0, math.Float32bits(1.0), false},
+		{"mixed: bool at 3", mixedPool, 3, TagBool, 0, 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code := loadAndReturn(tt.idx)
+			bytecode := buildBytecode(tt.constants, code)
+			result, err := d.ExecuteOne(bytecode)
+			if err != nil {
+				t.Fatalf("ExecuteOne error: %v", err)
+			}
+			if result.Error != nil {
+				t.Fatalf("VM error: %v", result.Error)
+			}
+			if result.Tag != tt.wantTag {
+				t.Fatalf("tag: got %d, want %d", result.Tag, tt.wantTag)
+			}
+			switch tt.wantTag {
+			case TagInt:
+				if result.IntVal != tt.wantInt {
+					t.Errorf("int data: got %d, want %d", result.IntVal, tt.wantInt)
+				}
+			case TagFloat:
+				gotBits := math.Float32bits(float32(result.FloatVal))
+				if gotBits != tt.wantFloat {
+					t.Errorf("float data: got %08x, want %08x", gotBits, tt.wantFloat)
+				}
+			case TagBool:
+				if result.BoolVal != tt.wantBool {
+					t.Errorf("bool data: got %v, want %v", result.BoolVal, tt.wantBool)
+				}
+			}
+		})
+	}
 }
 
 func TestNewDispatcher(t *testing.T) {

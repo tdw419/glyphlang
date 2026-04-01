@@ -26,7 +26,7 @@ func TestColonyGenesis(t *testing.T) {
 	
 	for i := 0; i < 12; i++ {
 		code = append(code, pushConst(0)...)
-		code = append(code, OpMitosis)
+		code = append(code, OpMitosisByte)
 	}
 	code = append(code, 0xFF)
 
