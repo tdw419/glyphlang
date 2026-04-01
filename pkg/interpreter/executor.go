@@ -109,6 +109,10 @@ func (i *Interpreter) ExecuteStatement(stmt Statement, env *Environment) (interf
 	case IndexAssignStatement:
 		return i.executeIndexAssign(s, env)
 
+	case FunctionStatement:
+		env.Define(s.Func.Name, s.Func)
+		return nil, nil
+
 	case ExpressionStatement:
 		return i.EvaluateExpression(s.Expr, env)
 

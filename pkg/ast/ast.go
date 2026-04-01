@@ -391,6 +391,15 @@ type AssertStatement struct {
 
 func (AssertStatement) isStatement() {}
 
+// FunctionStatement wraps a Function definition as a statement, allowing
+// nested function definitions inside function bodies (e.g. closures/helpers).
+type FunctionStatement struct {
+	Func Function
+}
+
+func (FunctionStatement) isStatement() {}
+func (FunctionStatement) isNode()      {}
+
 // Pos represents a source position for error reporting.
 type Pos struct {
 	Line   int

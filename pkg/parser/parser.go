@@ -2221,6 +2221,23 @@ func (p *Parser) parseStatement() (ast.Statement, error) {
 		p.advance() // consume "continue"
 		return ast.ContinueStatement{}, nil
 
+	case BANG:
+		// ! name(params) -> ReturnType { body } — nested function definition
+		p.advance() // consume !
+		name, err := p.expectIdent()
+		if err != nil {
+			return nil, err
+		}
+		item, err := p.parseRegularFunction(name)
+		if err != nil {
+			return nil, err
+		}
+		fn, ok := item.(*ast.Function)
+		if !ok {
+			return nil, fmt.Errorf("expected function definition after !")
+		}
+		return ast.FunctionStatement{Func: *fn}, nil
+
 	default:
 		return nil, p.errorWithHint(
 			fmt.Sprintf("Expected statement, but found %s", p.current().Type),
