@@ -72,6 +72,11 @@ const (
 	OpMutator Opcode = 0xC1 // M opcode: self-modify code at IP + offset
 	OpTelemetry Opcode = 0xC2 // write to vm_stats[slot]
 
+	// Process lifecycle opcodes
+	OpSpawn Opcode = 0xC3 // Fork: create child VM, assign PID
+	OpKill  Opcode = 0xC4 // Terminate process by PID
+	OpWait  Opcode = 0xC5 // Block until target process becomes zombie, reap it
+
 	OpHalt Opcode = 0xFF
 )
 
@@ -172,6 +177,12 @@ type VM struct {
 
 	// JIT profiler for hot path optimization
 	profiler ProfileRecorder
+
+	// Process model: PID of this VM instance (0 = unregistered)
+	pid uint32
+
+	// Process table for lifecycle management (nil = no process model)
+	processTable *ProcessTable
 }
 
 // SetProfiler sets the profiler for this VM.
@@ -493,6 +504,12 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 		return vm.execMutator()
 	case OpTelemetry:
 		return vm.execTelemetry()
+	case OpSpawn:
+		return vm.execSpawn()
+	case OpKill:
+		return vm.execKill()
+	case OpWait:
+		return vm.execWait()
 	case OpHalt:
 		vm.halted = true
 		return nil
@@ -1740,6 +1757,131 @@ func (vm *VM) execTelemetry() error {
 	if os.Getenv("GLYPH_DEBUG") == "true" {
 		fmt.Printf("[TELEMETRY] Slot %d = %d\n", s.Val, v.Val)
 	}
+	return nil
+}
+
+// execSpawn creates a new child VM process (fork semantics).
+// It copies the current bytecode, assigns a PID, sets the parent PID,
+// pushes the child PID on the parent's stack, and pushes 0 on the child's stack.
+func (vm *VM) execSpawn() error {
+	if vm.processTable == nil {
+		return fmt.Errorf("spawn: no process table attached to VM")
+	}
+
+	// Allocate a new PID for the child
+	childPID := vm.processTable.AllocatePID()
+
+	// Clone the current VM for the child
+	childVM := vm.Clone()
+	// Fresh stack for child — push 0
+	childVM.stack = make([]Value, 0, 256)
+	childVM.Push(IntValue{Val: 0})
+	childVM.pid = childPID
+	childVM.processTable = vm.processTable
+
+	// Create process entry
+	childProc := &Process{
+		PID:   childPID,
+		PPID:  vm.pid,
+		State: ProcessReady,
+		VM:    childVM,
+	}
+	vm.processTable.Register(childProc)
+
+	// Parent gets the child PID on its stack
+	vm.Push(IntValue{Val: int64(childPID)})
+
+	return nil
+}
+
+// execKill terminates a process by PID.
+// It sets the target to zombie, releases its resources, and reparents
+// its children to PID 1.
+func (vm *VM) execKill() error {
+	if vm.processTable == nil {
+		return fmt.Errorf("kill: no process table attached to VM")
+	}
+
+	targetPIDVal, err := vm.Pop()
+	if err != nil {
+		return err
+	}
+
+	targetPIDInt, ok := targetPIDVal.(IntValue)
+	if !ok {
+		return fmt.Errorf("kill: target PID must be an integer")
+	}
+	targetPID := uint32(targetPIDInt.Val)
+
+	// Verify target exists
+	if _, exists := vm.processTable.Get(targetPID); !exists {
+		return fmt.Errorf("kill: process %d not found", targetPID)
+	}
+
+	// Don't allow killing PID 1 (init)
+	if targetPID == 1 {
+		return fmt.Errorf("kill: cannot kill init process (PID 1)")
+	}
+
+	// Reparent target's children to PID 1
+	vm.processTable.Reparent(targetPID, 1)
+
+	// Set target to zombie with exit code 0 (killed)
+	if err := vm.processTable.SetZombie(targetPID, 0); err != nil {
+		return fmt.Errorf("kill: %w", err)
+	}
+
+	return nil
+}
+
+// execWait blocks the calling process until the target process enters zombie state.
+// It reads the exit code from the zombie's process struct and cleans up the zombie entry.
+func (vm *VM) execWait() error {
+	if vm.processTable == nil {
+		return fmt.Errorf("wait: no process table attached to VM")
+	}
+
+	targetPIDVal, err := vm.Pop()
+	if err != nil {
+		return err
+	}
+
+	targetPIDInt, ok := targetPIDVal.(IntValue)
+	if !ok {
+		return fmt.Errorf("wait: target PID must be an integer")
+	}
+	targetPID := uint32(targetPIDInt.Val)
+
+	// Verify target exists
+	target, exists := vm.processTable.Get(targetPID)
+	if !exists {
+		return fmt.Errorf("wait: process %d not found", targetPID)
+	}
+
+	// If already zombie, reap immediately
+	if target.State == ProcessZombie {
+		exitCode := target.ExitCode
+		vm.processTable.Remove(targetPID)
+		vm.Push(IntValue{Val: exitCode})
+		return nil
+	}
+
+	// Block until the process becomes zombie
+	ch := vm.processTable.RegisterWaiter(targetPID)
+	<-ch // blocks until the process transitions to zombie
+
+	// Re-read the process (it should now be zombie)
+	target, exists = vm.processTable.Get(targetPID)
+	if !exists {
+		// Process was reaped by someone else
+		vm.Push(IntValue{Val: -1})
+		return nil
+	}
+
+	exitCode := target.ExitCode
+	vm.processTable.Remove(targetPID)
+	vm.Push(IntValue{Val: exitCode})
+
 	return nil
 }
 
