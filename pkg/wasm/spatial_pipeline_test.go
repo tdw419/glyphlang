@@ -217,6 +217,9 @@ func buildGLYPHeader(constants []vm.Value) []byte {
 		buf = append(buf, serializeVMConstant(c)...)
 	}
 
+	// string pool count (empty)
+	buf = append(buf, 0x00, 0x00, 0x00, 0x00)
+
 	// instruction count placeholder
 	buf = append(buf, 0x00, 0x00, 0x00, 0x00)
 

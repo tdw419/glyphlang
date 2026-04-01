@@ -291,6 +291,28 @@ func (vm *VM) parseBytecode(bytecode []byte, offset *int) error {
 		vm.constants = append(vm.constants, constant)
 	}
 
+	// Read string pool count (4 bytes)
+	if *offset+4 > len(bytecode) {
+		return fmt.Errorf("invalid bytecode: missing string pool count")
+	}
+	strPoolCount := binary.LittleEndian.Uint32(bytecode[*offset : *offset+4])
+	*offset += 4
+
+	// Read string pool entries
+	for i := uint32(0); i < strPoolCount; i++ {
+		if *offset+4 > len(bytecode) {
+			return fmt.Errorf("invalid bytecode: truncated string pool entry")
+		}
+		strLen := binary.LittleEndian.Uint32(bytecode[*offset : *offset+4])
+		*offset += 4
+		if *offset+int(strLen) > len(bytecode) {
+			return fmt.Errorf("invalid bytecode: truncated string pool data")
+		}
+		s := string(bytecode[*offset : *offset+int(strLen)])
+		*offset += int(strLen)
+		vm.stringPool = append(vm.stringPool, s)
+	}
+
 	// Read instruction count (4 bytes)
 	if *offset+4 > len(bytecode) {
 		return fmt.Errorf("invalid bytecode: missing instruction count")
@@ -435,6 +457,8 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 		return vm.execDefFunc()
 	case OpBuildArray:
 		return vm.execBuildArray()
+	case OpLoadString:
+		return vm.execLoadString()
 	case OpHttpReturn:
 		return vm.execHttpReturn()
 	case OpWsSend:
@@ -475,6 +499,21 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 	default:
 		return fmt.Errorf("unknown opcode: 0x%02x", opcode)
 	}
+}
+
+// execLoadString loads a string from the string pool by index and pushes it onto the stack
+func (vm *VM) execLoadString() error {
+	idx, err := vm.readOperand()
+	if err != nil {
+		return err
+	}
+
+	if int(idx) >= len(vm.stringPool) {
+		return fmt.Errorf("string pool index out of bounds: %d (pool size: %d)", idx, len(vm.stringPool))
+	}
+
+	vm.Push(StringValue{Val: vm.stringPool[idx]})
+	return nil
 }
 
 // execPush pushes a constant onto the stack

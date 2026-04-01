@@ -86,6 +86,8 @@ func buildSpatialBytecode(spatialOp byte) []byte {
 	// Constant 1: int64 value 1 (type=0x01)
 	buf = append(buf, 0x01)
 	buf = append(buf, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+	// String pool count (empty)
+	buf = append(buf, 0x00, 0x00, 0x00, 0x00)
 	// Instruction count (placeholder, 4 bytes)
 	instrCountOffset := len(buf)
 	buf = append(buf, 0x00, 0x00, 0x00, 0x00)

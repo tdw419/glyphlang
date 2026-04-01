@@ -1171,6 +1171,11 @@ func (c *Compiler) buildBytecode() ([]byte, error) {
 		bytecode = append(bytecode, serialized...)
 	}
 
+	// String pool count (empty for now)
+	strPoolCount := make([]byte, 4)
+	binary.LittleEndian.PutUint32(strPoolCount, 0)
+	bytecode = append(bytecode, strPoolCount...)
+
 	// Instruction count
 	instrCount := make([]byte, 4)
 	binary.LittleEndian.PutUint32(instrCount, uint32(len(c.code)))

@@ -5,13 +5,23 @@ import (
 )
 
 func TestOpLoadString(t *testing.T) {
-	vm := NewVM()
-	vm.stringPool = []string{"hello", "world", ""}
+	// Test that OpLoadString pushes a StringValue from the pool
+	code := []byte{byte(OpLoadString), 0x01, 0x00, 0x00, 0x00, byte(OpHalt)}
 
-	// Push string from pool index 0
-	vm.execLoadString()
-	// Should fail because we haven't set up the instruction stream
-	// Let's test via executeRaw instead
+	vm := NewVM()
+	vm.stringPool = []string{"first", "second", "third"}
+	result, err := vm.executeRaw(code)
+	if err != nil {
+		t.Fatalf("executeRaw error: %v", err)
+	}
+
+	s, ok := result.(StringValue)
+	if !ok {
+		t.Fatalf("expected StringValue, got %T: %v", result, result)
+	}
+	if s.Val != "second" {
+		t.Errorf("expected 'second', got %q", s.Val)
+	}
 }
 
 func TestLoadStringViaExecuteRaw(t *testing.T) {

@@ -57,6 +57,9 @@ func buildBytecode(constants []interface{}, code []byte) []byte {
 		}
 	}
 
+	// String pool count (empty)
+	buf = append(buf, 0x00, 0x00, 0x00, 0x00)
+
 	// Instruction count (little-endian)
 	ic := make([]byte, 4)
 	binary.LittleEndian.PutUint32(ic, uint32(len(code)))

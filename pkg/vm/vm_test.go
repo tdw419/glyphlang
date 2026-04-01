@@ -55,6 +55,9 @@ func createBytecodeHeader(constants []Value) []byte {
 		bytecode = append(bytecode, serializeConstant(c)...)
 	}
 
+	// String pool (empty)
+	bytecode = append(bytecode, 0x00, 0x00, 0x00, 0x00) // String pool count = 0
+
 	// Instruction count (0 for now, will be added later)
 	bytecode = append(bytecode, 0x00, 0x00, 0x00, 0x00)
 

@@ -98,6 +98,8 @@ func BenchmarkVMRouteExecution(b *testing.B) {
 		0x04,                   // Type: String
 		0x05, 0x00, 0x00, 0x00, // Length: 5 (uint32 LE)
 		0x48, 0x65, 0x6c, 0x6c, 0x6f, // "Hello"
+		// String pool count (empty)
+		0x00, 0x00, 0x00, 0x00,
 		// Instruction count (uint32 LE)
 		0x06, 0x00, 0x00, 0x00, // 6 bytes of instructions
 		// Instructions
