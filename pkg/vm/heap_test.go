@@ -295,6 +295,339 @@ func TestAllocFreeViaBytecode(t *testing.T) {
 	}
 }
 
+// --- Step 2.1: OpLoadPtr ---
+
+func TestOpLoadPtrI64(t *testing.T) {
+	vm := NewVM()
+
+	// Alloc a block, store an i64, then load it back
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptr, _ := vm.Pop()
+
+	// Store value 42 at offset 0
+	vm.Push(ptr)              // ptr
+	vm.Push(IntValue{Val: 0}) // offset
+	vm.Push(IntValue{Val: 42}) // value
+	vm.execStorePtr()
+
+	// Load value at offset 0
+	vm.Push(ptr)              // ptr
+	vm.Push(IntValue{Val: 0}) // offset
+	err := vm.execLoadPtr()
+	if err != nil {
+		t.Fatalf("execLoadPtr() error: %v", err)
+	}
+
+	result, err := vm.Pop()
+	if err != nil {
+		t.Fatalf("Pop() error: %v", err)
+	}
+
+	intVal, ok := result.(IntValue)
+	if !ok {
+		t.Fatalf("expected IntValue, got %T", result)
+	}
+	if intVal.Val != 42 {
+		t.Errorf("expected 42, got %d", intVal.Val)
+	}
+}
+
+func TestOpLoadPtrF64(t *testing.T) {
+	vm := NewVM()
+
+	// Alloc a block and set its type tag to f64
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptr, _ := vm.Pop()
+
+	// Set the type tag to f64
+	block, _ := vm.heap.GetBlock(ptr.(PointerValue).Address)
+	block.TypeTag = TypeTagF64
+
+	// Store 3.14 at offset 0
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(FloatValue{Val: 3.14})
+	vm.execStorePtr()
+
+	// Load it back
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 0})
+	err := vm.execLoadPtr()
+	if err != nil {
+		t.Fatalf("execLoadPtr() error: %v", err)
+	}
+
+	result, _ := vm.Pop()
+	floatVal, ok := result.(FloatValue)
+	if !ok {
+		t.Fatalf("expected FloatValue, got %T", result)
+	}
+	if floatVal.Val != 3.14 {
+		t.Errorf("expected 3.14, got %f", floatVal.Val)
+	}
+}
+
+func TestOpLoadPtrAtOffset(t *testing.T) {
+	vm := NewVM()
+
+	// Alloc block large enough for two i64 values
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptr, _ := vm.Pop()
+
+	// Store 100 at offset 0
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(IntValue{Val: 100})
+	vm.execStorePtr()
+
+	// Store 200 at offset 8
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 8})
+	vm.Push(IntValue{Val: 200})
+	vm.execStorePtr()
+
+	// Load offset 8 — should get 200
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 8})
+	vm.execLoadPtr()
+
+	result, _ := vm.Pop()
+	intVal, ok := result.(IntValue)
+	if !ok {
+		t.Fatalf("expected IntValue, got %T", result)
+	}
+	if intVal.Val != 200 {
+		t.Errorf("expected 200, got %d", intVal.Val)
+	}
+}
+
+// --- Step 2.2: OpStorePtr ---
+
+func TestOpStorePtrOverwrite(t *testing.T) {
+	vm := NewVM()
+
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptr, _ := vm.Pop()
+
+	// Store 10
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(IntValue{Val: 10})
+	vm.execStorePtr()
+
+	// Overwrite with 20
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(IntValue{Val: 20})
+	vm.execStorePtr()
+
+	// Load — should get 20
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 0})
+	vm.execLoadPtr()
+
+	result, _ := vm.Pop()
+	intVal, ok := result.(IntValue)
+	if !ok {
+		t.Fatalf("expected IntValue, got %T", result)
+	}
+	if intVal.Val != 20 {
+		t.Errorf("expected 20, got %d", intVal.Val)
+	}
+}
+
+func TestOpStorePtrPointerType(t *testing.T) {
+	vm := NewVM()
+
+	// Allocate block A (to be stored as a pointer value)
+	vm.Push(IntValue{Val: 8})
+	vm.execAlloc()
+	ptrA, _ := vm.Pop()
+
+	// Allocate block B (will hold a pointer to A), set its type tag to ptr
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptrB, _ := vm.Pop()
+
+	block, _ := vm.heap.GetBlock(ptrB.(PointerValue).Address)
+	block.TypeTag = TypeTagPtr
+
+	// Store ptrA into block B at offset 0
+	vm.Push(ptrB)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(ptrA)
+	vm.execStorePtr()
+
+	// Load the pointer from block B
+	vm.Push(ptrB)
+	vm.Push(IntValue{Val: 0})
+	err := vm.execLoadPtr()
+	if err != nil {
+		t.Fatalf("execLoadPtr() error: %v", err)
+	}
+
+	result, _ := vm.Pop()
+	loadedPtr, ok := result.(PointerValue)
+	if !ok {
+		t.Fatalf("expected PointerValue, got %T", result)
+	}
+	if loadedPtr.Address != ptrA.(PointerValue).Address {
+		t.Errorf("expected address %d, got %d", ptrA.(PointerValue).Address, loadedPtr.Address)
+	}
+}
+
+// --- Step 2.3: Bounds checking ---
+
+func TestOpLoadPtrOutOfBounds(t *testing.T) {
+	vm := NewVM()
+
+	vm.Push(IntValue{Val: 8}) // 8-byte block
+	vm.execAlloc()
+	ptr, _ := vm.Pop()
+
+	// Try to read at offset 16 — out of bounds for 8-byte block
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 16})
+	err := vm.execLoadPtr()
+	if err == nil {
+		t.Error("expected SEGFAULT error for out-of-bounds load")
+	}
+}
+
+func TestOpStorePtrOutOfBounds(t *testing.T) {
+	vm := NewVM()
+
+	vm.Push(IntValue{Val: 8}) // 8-byte block
+	vm.execAlloc()
+	ptr, _ := vm.Pop()
+
+	// Try to write at offset 16 — out of bounds
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 16})
+	vm.Push(IntValue{Val: 42})
+	err := vm.execStorePtr()
+	if err == nil {
+		t.Error("expected SEGFAULT error for out-of-bounds store")
+	}
+}
+
+func TestOpLoadPtrInvalidPointer(t *testing.T) {
+	vm := NewVM()
+
+	vm.Push(IntValue{Val: 99999}) // not a valid heap pointer
+	vm.Push(IntValue{Val: 0})
+	err := vm.execLoadPtr()
+	if err == nil {
+		t.Error("expected error for invalid heap pointer")
+	}
+}
+
+func TestOpStorePtrInvalidPointer(t *testing.T) {
+	vm := NewVM()
+
+	vm.Push(IntValue{Val: 99999}) // not a valid heap pointer
+	vm.Push(IntValue{Val: 0})
+	vm.Push(IntValue{Val: 42})
+	err := vm.execStorePtr()
+	if err == nil {
+		t.Error("expected error for invalid heap pointer")
+	}
+}
+
+func TestOpLoadPtrFreedBlock(t *testing.T) {
+	vm := NewVM()
+
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptr, _ := vm.Pop()
+
+	// Free the block
+	vm.Push(ptr)
+	vm.execFree()
+
+	// Try to load from freed block
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 0})
+	err := vm.execLoadPtr()
+	if err == nil {
+		t.Error("expected error when loading from freed block")
+	}
+}
+
+func TestOpStorePtrFreedBlock(t *testing.T) {
+	vm := NewVM()
+
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptr, _ := vm.Pop()
+
+	// Free the block
+	vm.Push(ptr)
+	vm.execFree()
+
+	// Try to store to freed block
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(IntValue{Val: 42})
+	err := vm.execStorePtr()
+	if err == nil {
+		t.Error("expected error when storing to freed block")
+	}
+}
+
+func TestOpLoadPtrStackUnderflow(t *testing.T) {
+	vm := NewVM()
+	err := vm.execLoadPtr()
+	if err == nil {
+		t.Error("expected error on empty stack")
+	}
+}
+
+func TestOpStorePtrStackUnderflow(t *testing.T) {
+	vm := NewVM()
+	err := vm.execStorePtr()
+	if err == nil {
+		t.Error("expected error on empty stack")
+	}
+}
+
+// --- Integration: LoadPtr/StorePtr via bytecode ---
+
+func TestLoadStorePtrViaBytecode(t *testing.T) {
+	vm := NewVM()
+
+	// Manually set up: alloc 16 bytes, store 99 at offset 0, load it back
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptr, _ := vm.Pop()
+
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(IntValue{Val: 99})
+	vm.execStorePtr()
+
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 0})
+	vm.execLoadPtr()
+
+	result, err := vm.Pop()
+	if err != nil {
+		t.Fatalf("Pop() error: %v", err)
+	}
+
+	intVal, ok := result.(IntValue)
+	if !ok {
+		t.Fatalf("expected IntValue, got %T", result)
+	}
+	if intVal.Val != 99 {
+		t.Errorf("expected 99, got %d", intVal.Val)
+	}
+}
+
 func TestAllocReturnsPointerViaBytecode(t *testing.T) {
 	constants := []Value{IntValue{Val: 64}}
 	bytecode := createBytecodeHeader(constants)

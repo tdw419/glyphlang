@@ -557,6 +557,10 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 		return vm.execAlloc()
 	case OpFree:
 		return vm.execFree()
+	case OpLoadPtr:
+		return vm.execLoadPtr()
+	case OpStorePtr:
+		return vm.execStorePtr()
 	case OpHalt:
 		vm.halted = true
 		return nil

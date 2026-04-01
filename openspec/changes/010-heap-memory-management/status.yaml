@@ -8,5 +8,5 @@ labels:
 - memory
 - os-vision
 priority: high
-status: in_progress
+status: completed
 title: Dynamic heap memory management for the VM

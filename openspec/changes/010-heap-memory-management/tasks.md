@@ -6,9 +6,9 @@
 - [x] 1.3 Implement `OpFree(ptr)`: look up the block header at (ptr - header_size). If refcount is 0, add to free list. Coalesce with adjacent free blocks. Guard against double-free by zeroing the type_tag.
 
 ## 2. Pointer load/store opcodes
-- [ ] 2.1 Implement `OpLoadPtr(ptr, offset)`: compute effective address (ptr + offset). Read the value from VM memory at that address. Decode based on the block's type_tag (i32, i64, f64, string, ptr). Push the decoded value onto the operand stack.
-- [ ] 2.2 Implement `OpStorePtr(ptr, offset, value)`: pop value from operand stack. Compute effective address. Encode the value according to the target type_tag. Write to VM memory. Increment refcount if the value is a heap reference; decrement the old value's refcount if overwritten.
-- [ ] 2.3 Add bounds checking: verify that (ptr + offset) falls within the heap region. Trap with SEGFAULT on out-of-bounds access.
+- [x] 2.1 Implement `OpLoadPtr(ptr, offset)`: compute effective address (ptr + offset). Read the value from VM memory at that address. Decode based on the block's type_tag (i32, i64, f64, string, ptr). Push the decoded value onto the operand stack.
+- [x] 2.2 Implement `OpStorePtr(ptr, offset, value)`: pop value from operand stack. Compute effective address. Encode the value according to the target type_tag. Write to VM memory. Increment refcount if the value is a heap reference; decrement the old value's refcount if overwritten.
+- [x] 2.3 Add bounds checking: verify that (ptr + offset) falls within the heap region. Trap with SEGFAULT on out-of-bounds access.
 
 ## 3. Reference counting
 - [ ] 3.1 Add refcount increment/decrement to the block header. On every `OpStorePtr` that writes a heap pointer, increment the new target's refcount and decrement the old target's refcount.
