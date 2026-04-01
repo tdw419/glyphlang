@@ -1,11 +1,11 @@
-depends_on: []
-github_issues: []
 id: 001-fix-broken-bootstrap-tests
-labels:
-- autospec
-- spec-defined
-- bootstrap
-- tests
+title: "Fix broken bootstrap tests (mutable closure + vm bootstrap)"
+status: completed
 priority: critical
-status: in_progress
-title: Fix broken bootstrap tests (mutable closure + vm bootstrap)
+depends_on: []
+labels:
+  - autospec
+  - spec-defined
+  - bootstrap
+  - tests
+github_issues: []
