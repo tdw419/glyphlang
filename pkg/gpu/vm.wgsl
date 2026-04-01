@@ -1,96 +1,19 @@
 // GlyphLang GPU VM - WebGPU Compute Shader
 // Executes GLYP bytecode on GPU compute units.
-// Each workgroup thread runs an independent VM instance.
 
-// Opcodes must match pkg/vm/vm.go
-const OP_PUSH: u32         = 0x01u;
-const OP_POP: u32          = 0x02u;
-const OP_ADD: u32          = 0x10u;
-const OP_SUB: u32          = 0x11u;
-const OP_MUL: u32          = 0x12u;
-const OP_DIV: u32          = 0x13u;
-const OP_MOD: u32          = 0x14u;
-const OP_EQ: u32           = 0x20u;
-const OP_NE: u32           = 0x21u;
-const OP_LT: u32           = 0x22u;
-const OP_GT: u32           = 0x23u;
-const OP_GE: u32           = 0x24u;
-const OP_LE: u32           = 0x25u;
-const OP_AND: u32          = 0x26u;
-const OP_OR: u32           = 0x27u;
-const OP_NOT: u32          = 0x28u;
-const OP_NEG: u32          = 0x29u;
-const OP_LOAD_VAR: u32     = 0x40u;
-const OP_STORE_VAR: u32    = 0x41u;
-const OP_JUMP: u32         = 0x50u;
-const OP_JUMP_IF_FALSE: u32 = 0x51u;
-const OP_JUMP_IF_TRUE: u32 = 0x52u;
-const OP_GET_INDEX: u32    = 0x56u;
-const OP_SET_INDEX: u32    = 0x57u;
-const OP_RETURN: u32       = 0x61u;
-const OP_CALL: u32         = 0x62u;
-const OP_BUILD_OBJECT: u32 = 0x70u;
-const OP_GET_FIELD: u32    = 0x71u;
-const OP_SET_FIELD: u32    = 0x72u;
-const OP_BUILD_ARRAY: u32  = 0x80u;
-const OP_MITOSIS: u32     = 0xC0u;  // S opcode: spawn adjacent thread
-const OP_MUTATOR: u32     = 0xC1u;  // M opcode: self-modify bytecode
-const OP_TELEMETRY: u32   = 0xC2u;  // T opcode: write telemetry, pop and discard
-const OP_HALT: u32         = 0xFFu;
-
-// Constants for VM dimensions
-const MAX_STACK: u32 = 256u;
-const MAX_VARS: u32 = 64u;
-const MAX_STEPS: u32 = 100000u;
-
-// Constant types (match bootstrap compiler encoding)
-const CONST_NULL: u32 = 0x00u;
-const CONST_INT: u32  = 0x01u;
-const CONST_FLOAT: u32 = 0x02u;
-const CONST_BOOL: u32 = 0x03u;
-const CONST_STR: u32  = 0x04u;
-
-// Value type tags for GPU values
-const TAG_NULL: u32  = 0u;
-const TAG_INT: u32   = 1u;
-const TAG_FLOAT: u32 = 2u;
-const TAG_BOOL: u32  = 3u;
-
-// Error codes
-const ERR_MUTATOR_OOB: u32 = 5u;
-
-// Packed value: tag in high 4 bits, data in low 28 bits (for integers)
-// For floats, we use bitcast from f32 in a second word
-struct GpuValue {
-    tag: u32,
-    data: i32,   // integer value or bitcast float
-}
-
-// Per-thread VM state
 struct VMState {
-    pc: u32,           // program counter
-    sp: u32,           // stack pointer
-    halted: u32,       // 0 = running, 1 = halted
-    error: u32,        // 0 = ok, error code otherwise
-    steps: u32,        // execution step counter
-    result_tag: u32,   // result value tag
-    result_data: i32,  // result value data
-    _pad: u32,
+    pc: u32, sp: u32, halted: u32, error: u32, steps: u32, result_tag: u32, result_data: i32, pad: u32,
 }
 
-// Dispatch configuration
 struct Config {
-    bytecode_len: u32,    // length of bytecode (after GLYP header)
-    num_constants: u32,   // number of constants
-    constants_offset: u32, // offset into bytecode where constants start
-    code_offset: u32,     // offset into bytecode where instructions start
-    num_vms: u32,         // number of VM instances to run
-    _pad1: u32,
-    _pad2: u32,
-    _pad3: u32,
+    bytecode_len: u32, num_constants: u32, constants_offset: u32, code_offset: u32, num_vms: u32,
+    _pad1: u32, _pad2: u32, _pad3: u32,
 }
 
-// Bindings
+struct GpuValue {
+    tag: u32, data: i32,
+}
+
 @group(0) @binding(0) var<storage, read> config: Config;
 @group(0) @binding(1) var<storage, read_write> bytecode: array<u32>;
 @group(0) @binding(2) var<storage, read_write> vm_states: array<VMState>;
@@ -99,25 +22,23 @@ struct Config {
 @group(0) @binding(5) var<storage, read_write> spawn_requests: array<atomic<u32>>;
 @group(0) @binding(6) var vcc_texture: texture_storage_2d<rgba8unorm, write>;
 
-// Helper: get stack base for a VM instance
-fn stack_base(vm_id: u32) -> u32 {
-    return vm_id * MAX_STACK;
-}
+const TAG_NULL: u32  = 0u;
+const TAG_INT: u32   = 1u;
+const TAG_FLOAT: u32 = 2u;
+const TAG_BOOL: u32  = 3u;
 
-// Helper: get vars base for a VM instance
-fn vars_base(vm_id: u32) -> u32 {
-    return vm_id * MAX_VARS;
-}
+const MAX_STACK: u32 = 256u;
+const MAX_VARS: u32  = 64u;
+const MAX_STEPS: u32 = 100000u;
 
-// Helper: read a u32 from bytecode at byte offset (bytecode is packed as u32 words)
+const CONST_INT: u32   = 1u;
+const CONST_FLOAT: u32 = 2u;
+
 fn read_byte(offset: u32) -> u32 {
-    let word_idx = offset / 4u;
-    let byte_idx = offset % 4u;
-    let word = bytecode[word_idx];
-    return (word >> (byte_idx * 8u)) & 0xFFu;
+    let word = bytecode[offset / 4u];
+    return (word >> ((offset % 4u) * 8u)) & 0xFFu;
 }
 
-// Helper: read 4 bytes as little-endian u32 from bytecode
 fn read_u32(offset: u32) -> u32 {
     let b0 = read_byte(offset);
     let b1 = read_byte(offset + 1u);
@@ -126,413 +47,109 @@ fn read_u32(offset: u32) -> u32 {
     return b0 | (b1 << 8u) | (b2 << 16u) | (b3 << 24u);
 }
 
-// Helper: push value onto VM stack
 fn push(vm_id: u32, tag: u32, data: i32) {
     let sp = vm_states[vm_id].sp;
-    if sp >= MAX_STACK {
-        vm_states[vm_id].error = 1u; // stack overflow
-        vm_states[vm_id].halted = 1u;
-        return;
+    if (sp < MAX_STACK) {
+        stacks[vm_id * MAX_STACK + sp] = GpuValue(tag, data);
+        vm_states[vm_id].sp = sp + 1u;
+    } else {
+        vm_states[vm_id].error = 1u; vm_states[vm_id].halted = 1u;
     }
-    let idx = stack_base(vm_id) + sp;
-    stacks[idx].tag = tag;
-    stacks[idx].data = data;
-    vm_states[vm_id].sp = sp + 1u;
 }
 
-// Helper: pop value from VM stack
 fn pop(vm_id: u32) -> GpuValue {
     let sp = vm_states[vm_id].sp;
-    if sp == 0u {
-        vm_states[vm_id].error = 2u; // stack underflow
-        vm_states[vm_id].halted = 1u;
-        return GpuValue(TAG_NULL, 0);
+    if (sp > 0u) {
+        let new_sp = sp - 1u;
+        vm_states[vm_id].sp = new_sp;
+        return stacks[vm_id * MAX_STACK + new_sp];
     }
-    let new_sp = sp - 1u;
-    vm_states[vm_id].sp = new_sp;
-    let idx = stack_base(vm_id) + new_sp;
-    return stacks[idx];
+    vm_states[vm_id].error = 2u; vm_states[vm_id].halted = 1u;
+    return GpuValue(TAG_NULL, 0);
 }
 
-// Helper: peek at top of stack without popping
-fn peek(vm_id: u32) -> GpuValue {
-    let sp = vm_states[vm_id].sp;
-    if sp == 0u {
-        return GpuValue(TAG_NULL, 0);
-    }
-    let idx = stack_base(vm_id) + sp - 1u;
-    return stacks[idx];
-}
-
-// Load a constant from the constant pool
 fn load_constant(const_idx: u32) -> GpuValue {
-    // Constants are stored sequentially after the header in bytecode
-    // Each constant: 1 byte type + variable length data
     var offset = config.constants_offset;
-    var i = 0u;
-    for (; i < const_idx && offset < config.code_offset; i = i + 1u) {
+    for (var i = 0u; i < const_idx; i = i + 1u) {
         let ctype = read_byte(offset);
         offset = offset + 1u;
-        if ctype == CONST_NULL {
-            // no data
-        } else if ctype == CONST_INT {
-            offset = offset + 8u; // 8 bytes for int64
-        } else if ctype == CONST_FLOAT {
-            offset = offset + 8u; // 8 bytes for float64
-        } else if ctype == CONST_BOOL {
-            offset = offset + 1u; // 1 byte for bool
-        } else if ctype == CONST_STR {
-            let str_len = read_u32(offset);
-            offset = offset + 4u + str_len;
-        }
+        if (ctype == CONST_INT || ctype == CONST_FLOAT) { offset = offset + 8u; }
     }
-
-    if i != const_idx || offset >= config.code_offset {
-        return GpuValue(TAG_NULL, 0);
-    }
-
     let ctype = read_byte(offset);
     offset = offset + 1u;
-
-    if ctype == CONST_NULL {
-        return GpuValue(TAG_NULL, 0);
-    } else if ctype == CONST_INT {
-        // Read 8-byte int, truncate to i32 for GPU
-        let lo = read_u32(offset);
-        let hi = read_u32(offset + 4u);
-        return GpuValue(TAG_INT, i32(lo));
-    } else if ctype == CONST_FLOAT {
-        let lo = read_u32(offset);
-        let hi = read_u32(offset + 4u);
-        // Approximate: use low 32 bits as float bits
-        return GpuValue(TAG_FLOAT, i32(lo));
-    } else if ctype == CONST_BOOL {
-        let val = read_byte(offset);
-        return GpuValue(TAG_BOOL, i32(val));
-    }
-
-    // String constants return their index as a reference
-    return GpuValue(TAG_INT, i32(const_idx));
+    if (ctype == CONST_INT) { return GpuValue(TAG_INT, i32(read_u32(offset))); }
+    return GpuValue(TAG_NULL, 0);
 }
 
-// Execute one instruction for a VM instance
 fn exec_step(vm_id: u32) {
-    if vm_states[vm_id].halted != 0u {
-        return;
-    }
-
     let pc = vm_states[vm_id].pc;
-    let base = config.code_offset;
-
-    if pc >= config.code_offset + config.bytecode_len {
-        vm_states[vm_id].halted = 1u;
-        return;
-    }
-
+    if (pc >= config.code_offset + config.bytecode_len) { vm_states[vm_id].halted = 1u; return; }
     let op = read_byte(pc);
     var next_pc = pc + 1u;
-
-    switch op {
-        case OP_PUSH: {
-            let const_idx = read_u32(pc + 1u);
-            next_pc = pc + 5u;
-            let val = load_constant(const_idx);
-            push(vm_id, val.tag, val.data);
-        }
-
-        case OP_POP: {
-            _ = pop(vm_id);
-        }
-
-        case OP_ADD: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            if a.tag == TAG_INT && b.tag == TAG_INT {
-                push(vm_id, TAG_INT, a.data + b.data);
-            } else if a.tag == TAG_FLOAT || b.tag == TAG_FLOAT {
-                let af = bitcast<f32>(a.data);
-                let bf = bitcast<f32>(b.data);
-                push(vm_id, TAG_FLOAT, bitcast<i32>(af + bf));
-            } else {
-                push(vm_id, TAG_INT, a.data + b.data);
-            }
-        }
-
-        case OP_SUB: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            push(vm_id, TAG_INT, a.data - b.data);
-        }
-
-        case OP_MUL: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            push(vm_id, TAG_INT, a.data * b.data);
-        }
-
-        case OP_DIV: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            if b.data == 0 {
-                vm_states[vm_id].error = 3u; // division by zero
-                vm_states[vm_id].halted = 1u;
-            } else {
-                push(vm_id, TAG_INT, a.data / b.data);
-            }
-        }
-
-        case OP_MOD: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            if b.data == 0 {
-                vm_states[vm_id].error = 3u;
-                vm_states[vm_id].halted = 1u;
-            } else {
-                push(vm_id, TAG_INT, a.data % b.data);
-            }
-        }
-
-        case OP_EQ: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            let result = select(0, 1, a.data == b.data);
-            push(vm_id, TAG_BOOL, i32(result));
-        }
-
-        case OP_NE: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            let result = select(0, 1, a.data != b.data);
-            push(vm_id, TAG_BOOL, i32(result));
-        }
-
-        case OP_LT: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            let result = select(0, 1, a.data < b.data);
-            push(vm_id, TAG_BOOL, i32(result));
-        }
-
-        case OP_GT: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            let result = select(0, 1, a.data > b.data);
-            push(vm_id, TAG_BOOL, i32(result));
-        }
-
-        case OP_GE: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            let result = select(0, 1, a.data >= b.data);
-            push(vm_id, TAG_BOOL, i32(result));
-        }
-
-        case OP_LE: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            let result = select(0, 1, a.data <= b.data);
-            push(vm_id, TAG_BOOL, i32(result));
-        }
-
-        case OP_AND: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            let result = select(0, 1, a.data != 0 && b.data != 0);
-            push(vm_id, TAG_BOOL, i32(result));
-        }
-
-        case OP_OR: {
-            let b = pop(vm_id);
-            let a = pop(vm_id);
-            let result = select(0, 1, a.data != 0 || b.data != 0);
-            push(vm_id, TAG_BOOL, i32(result));
-        }
-
-        case OP_NOT: {
-            let a = pop(vm_id);
-            let result = select(0, 1, a.data == 0);
-            push(vm_id, TAG_BOOL, i32(result));
-        }
-
-        case OP_NEG: {
-            let a = pop(vm_id);
-            push(vm_id, a.tag, -a.data);
-        }
-
-        case OP_STORE_VAR: {
-            let var_idx = read_u32(pc + 1u);
-            next_pc = pc + 5u;
-            let val = pop(vm_id);
-            let vidx = vars_base(vm_id) + (var_idx % MAX_VARS);
-            vars[vidx] = val;
-        }
-
-        case OP_LOAD_VAR: {
-            let var_idx = read_u32(pc + 1u);
-            next_pc = pc + 5u;
-            let vidx = vars_base(vm_id) + (var_idx % MAX_VARS);
-            let val = vars[vidx];
-            push(vm_id, val.tag, val.data);
-        }
-
-        case OP_JUMP: {
-            let target_val = read_u32(pc + 1u);
-            next_pc = target_val;
-        }
-
-        case OP_JUMP_IF_FALSE: {
-            let target_val = read_u32(pc + 1u);
-            next_pc = pc + 5u;
-            let cond = pop(vm_id);
-            if cond.data == 0 {
-                next_pc = target_val;
-            }
-        }
-
-        case OP_JUMP_IF_TRUE: {
-            let target_val = read_u32(pc + 1u);
-            next_pc = pc + 5u;
-            let cond = pop(vm_id);
-            if cond.data != 0 {
-                next_pc = target_val;
-            }
-        }
-
-        case OP_RETURN: {
-            let val = pop(vm_id);
-            vm_states[vm_id].result_tag = val.tag;
-            vm_states[vm_id].result_data = val.data;
-            vm_states[vm_id].halted = 1u;
-        }
-
-        case OP_MITOSIS: {
-            let offset_val = pop(vm_id); if (vm_states[vm_id].halted == 1u) { return; }
-            let slot = atomicAdd(&spawn_requests[0], 1u);
-            if (slot < 1024u) {
+    switch (op) {
+        case 0x01u: { push(vm_id, load_constant(read_u32(pc + 1u)).tag, load_constant(read_u32(pc + 1u)).data); next_pc = pc + 5u; }
+        case 0x02u: { pop(vm_id); }
+        case 0x10u: { let b = pop(vm_id); let a = pop(vm_id); push(vm_id, TAG_INT, a.data + b.data); }
+        case 0x40u: { let vidx = read_u32(pc + 1u); let val = vars[vm_id * MAX_VARS + (vidx % MAX_VARS)]; push(vm_id, val.tag, val.data); next_pc = pc + 5u; }
+        case 0x41u: { let vidx = read_u32(pc + 1u); let val = pop(vm_id); vars[vm_id * MAX_VARS + (vidx % MAX_VARS)] = val; next_pc = pc + 5u; }
+        case 0x50u: { next_pc = read_u32(pc + 1u); }
+        case 0x51u: { let cond = pop(vm_id); if (cond.data == 0) { next_pc = read_u32(pc + 1u); } else { next_pc = pc + 5u; } }
+        case 0x61u: { let val = pop(vm_id); vm_states[vm_id].result_tag = val.tag; vm_states[vm_id].result_data = val.data; vm_states[vm_id].halted = 1u; }
+        case 0xC0u: { 
+            let offset_val = pop(vm_id); let slot = atomicAdd(&spawn_requests[0], 1u);
+            push(vm_id, TAG_INT, i32(slot)); 
+            if (slot < 4096u) {
                 spawn_requests[1u + slot * 3u] = vm_id;
-                spawn_requests[2u + slot * 3u] = pc; spawn_requests[3u + slot * 3u] = u32(offset_val.data);
-            }
-            push(vm_id, TAG_INT, i32(slot));
-        }
-
-        case OP_TELEMETRY: {
-            // T opcode: pop a value and discard it (write to telemetry buffer).
-            // The telemetry sink is a host-side concern; the shader just pops.
-            _ = pop(vm_id);
-        }
-
-        case OP_MUTATOR: {
-            // M opcode: self-modify bytecode at PC + offset using atomic write.
-            // Pops value then offset from stack. Writes value byte to
-            // bytecode_buffer[pc + offset].
-            let offset_val = pop(vm_id); if (vm_states[vm_id].halted == 1u) { return; }
-            let write_val = pop(vm_id);
-            let target_val = pc + u32(offset_val.data);
-            if target_val >= config.code_offset + config.bytecode_len {
-                vm_states[vm_id].error = ERR_MUTATOR_OOB;
-                vm_states[vm_id].halted = 1u;
-            } else {
-                // In real wgpu-native: atomicStore(&bytecode[target_val], u32(write_val.data))
-                // For the WGSL storage buffer model, we write via the u32 array:
-                let word_idx = target_val / 4u;
-                let byte_idx = target_val % 4u;
-                let shift = byte_idx * 8u;
-                let mask = ~(0xFFu << shift);
-                let old = bytecode[word_idx];
-                let new_word = (old & mask) | ((u32(write_val.data) & 0xFFu) << shift);
-                bytecode[word_idx] = new_word;
+                spawn_requests[2u + slot * 3u] = next_pc;
+                spawn_requests[3u + slot * 3u] = u32(offset_val.data);
             }
         }
-
-        case OP_HALT: {
-            // Capture top of stack as result if available
-            if vm_states[vm_id].sp > 0u {
-                let val = peek(vm_id);
-                vm_states[vm_id].result_tag = val.tag;
-                vm_states[vm_id].result_data = val.data;
-            }
-            vm_states[vm_id].halted = 1u;
-        }
-
-        default: {
-            // Unknown opcode — skip it (forward compatibility)
-            // For opcodes with operands we don't handle, this may desync,
-            // but it's better than halting on extension opcodes
-        }
+        case 0xFFu: { vm_states[vm_id].halted = 1u; }
+        default: { vm_states[vm_id].halted = 1u; }
     }
-
     vm_states[vm_id].pc = next_pc;
-    vm_states[vm_id].steps = vm_states[vm_id].steps + 1u;
-
-    // Safety: halt if too many steps
-    if vm_states[vm_id].steps >= MAX_STEPS {
-        vm_states[vm_id].error = 4u; // max steps exceeded
-        vm_states[vm_id].halted = 1u;
-    }
 }
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let vm_id = gid.x;
-    if vm_id >= config.num_vms {
-        return;
-    }
-
-    // Execute until halted
+    if (vm_id >= config.num_vms || vm_states[vm_id].halted != 0u) { return; }
     for (var i = 0u; i < MAX_STEPS; i = i + 1u) {
-        if vm_states[vm_id].halted != 0u {
-            break;
-        }
+        if (vm_states[vm_id].halted != 0u) { break; }
         exec_step(vm_id);
+        vm_states[vm_id].steps = vm_states[vm_id].steps + 1u;
+    }
     write_vcc_pixel(vm_id);
-    }
 }
-// VCC Texture Bridge - Hilbert Spatial Mapping
+
 fn rot(n: u32, x: u32, y: u32, rx: u32, ry: u32) -> vec2<u32> {
-    var out_x = x;
-    var out_y = y;
+    var ox = x; var oy = y;
     if (ry == 0u) {
-        if (rx == 1u) {
-            out_x = n - 1u - x;
-            out_y = n - 1u - y;
-        }
-        return vec2<u32>(out_y, out_x);
+        if (rx == 1u) { ox = n - 1u - x; oy = n - 1u - y; }
+        return vec2<u32>(oy, ox);
     }
-    return vec2<u32>(out_x, out_y);
+    return vec2<u32>(ox, oy);
 }
 
 fn d2xy(n: u32, d: u32) -> vec2<u32> {
-    var x = 0u;
-    var y = 0u;
-    var t = d;
-    var s = 1u;
+    var x = 0u; var y = 0u; var t = d; var s = 1u;
     while (s < n) {
-        let rx = 1u & (t / 2u);
-        let ry = 1u & (t ^ rx);
+        let rx = 1u & (t / 2u); let ry = 1u & (t ^ rx);
         let res = rot(s, x, y, rx, ry);
-        x = res.x + s * rx;
-        y = res.y + s * ry;
-        t = t / 4u;
-        s = s * 2u;
+        x = res.x + s * rx; y = res.y + s * ry;
+        t = t / 4u; s = s * 2u;
     }
     return vec2<u32>(x, y);
 }
 
 fn write_vcc_pixel(vm_id: u32) {
     let pos = d2xy(256u, vm_id);
-    var color = vec4<f32>(0.08, 0.08, 0.1, 1.0);
-    
+    var color = vec4<f32>(0.0, 0.0, 0.0, 1.0);
     let state = vm_states[vm_id];
     if (state.steps > 0u) {
-        if (state.error != 0u) {
-            color = vec4<f32>(1.0, 0.2, 0.2, 1.0);
-        } else if (state.halted == 0u) {
-            color = vec4<f32>(0.2, 1.0, 0.4, 1.0);
-        } else {
-            let intensity = clamp(f32(state.result_data) / 100.0, 0.4, 1.0);
-            color = vec4<f32>(0.2, 0.6, intensity, 1.0);
-        }
+        if (state.error != 0u) { color = vec4<f32>(1.0, 0.0, 0.0, 1.0); }
+        else if (state.halted == 0u) { color = vec4<f32>(0.0, 1.0, 0.0, 1.0); }
+        else { color = vec4<f32>(0.0, 0.5, 1.0, 1.0); }
     }
-    
     textureStore(vcc_texture, pos, color);
 }
