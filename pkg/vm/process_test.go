@@ -515,3 +515,318 @@ func TestSpawnKillWaitIntegration(t *testing.T) {
 		t.Error("child should be cleaned up after wait")
 	}
 }
+
+// --- SEC-3: Process Isolation and Hierarchy ---
+
+// 3.1: Spawned VMs must have fully independent state.
+
+func TestSpawnChildHasIndependentStack(t *testing.T) {
+	parentVM := NewVM()
+	pt := NewProcessTable()
+	parentVM.processTable = pt
+	parentVM.pid = 1
+
+	parent := &Process{PID: 1, PPID: 0, State: ProcessRunning, VM: parentVM}
+	pt.Register(parent)
+
+	// Push something on parent stack before spawn
+	parentVM.Push(IntValue{Val: 99})
+
+	// Execute spawn
+	constants := []Value{}
+	bytecode := createBytecodeHeader(constants)
+	bytecode = addInstruction(bytecode, OpSpawn, nil)
+	bytecode = addInstruction(bytecode, OpHalt, nil)
+	parentVM.code = bytecode
+	layout, _ := parseBytecodeLayout(bytecode)
+	parentVM.pc = int(layout.CodeOffset)
+
+	if err := parentVM.executeInstruction(OpSpawn); err != nil {
+		t.Fatalf("OpSpawn error: %v", err)
+	}
+
+	// Parent stack should have: 99 (original) + child PID (from spawn)
+	if len(parentVM.stack) != 2 {
+		t.Fatalf("expected parent stack size 2, got %d", len(parentVM.stack))
+	}
+	if parentVM.stack[0].(IntValue).Val != 99 {
+		t.Errorf("expected parent stack[0] to be 99, got %v", parentVM.stack[0])
+	}
+
+	// Find child process
+	childPID := uint32(parentVM.stack[1].(IntValue).Val)
+	childProc, ok := pt.Get(childPID)
+	if !ok {
+		t.Fatal("child process not found")
+	}
+
+	// Child stack should be independent: only [0]
+	if len(childProc.VM.stack) != 1 {
+		t.Fatalf("expected child stack size 1, got %d", len(childProc.VM.stack))
+	}
+	if childProc.VM.stack[0].(IntValue).Val != 0 {
+		t.Errorf("expected child stack[0] to be 0, got %v", childProc.VM.stack[0])
+	}
+}
+
+func TestSpawnChildHasIndependentGlobals(t *testing.T) {
+	parentVM := NewVM()
+	pt := NewProcessTable()
+	parentVM.processTable = pt
+	parentVM.pid = 1
+
+	parent := &Process{PID: 1, PPID: 0, State: ProcessRunning, VM: parentVM}
+	pt.Register(parent)
+
+	// Set a global on parent
+	parentVM.globals["shared"] = IntValue{Val: 100}
+
+	// Execute spawn
+	constants := []Value{}
+	bytecode := createBytecodeHeader(constants)
+	bytecode = addInstruction(bytecode, OpSpawn, nil)
+	bytecode = addInstruction(bytecode, OpHalt, nil)
+	parentVM.code = bytecode
+	layout, _ := parseBytecodeLayout(bytecode)
+	parentVM.pc = int(layout.CodeOffset)
+
+	if err := parentVM.executeInstruction(OpSpawn); err != nil {
+		t.Fatalf("OpSpawn error: %v", err)
+	}
+
+	childPID := uint32(mustPopInt(t, parentVM))
+	childProc, ok := pt.Get(childPID)
+	if !ok {
+		t.Fatal("child process not found")
+	}
+
+	// Modify child's globals — must NOT affect parent
+	childProc.VM.globals["shared"] = IntValue{Val: 999}
+
+	if parentVM.globals["shared"].(IntValue).Val != 100 {
+		t.Errorf("parent global corrupted after child modification: got %v, want 100", parentVM.globals["shared"])
+	}
+}
+
+func TestSpawnChildHasIndependentFunctions(t *testing.T) {
+	parentVM := NewVM()
+	pt := NewProcessTable()
+	parentVM.processTable = pt
+	parentVM.pid = 1
+
+	parent := &Process{PID: 1, PPID: 0, State: ProcessRunning, VM: parentVM}
+	pt.Register(parent)
+
+	// Define a function on parent
+	parentVM.functions["myFunc"] = FunctionValue{Name: "myFunc", ParamNames: []string{"x"}}
+
+	// Execute spawn
+	constants := []Value{}
+	bytecode := createBytecodeHeader(constants)
+	bytecode = addInstruction(bytecode, OpSpawn, nil)
+	bytecode = addInstruction(bytecode, OpHalt, nil)
+	parentVM.code = bytecode
+	layout, _ := parseBytecodeLayout(bytecode)
+	parentVM.pc = int(layout.CodeOffset)
+
+	if err := parentVM.executeInstruction(OpSpawn); err != nil {
+		t.Fatalf("OpSpawn error: %v", err)
+	}
+
+	childPID := uint32(mustPopInt(t, parentVM))
+	childProc, ok := pt.Get(childPID)
+	if !ok {
+		t.Fatal("child process not found")
+	}
+
+	// Add a function to child — must NOT appear in parent
+	childProc.VM.functions["childOnly"] = FunctionValue{Name: "childOnly"}
+
+	if _, exists := parentVM.functions["childOnly"]; exists {
+		t.Error("parent should not see child's new function")
+	}
+	// Parent's function should still be there
+	if _, exists := parentVM.functions["myFunc"]; !exists {
+		t.Error("parent's original function missing")
+	}
+}
+
+// 3.2: Parent-child tracking with ChildPIDs list + notify on child exit.
+
+func TestProcessTracksChildPIDs(t *testing.T) {
+	pt := NewProcessTable()
+
+	init := &Process{PID: 1, PPID: 0, State: ProcessRunning, VM: NewVM()}
+	pt.Register(init)
+
+	parentVM := NewVM()
+	parentVM.processTable = pt
+	parentVM.pid = 1
+
+	constants := []Value{}
+	bytecode := createBytecodeHeader(constants)
+	bytecode = addInstruction(bytecode, OpSpawn, nil)
+	bytecode = addInstruction(bytecode, OpHalt, nil)
+	parentVM.code = bytecode
+	layout, _ := parseBytecodeLayout(bytecode)
+	parentVM.pc = int(layout.CodeOffset)
+
+	// Spawn two children
+	parentVM.executeInstruction(OpSpawn)
+	childPID1 := uint32(mustPopInt(t, parentVM))
+	parentVM.pc = int(layout.CodeOffset) // reset pc
+	parentVM.executeInstruction(OpSpawn)
+	childPID2 := uint32(mustPopInt(t, parentVM))
+
+	// Init should track both children
+	initProc, _ := pt.Get(1)
+	if len(initProc.ChildPIDs) != 2 {
+		t.Fatalf("expected 2 children tracked, got %d", len(initProc.ChildPIDs))
+	}
+
+	found1, found2 := false, false
+	for _, pid := range initProc.ChildPIDs {
+		if pid == childPID1 { found1 = true }
+		if pid == childPID2 { found2 = true }
+	}
+	if !found1 || !found2 {
+		t.Errorf("expected child PIDs %d and %d in ChildPIDs, got %v", childPID1, childPID2, initProc.ChildPIDs)
+	}
+}
+
+func TestSetZombieNotifiesParent(t *testing.T) {
+	pt := NewProcessTable()
+
+	parentVM := NewVM()
+	parent := &Process{PID: 1, PPID: 0, State: ProcessRunning, VM: parentVM}
+	child := &Process{PID: 2, PPID: 1, State: ProcessRunning, VM: NewVM()}
+	pt.Register(parent)
+	pt.Register(child)
+
+	// Register the parent as waiting on the child
+	waitCh := pt.RegisterWaiter(2)
+
+	// Set child to zombie — should notify
+	go func() {
+		pt.SetZombie(2, 0)
+	}()
+
+	// Parent should be woken up
+	<-waitCh
+
+	// Child should be zombie
+	childProc, _ := pt.Get(2)
+	if childProc.State != ProcessZombie {
+		t.Error("expected child to be zombie")
+	}
+}
+
+func TestRemoveChildPIDOnExit(t *testing.T) {
+	pt := NewProcessTable()
+
+	parentVM := NewVM()
+	parent := &Process{PID: 1, PPID: 0, State: ProcessRunning, VM: parentVM}
+	child := &Process{PID: 2, PPID: 1, State: ProcessRunning, VM: NewVM()}
+	pt.Register(parent)
+	pt.Register(child)
+
+	// Manually add child to parent's tracking
+	parent.ChildPIDs = []uint32{2}
+
+	// Kill the child — SetZombie should remove child from parent's ChildPIDs
+	parentVM.processTable = pt
+	parentVM.pid = 1
+	parentVM.Push(IntValue{Val: 2})
+	if err := parentVM.executeInstruction(OpKill); err != nil {
+		t.Fatalf("OpKill error: %v", err)
+	}
+
+	// Parent should no longer track the dead child
+	updated, _ := pt.Get(1)
+	for _, pid := range updated.ChildPIDs {
+		if pid == 2 {
+			t.Error("dead child PID should be removed from parent's ChildPIDs")
+		}
+	}
+}
+
+// 3.3: Reparenting orphans to PID 1 on process death.
+
+func TestReparentMovesChildrenToInit(t *testing.T) {
+	pt := NewProcessTable()
+
+	initVM := NewVM()
+	init := &Process{PID: 1, PPID: 0, State: ProcessRunning, VM: initVM}
+	parent := &Process{PID: 5, PPID: 1, State: ProcessRunning, VM: NewVM()}
+	child1 := &Process{PID: 10, PPID: 5, State: ProcessRunning, VM: NewVM()}
+	child2 := &Process{PID: 11, PPID: 5, State: ProcessRunning, VM: NewVM()}
+
+	pt.Register(init)
+	pt.Register(parent)
+	pt.Register(child1)
+	pt.Register(child2)
+
+	// Set up parent-child tracking
+	parent.ChildPIDs = []uint32{10, 11}
+	init.ChildPIDs = []uint32{5}
+
+	// Kill parent PID 5
+	initVM.processTable = pt
+	initVM.pid = 1
+	initVM.Push(IntValue{Val: 5})
+	if err := initVM.executeInstruction(OpKill); err != nil {
+		t.Fatalf("OpKill error: %v", err)
+	}
+
+	// Children should be reparented to PID 1
+	for _, pid := range []uint32{10, 11} {
+		proc, ok := pt.Get(pid)
+		if !ok {
+			t.Fatalf("process %d should still exist", pid)
+		}
+		if proc.PPID != 1 {
+			t.Errorf("expected PID %d reparented to PID 1, got PPID %d", pid, proc.PPID)
+		}
+	}
+
+	// PID 1 should now track the adopted children
+	initProc, _ := pt.Get(1)
+	found10, found11 := false, false
+	for _, pid := range initProc.ChildPIDs {
+		if pid == 10 { found10 = true }
+		if pid == 11 { found11 = true }
+	}
+	if !found10 || !found11 {
+		t.Errorf("expected PID 1 to adopt orphans 10 and 11, got ChildPIDs %v", initProc.ChildPIDs)
+	}
+}
+
+func TestPID1ReapsOrphanedZombies(t *testing.T) {
+	pt := NewProcessTable()
+
+	initVM := NewVM()
+	init := &Process{PID: 1, PPID: 0, State: ProcessRunning, VM: initVM}
+	// Orphan: already zombie, parent already dead
+	orphan := &Process{PID: 7, PPID: 1, State: ProcessZombie, ExitCode: 3, VM: NewVM()}
+
+	pt.Register(init)
+	pt.Register(orphan)
+	init.ChildPIDs = []uint32{7}
+
+	// PID 1 does OpWait on the orphan — should reap immediately
+	initVM.processTable = pt
+	initVM.Push(IntValue{Val: 7})
+	if err := initVM.executeInstruction(OpWait); err != nil {
+		t.Fatalf("OpWait error: %v", err)
+	}
+
+	exitCode := mustPopInt(t, initVM)
+	if exitCode != 3 {
+		t.Errorf("expected exit code 3, got %d", exitCode)
+	}
+
+	// Orphan should be cleaned up
+	if _, found := pt.Get(7); found {
+		t.Error("orphan should be reaped after wait")
+	}
+}

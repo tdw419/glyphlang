@@ -1773,6 +1773,22 @@ func (vm *VM) execSpawn() error {
 
 	// Clone the current VM for the child
 	childVM := vm.Clone()
+
+	// Ensure full isolation: deep copy mutable state so parent and child
+	// do not share any writable memory region.
+	// Deep copy globals
+	childVM.globals = make(map[string]Value, len(vm.globals))
+	for k, v := range vm.globals {
+		childVM.globals[k] = v
+	}
+	// Deep copy functions
+	childVM.functions = make(map[string]FunctionValue, len(vm.functions))
+	for k, v := range vm.functions {
+		childVM.functions[k] = v
+	}
+	// Deep copy environment (Clone already does this, but ensure it's fresh)
+	childVM.env = vm.env.Clone()
+
 	// Fresh stack for child — push 0
 	childVM.stack = make([]Value, 0, 256)
 	childVM.Push(IntValue{Val: 0})
@@ -1787,6 +1803,11 @@ func (vm *VM) execSpawn() error {
 		VM:    childVM,
 	}
 	vm.processTable.Register(childProc)
+
+	// Track child in parent's ChildPIDs (3.2 parent-child tracking)
+	if parentProc, ok := vm.processTable.Get(vm.pid); ok {
+		parentProc.ChildPIDs = append(parentProc.ChildPIDs, childPID)
+	}
 
 	// Parent gets the child PID on its stack
 	vm.Push(IntValue{Val: int64(childPID)})

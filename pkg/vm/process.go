@@ -32,11 +32,12 @@ func (s ProcessState) String() string {
 
 // Process represents a single VM process with its own execution context.
 type Process struct {
-	PID      uint32       // Process identifier
-	PPID     uint32       // Parent process identifier
-	State    ProcessState // Current lifecycle state
-	ExitCode int64        // Exit code (valid when State == Zombie)
-	VM       *VM          // The VM instance running this process
+	PID       uint32       // Process identifier
+	PPID      uint32       // Parent process identifier
+	State     ProcessState // Current lifecycle state
+	ExitCode  int64        // Exit code (valid when State == Zombie)
+	VM        *VM          // The VM instance running this process
+	ChildPIDs []uint32     // List of child process PIDs
 }
 
 // ProcessTable is a concurrent-safe map of PID -> Process.
@@ -112,20 +113,33 @@ func (pt *ProcessTable) Children(ppid uint32) []*Process {
 }
 
 // Reparent moves all children of oldParent to newParent.
-// Updates each child's PPID to newParent.
+// Updates each child's PPID to newParent and transfers ChildPIDs entries.
 func (pt *ProcessTable) Reparent(oldParent, newParent uint32) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
+	var orphanPIDs []uint32
 	for _, proc := range pt.processes {
 		if proc.PPID == oldParent {
 			proc.PPID = newParent
+			orphanPIDs = append(orphanPIDs, proc.PID)
 		}
+	}
+
+	// Clear old parent's ChildPIDs (it's dying)
+	if oldProc, ok := pt.processes[oldParent]; ok {
+		oldProc.ChildPIDs = nil
+	}
+
+	// Add orphans to new parent's ChildPIDs
+	if newProc, ok := pt.processes[newParent]; ok {
+		newProc.ChildPIDs = append(newProc.ChildPIDs, orphanPIDs...)
 	}
 }
 
 // SetZombie transitions a process to zombie state with the given exit code.
-// It also clears the process's VM resources and notifies any waiters.
+// It also clears the process's VM resources, removes it from its parent's
+// ChildPIDs, and notifies any waiters.
 func (pt *ProcessTable) SetZombie(pid uint32, exitCode int64) error {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
@@ -142,6 +156,19 @@ func (pt *ProcessTable) SetZombie(pid uint32, exitCode int64) error {
 	if proc.VM != nil {
 		proc.VM.stack = proc.VM.stack[:0]
 		proc.VM.halted = true
+	}
+
+	// Remove this process from its parent's ChildPIDs
+	if proc.PPID != 0 {
+		if parent, parentOK := pt.processes[proc.PPID]; parentOK {
+			newChildren := make([]uint32, 0, len(parent.ChildPIDs))
+			for _, childPID := range parent.ChildPIDs {
+				if childPID != pid {
+					newChildren = append(newChildren, childPID)
+				}
+			}
+			parent.ChildPIDs = newChildren
+		}
 	}
 
 	// Notify any process waiting on this PID

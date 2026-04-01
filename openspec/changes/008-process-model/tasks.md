@@ -11,6 +11,6 @@
 - [x] 2.3 Implement `OpWait`: block the calling process until the target process enters zombie state. Read the exit code from the zombie's process struct. Clean up the zombie entry.
 
 ## 3. Process isolation and hierarchy
-- [ ] 3.1 Ensure each spawned VM instance has a fully independent register file, stack, and heap region. No memory region overlaps between processes.
-- [ ] 3.2 Implement parent-child tracking: each process records its parent PID and a list of child PIDs. On child exit, notify the parent (wake from OpWait if blocked).
-- [ ] 3.3 Implement reparenting: when a process dies, move all its children to PID 1's child list. PID 1's OpWait loop adopts and reaps these orphans.
+- [x] 3.1 Ensure each spawned VM instance has a fully independent register file, stack, and heap region. No memory region overlaps between processes.
+- [x] 3.2 Implement parent-child tracking: each process records its parent PID and a list of child PIDs. On child exit, notify the parent (wake from OpWait if blocked).
+- [x] 3.3 Implement reparenting: when a process dies, move all its children to PID 1's child list. PID 1's OpWait loop adopts and reaps these orphans.

@@ -86,6 +86,18 @@ func (d *Decompiler) Decompile(bytecode []byte) (*DecompiledOutput, error) {
 		output.Constants = append(output.Constants, constInfo)
 	}
 
+	// Read string pool count (skip for now)
+	if d.offset+4 > len(bytecode) {
+		return nil, fmt.Errorf("invalid bytecode: missing string pool count")
+	}
+	strPoolCount := binary.LittleEndian.Uint32(bytecode[d.offset : d.offset+4])
+	d.offset += 4
+	
+	// Skip string pool entries (we assume count is 0 for now)
+	if strPoolCount > 0 {
+		return nil, fmt.Errorf("decompiler does not yet support non-empty string pools")
+	}
+
 	// Read instruction count
 	if d.offset+4 > len(bytecode) {
 		return nil, fmt.Errorf("invalid bytecode: missing instruction count")
