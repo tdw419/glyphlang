@@ -47,6 +47,7 @@ const (
 	OpSetField    Opcode = 0x72 // Set object field: obj.field = val
 	OpDefFunc     Opcode = 0x73 // Define a function: name_idx, param_count, body_length, [param_name_idxs...], body...
 	OpBuildArray  Opcode = 0x80
+	OpLoadString  Opcode = 0x91 // Load string from string pool by index
 	OpHttpReturn  Opcode = 0x90
 
 	// WebSocket opcodes
@@ -115,6 +116,7 @@ func (vm *VM) Clone() *VM {
 		env:        vm.env.Clone(), // TODO: Deep copy environment if needed
 		globals:    vm.globals,
 		constants:  vm.constants,
+		stringPool: vm.stringPool,
 		builtins:   vm.builtins,
 		functions:  vm.functions,
 		pc:         vm.pc,
@@ -152,6 +154,7 @@ type VM struct {
 	env        *Environment
 	globals    map[string]Value
 	constants  []Value
+	stringPool []string // String pool for OP_LOAD_STRING
 	builtins   map[string]BuiltinFunc
 	functions  map[string]FunctionValue // User-defined functions
 	callStack  []CallFrame              // Call frame stack
@@ -183,6 +186,7 @@ func NewVM() *VM {
 		env:        NewEnvironment(nil),
 		globals:    make(map[string]Value),
 		constants:  make([]Value, 0),
+		stringPool: make([]string, 0),
 		builtins:   make(map[string]BuiltinFunc),
 		functions:  make(map[string]FunctionValue),
 		callStack:  make([]CallFrame, 0, 16),
