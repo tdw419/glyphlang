@@ -100,9 +100,9 @@ fn exec_step(vm_id: u32) {
             let offset_val = pop(vm_id); let slot = atomicAdd(&spawn_requests[0], 1u);
             push(vm_id, TAG_INT, i32(slot)); 
             if (slot < 4096u) {
-                spawn_requests[1u + slot * 3u] = vm_id;
-                spawn_requests[2u + slot * 3u] = next_pc;
-                spawn_requests[3u + slot * 3u] = u32(offset_val.data);
+                atomicStore(&spawn_requests[1u + slot * 3u], vm_id);
+                atomicStore(&spawn_requests[2u + slot * 3u], next_pc);
+                atomicStore(&spawn_requests[3u + slot * 3u], u32(offset_val.data));
             }
         }
         case OP_TELEMETRY: { /* telemetry: no-op for now */ }

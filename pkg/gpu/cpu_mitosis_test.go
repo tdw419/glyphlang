@@ -7,16 +7,16 @@ import (
 
 func TestCPUMitosis(t *testing.T) {
 	// Program: 
-	// 0-4:  push 6 (offset to child code)
-	// 5:    S opcode (spawn child at PC+6 = 11)
+	// 0-4:  push 5 (offset to child code)
+	// 5:    S opcode (spawn child at PC+1+5 = 11)
 	// 6:    HALT (parent)
 	// 7-10: NOP/padding
 	// 11-15: push 42 (child result)
 	// 16:   HALT (child)
 
-	constants := []interface{}{6, 42}
+	constants := []interface{}{5, 42}
 	var code []byte
-	code = append(code, pushConst(0)...) // 0-4: push 6
+	code = append(code, pushConst(0)...) // 0-4: push 5
 	code = append(code, OpMitosis)       // 5: S opcode
 	code = append(code, 0xFF)            // 6: HALT (parent)
 	for i := 0; i < 4; i++ { code = append(code, 0x00) } // 7-10: NOPs

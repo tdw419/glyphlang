@@ -31,19 +31,19 @@ func TestMitosisBasic(t *testing.T) {
 
 func TestMitosisSpawn(t *testing.T) {
 	// Program that spawns a child thread via S opcode:
-	// push 5 (offset), S (spawn child at PC+5), push 10, halt
-	// Child starts at: after S + 5 bytes offset → lands at a second code section
+	// push 1 (offset), S (spawn child at PC+1+1 = 7), halt
+	// Child starts at: offset 7 — push 99, halt
 	//
 	// Layout:
-	// 0-4:  push const 0 (offset=5)
+	// 0-4:  push const 0 (offset=1)
 	// 5:    S opcode (0xC0)
 	// 6:    HALT (parent halts with child ID on stack)
 	// 7-11: push const 1 (value=99) — child code
 	// 12:   HALT (child halts with 99)
 
-	constants := []interface{}{5, 99}
+	constants := []interface{}{1, 99}
 	var code []byte
-	code = append(code, pushConst(0)...) // 0-4: push 5 (offset)
+	code = append(code, pushConst(0)...) // 0-4: push 1 (offset)
 	code = append(code, OpMitosis)       // 5: S opcode
 	code = append(code, 0xFF)            // 6: HALT (parent)
 	code = append(code, pushConst(1)...) // 7-11: push 99

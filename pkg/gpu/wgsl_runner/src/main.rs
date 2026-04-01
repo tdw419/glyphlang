@@ -156,9 +156,12 @@ async fn main() {
                     let mut new_states = Vec::new();
                     for i in 0..spawn_count.min(MAX_SPAWNS_PER_PASS).min(MAX_VMS - current_vms) {
                         let req = requests[i];
+                        eprintln!("[MITOSIS] spawn #{}: parent_id={} parent_pc={} pc_offset={} → child_pc={}", i, req.parent_id, req.parent_pc, req.pc_offset, req.parent_pc.wrapping_add(req.pc_offset));
                         if (req.parent_id as usize) < current_vms {
                             let parent = current_states[req.parent_id as usize];
-                            new_states.push(VMState { pc: req.parent_pc + req.pc_offset, sp: parent.sp, halted: 0, error: 0, steps: 0, result_tag: 0, result_data: 0, pad: 0 });
+                            eprintln!("[MITOSIS] parent state: pc={} sp={} halted={}", parent.pc, parent.sp, parent.halted);
+                            let child_pc = req.parent_pc.wrapping_add(req.pc_offset);
+                            new_states.push(VMState { pc: child_pc, sp: parent.sp, halted: 0, error: 0, steps: 0, result_tag: 0, result_data: 0, pad: 0 });
                             let p_stack = &current_stacks[req.parent_id as usize * MAX_STACK..(req.parent_id as usize + 1) * MAX_STACK];
                             let p_vars = &current_vars[req.parent_id as usize * MAX_VARS..(req.parent_id as usize + 1) * MAX_VARS];
                             queue.write_buffer(&stacks_buffer, ((current_vms + i) * MAX_STACK * 8) as u64, bytemuck::cast_slice(p_stack));

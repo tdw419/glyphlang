@@ -277,7 +277,7 @@ func (d *Dispatcher) executeCPU(bytecode []byte, config *Config) ([]Result, erro
 					for _, s := range spawns {
 						nextQueue = append(nextQueue, task{
 							id:    nextID,
-							pc:    s.PC + uint32(s.Offset),
+							pc:    s.PC + 1 + uint32(s.Offset),
 							stack: s.Stack,
 							vars:  s.Vars,
 						})
