@@ -74,17 +74,19 @@ var syscallTableOnce sync.Once
 
 // initSyscallTable registers handlers for syscalls 0x00-0x0F.
 func initSyscallTable() {
-	// sys_print (0x0C): pops one value, prints it to stdout, pushes null.
+	// sys_print (0x0C): pops one value, prints it to stdout (no trailing newline).
+	// The builtins["print"] handler calls this for each arg and adds spaces/newline.
 	syscallTable[SysPrint] = func(vm *VM) (Value, error) {
 		val, err := vm.Pop()
 		if err != nil {
 			return nil, err
 		}
-		fmt.Fprintln(os.Stdout, valueToString(val))
+		fmt.Fprint(os.Stdout, valueToInterface(val))
 		return NullValue{}, nil
 	}
 
 	// sys_alloc (0x08): pops size, allocates heap block, pushes pointer.
+	// Returns PointerValue to match OpAlloc behavior.
 	syscallTable[SysAlloc] = func(vm *VM) (Value, error) {
 		sizeVal, err := vm.Pop()
 		if err != nil {
@@ -94,21 +96,29 @@ func initSyscallTable() {
 		if !ok {
 			return nil, fmt.Errorf("sys_alloc: size must be an integer, got %T", sizeVal)
 		}
+		if size.Val < 0 {
+			return nil, fmt.Errorf("sys_alloc: size must be positive, got %d", size.Val)
+		}
 		ptr := vm.heap.Alloc(uint32(size.Val))
-		return IntValue{Val: int64(ptr)}, nil
+		vm.hp = vm.heap.hp // sync HP register (mirrors OpAlloc behavior)
+		return PointerValue{Address: ptr}, nil
 	}
 
 	// sys_free (0x09): pops pointer, frees heap block, pushes null.
+	// Accepts PointerValue to match OpFree behavior.
 	syscallTable[SysFree] = func(vm *VM) (Value, error) {
 		ptrVal, err := vm.Pop()
 		if err != nil {
 			return nil, err
 		}
-		ptr, ok := ptrVal.(IntValue)
+		ptr, ok := ptrVal.(PointerValue)
 		if !ok {
-			return nil, fmt.Errorf("sys_free: pointer must be an integer, got %T", ptrVal)
+			return nil, fmt.Errorf("sys_free: pointer must be a PointerValue, got %T", ptrVal)
 		}
-		if err := vm.heap.Free(uint32(ptr.Val)); err != nil {
+		if ptr.Address < heapBase+headerSize {
+			return nil, fmt.Errorf("sys_free: invalid heap pointer: %d", ptr.Address)
+		}
+		if err := vm.heap.Free(ptr.Address); err != nil {
 			return nil, err
 		}
 		return NullValue{}, nil

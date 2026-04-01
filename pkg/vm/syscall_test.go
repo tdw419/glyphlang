@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -137,12 +138,12 @@ func TestSyscallAllocFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sys_alloc error: %v", err)
 	}
-	ptr, ok := result.(IntValue)
+	ptr, ok := result.(PointerValue)
 	if !ok {
-		t.Fatalf("expected IntValue pointer, got %T", result)
+		t.Fatalf("expected PointerValue, got %T", result)
 	}
-	if ptr.Val <= 0 {
-		t.Errorf("expected positive heap pointer, got %d", ptr.Val)
+	if ptr.Address == 0 {
+		t.Errorf("expected non-zero heap pointer")
 	}
 
 	// Free: push the pointer back, then sys_free
@@ -394,5 +395,166 @@ func TestCapabilityInheritanceOnSpawn(t *testing.T) {
 	}
 	if childProc.VM.Capabilities() != CAP_FS|CAP_MEM {
 		t.Errorf("child VM capabilities = 0x%04X, want 0x%04X", childProc.VM.Capabilities(), CAP_FS|CAP_MEM)
+	}
+}
+
+// --- SEC-3: Comprehensive syscall test suite ---
+
+// TestSyscallDispatchEachNumber verifies that each registered syscall number
+// (0x00-0x0F) has a handler in the dispatch table.
+func TestSyscallDispatchEachNumber(t *testing.T) {
+	// Force initialization of the syscall table
+	syscallTableOnce.Do(initSyscallTable)
+
+	for nr := byte(0x00); nr <= 0x0F; nr++ {
+		t.Run(fmt.Sprintf("syscall_0x%02x", nr), func(t *testing.T) {
+			handler := syscallTable[nr]
+			if handler == nil {
+				t.Errorf("syscall 0x%02x has no handler registered", nr)
+			}
+		})
+	}
+}
+
+// TestSyscallENOSYSAllUnregistered verifies that syscall numbers 0x10-0xFF
+// all return ENOSYS.
+func TestSyscallENOSYSAllUnregistered(t *testing.T) {
+	vm := NewVM()
+	// Test a representative sample of the unregistered range
+	for _, num := range []byte{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 0xF0, 0xFE, 0xFF} {
+		t.Run(fmt.Sprintf("0x%02x", num), func(t *testing.T) {
+			code := []byte{byte(OpSyscall), num, byte(OpHalt)}
+			_, err := vm.executeRaw(code)
+			if err == nil {
+				t.Errorf("expected ENOSYS error for syscall 0x%02x, got nil", num)
+			} else if !strings.Contains(err.Error(), "ENOSYS") {
+				t.Errorf("expected ENOSYS for syscall 0x%02x, got: %v", num, err)
+			}
+		})
+	}
+}
+
+// TestSyscallCapabilityRejectionSweep tests that every capability-requiring
+// syscall is rejected when the corresponding capability is missing, and
+// succeeds when the capability is present.
+func TestSyscallCapabilityRejectionSweep(t *testing.T) {
+	tests := []struct {
+		name      string
+		syscallNr byte
+		required  uint16
+		prePush   []Value // values to push before the syscall
+	}{
+		{"SysPrint_0x0C_requires_CAP_IO", SysPrint, CAP_IO, []Value{StringValue{Val: "x"}}},
+		{"SysAlloc_0x08_requires_CAP_MEM", SysAlloc, CAP_MEM, []Value{IntValue{Val: 16}}},
+		{"SysFree_0x09_requires_CAP_MEM", SysFree, CAP_MEM, nil}, // pointer validity checked after cap check
+		{"SysTime_0x0D_requires_CAP_TIME", SysTime, CAP_TIME, nil},
+		{"SysExit_0x0E_no_cap_required", SysExit, 0, []Value{IntValue{Val: 0}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name+"_rejected", func(t *testing.T) {
+			vm := NewVM()
+			// Grant all capabilities EXCEPT the required one
+			if tt.required != 0 {
+				vm.SetCapabilities(CAP_ALL & ^tt.required)
+			} else {
+				vm.SetCapabilities(0) // test with no caps for exit
+			}
+			for _, v := range tt.prePush {
+				vm.Push(v)
+			}
+			code := []byte{byte(OpSyscall), tt.syscallNr, byte(OpHalt)}
+			_, err := vm.executeRaw(code)
+			if tt.required == 0 {
+				// sys_exit should work even with no capabilities
+				if err != nil && !vm.halted {
+					t.Errorf("expected success for cap-free syscall, got: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("expected EPERM for syscall 0x%02x without cap 0x%04X", tt.syscallNr, tt.required)
+				} else if !strings.Contains(err.Error(), "EPERM") {
+					t.Errorf("expected EPERM, got: %v", err)
+				}
+			}
+		})
+		t.Run(tt.name+"_allowed", func(t *testing.T) {
+			vm := NewVM()
+			if tt.required != 0 {
+				vm.SetCapabilities(tt.required)
+			}
+			for _, v := range tt.prePush {
+				vm.Push(v)
+			}
+			code := []byte{byte(OpSyscall), tt.syscallNr, byte(OpHalt)}
+			_, err := vm.executeRaw(code)
+			// Should not fail with EPERM (may fail with "not implemented" for stubs)
+			if err != nil && strings.Contains(err.Error(), "EPERM") {
+				t.Errorf("expected no EPERM with cap 0x%04X, got: %v", tt.required, err)
+			}
+		})
+	}
+}
+
+// TestSyscallPrintFull verifies sys_print output behavior in detail.
+func TestSyscallPrintFull(t *testing.T) {
+	vm := NewVM()
+	vm.Push(IntValue{Val: 42})
+	code := []byte{byte(OpSyscall), SysPrint, byte(OpHalt)}
+	result, err := vm.executeRaw(code)
+	if err != nil {
+		t.Fatalf("sys_print error: %v", err)
+	}
+	if _, ok := result.(NullValue); !ok {
+		t.Errorf("sys_print should push NullValue, got %T", result)
+	}
+}
+
+// TestSyscallAllocSizeValidation tests that sys_alloc rejects invalid sizes.
+func TestSyscallAllocSizeValidation(t *testing.T) {
+	vm := NewVM()
+	vm.Push(StringValue{Val: "not a number"})
+	code := []byte{byte(OpSyscall), SysAlloc, byte(OpHalt)}
+	_, err := vm.executeRaw(code)
+	if err == nil {
+		t.Error("expected error for non-integer size")
+	}
+}
+
+// TestSyscallFreeInvalidPointer tests that sys_free rejects non-pointer values.
+func TestSyscallFreeInvalidPointer(t *testing.T) {
+	vm := NewVM()
+	vm.Push(IntValue{Val: 999})
+	code := []byte{byte(OpSyscall), SysFree, byte(OpHalt)}
+	_, err := vm.executeRaw(code)
+	if err == nil {
+		t.Error("expected error for non-pointer free")
+	}
+}
+
+// TestSyscallRequiredCapMappingComplete verifies that the syscallRequiredCap
+// array is populated correctly for all 16 defined syscalls.
+func TestSyscallRequiredCapMappingComplete(t *testing.T) {
+	expected := [256]uint16{}
+	expected[SysRead] = CAP_FS
+	expected[SysWrite] = CAP_FS
+	expected[SysOpen] = CAP_FS
+	expected[SysClose] = CAP_FS
+	expected[SysSpawn] = CAP_PROC
+	expected[SysKill] = CAP_PROC
+	expected[SysWait] = CAP_PROC
+	expected[SysSignal] = CAP_PROC
+	expected[SysAlloc] = CAP_MEM
+	expected[SysFree] = CAP_MEM
+	expected[SysSend] = CAP_IPC
+	expected[SysRecv] = CAP_IPC
+	expected[SysPrint] = CAP_IO
+	expected[SysTime] = CAP_TIME
+	// SysExit = 0 (no cap required)
+	expected[SysGPUDispatch] = CAP_GPU
+
+	for i := 0; i < 256; i++ {
+		if syscallRequiredCap[i] != expected[i] {
+			t.Errorf("syscallRequiredCap[0x%02x] = 0x%04X, want 0x%04X", i, syscallRequiredCap[i], expected[i])
+		}
 	}
 }

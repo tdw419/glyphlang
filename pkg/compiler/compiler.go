@@ -1101,6 +1101,14 @@ func (c *Compiler) compileArrayIndex(expr *ast.ArrayIndexExpr) error {
 	return nil
 }
 
+// syscallBuiltinMap maps builtin function names to their syscall numbers.
+// When a call matches one of these, the compiler emits OpSyscall instead of
+// OpCall, routing directly through the syscall dispatch table.
+var syscallBuiltinMap = map[string]byte{
+	"time.now": vm.SysTime, // 0x0D
+	"now":      vm.SysTime, // 0x0D
+}
+
 // compileFunctionCall compiles a function call
 func (c *Compiler) compileFunctionCall(expr *ast.FunctionCallExpr) error {
 	// Check for WebSocket functions first (ws.*)
@@ -1141,6 +1149,21 @@ func (c *Compiler) compileFunctionCall(expr *ast.FunctionCallExpr) error {
 		if handled {
 			return nil
 		}
+	}
+
+	// Syscall migration: emit OpSyscall for builtins that have a direct
+	// syscall number. This bypasses the OpCall → builtin lookup path.
+	if syscallNr, ok := syscallBuiltinMap[expr.Name]; ok {
+		// Compile arguments in order onto the stack
+		for _, arg := range expr.Args {
+			if err := c.compileExpression(arg); err != nil {
+				return fmt.Errorf("failed to compile syscall argument: %w", err)
+			}
+		}
+		// Emit [OpSyscall, syscall_number]
+		c.emit(vm.OpSyscall)
+		c.code = append(c.code, syscallNr)
+		return nil
 	}
 
 	// Push function name first (it will be at bottom of stack)

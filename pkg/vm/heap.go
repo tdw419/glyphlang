@@ -259,45 +259,34 @@ func (h *Heap) GetBlock(dataAddr uint32) (*HeapBlock, error) {
 
 // execAlloc implements OpAlloc: pops a size from the stack, allocates a heap block,
 // and pushes a PointerValue onto the stack.
+// Delegates to the syscall table's SysAlloc handler.
 func (vm *VM) execAlloc() error {
-	sizeVal, err := vm.Pop()
+	handler := syscallTable[SysAlloc]
+	if handler == nil {
+		return fmt.Errorf("ENOSYS: syscall 0x%02x not registered", SysAlloc)
+	}
+	result, err := handler(vm)
 	if err != nil {
 		return err
 	}
-
-	sizeInt, ok := sizeVal.(IntValue)
-	if !ok {
-		return fmt.Errorf("alloc requires an integer size, got %s", sizeVal.Type())
-	}
-
-	if sizeInt.Val < 0 {
-		return fmt.Errorf("alloc size must be positive, got %d", sizeInt.Val)
-	}
-
-	ptr := vm.heap.Alloc(uint32(sizeInt.Val))
-	vm.hp = vm.heap.hp // sync HP register
-	vm.Push(PointerValue{Address: ptr})
+	vm.Push(result)
 	return nil
 }
 
 // execFree implements OpFree: pops a pointer from the stack and frees the
 // corresponding heap block.
+// Delegates to the syscall table's SysFree handler.
 func (vm *VM) execFree() error {
-	ptrVal, err := vm.Pop()
+	handler := syscallTable[SysFree]
+	if handler == nil {
+		return fmt.Errorf("ENOSYS: syscall 0x%02x not registered", SysFree)
+	}
+	result, err := handler(vm)
 	if err != nil {
 		return err
 	}
-
-	ptr, ok := ptrVal.(PointerValue)
-	if !ok {
-		return fmt.Errorf("free requires a pointer, got %s", ptrVal.Type())
-	}
-
-	if ptr.Address < heapBase+headerSize {
-		return fmt.Errorf("invalid heap pointer: %d", ptr.Address)
-	}
-
-	return vm.heap.Free(ptr.Address)
+	vm.Push(result)
+	return nil
 }
 
 // Load reads a value from a heap block at the given byte offset.

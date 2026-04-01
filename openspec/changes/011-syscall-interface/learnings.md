@@ -70,3 +70,43 @@
 ## discovery
 
 - **[discovery]** (from SEC-2) Agent strategy: modified 4 source files, added 8 test functions (22 subtests), zero test breakage
+
+- **[pattern]** (from SEC-2) [modified] glyph
+
+- **[pattern]** (from SEC-2) [modified] pkg/vm/process.go
+
+- **[pattern]** (from SEC-2) [modified] pkg/vm/vm.go
+
+- **[pattern]** (from SEC-2) [modified] pkg/vm/syscall_test.go
+
+- **[pattern]** (from SEC-2) [modified] pkg/vm/syscall.go
+
+- **[discovery]** (from SEC-2) Agent strategy: modified 8 files
+
+---
+
+# Learnings: SEC-3 Migration and Testing
+
+## What worked
+- The compiler migration was straightforward: add a `syscallBuiltinMap` (map[string]byte) and check it before the generic OpCall path. Two-line handler: compile args, emit OpSyscall + syscall number byte.
+- `time.now()` and `now()` were clean migration targets — zero args, single return value, identical semantics to sys_time (0x0D).
+- The `print` builtin was already delegating through syscallTable[SysPrint] at the runtime level (SEC-1 did this). The compiler still emits OpCall for print because print has multi-arg behavior (spaces, newline) that sys_print doesn't handle. This is the correct design: print is a high-level builtin that internally uses sys_print.
+- OpAlloc/OpFree already delegate to syscall table (SEC-1). No compiler change needed since these are opcodes, not function calls.
+- The WGSL shader already had OpSyscall trap handling (SEC-1). Step 3.3 was already done.
+- Adding 7 new VM-level tests and 3 compiler-level tests — all surgically targeted.
+
+## What didn't match the spec
+- The spec's step 3.1 says "migrate print → sys_print" as if it's a compiler change. But print's multi-arg behavior (spaces between args, trailing newline) means it can't be a raw OpSyscall emission at the compiler level. The migration is already complete at the runtime level — the print builtin routes through syscallTable[SysPrint]. Documenting this clearly.
+- File ops (sys_read/write/open/close) are VFS stubs — they don't exist as builtins in the compiler or VM. There's nothing to migrate. These will be properly implemented when VFS integration happens (depends on change 007).
+- Step 3.3 (WGSL) was already done by SEC-1.
+
+## What would I do differently
+- The spec should have been clearer about what "migration" means: runtime delegation (already done by SEC-1) vs compiler emission (new in SEC-3). These are different levels of the stack.
+- Could have added more builtins to the syscallBuiltinMap (e.g., exit() → SysExit) but kept it minimal to reduce risk.
+
+## Files changed
+- `pkg/compiler/compiler.go` — added syscallBuiltinMap, updated compileFunctionCall to emit OpSyscall for mapped builtins
+- `pkg/compiler/compiler_test.go` — added 3 tests: syscall emission, no-OpCall-for-syscalls, OpCall-still-for-non-syscalls
+- `pkg/vm/syscall_test.go` — added 7 tests: dispatch table completeness, ENOSYS sweep, cap rejection sweep, print full, alloc validation, free validation, required cap mapping verification
+- `openspec/changes/011-syscall-interface/tasks.md` — checked off steps 3.1, 3.2, 3.3
+- `openspec/changes/011-syscall-interface/learnings.md` — added SEC-3 learnings

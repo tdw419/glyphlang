@@ -34,6 +34,7 @@ const MAX_STEPS: u32 = 100000u;
 const CONST_INT: u32   = 1u;
 const CONST_FLOAT: u32 = 2u;
 const OP_TELEMETRY: u32 = 0xC2u;
+const OP_SYSCALL: u32 = 0xDDu;
 
 fn read_byte(offset: u32) -> u32 {
     let word = bytecode[offset / 4u];
@@ -106,6 +107,14 @@ fn exec_step(vm_id: u32) {
             }
         }
         case OP_TELEMETRY: { /* telemetry: no-op for now */ }
+        case OP_SYSCALL: {
+            // Syscalls require host runtime support — trap on GPU.
+            // Read and skip the syscall number byte so pc stays consistent.
+            let _nr = read_byte(pc + 1u);
+            next_pc = pc + 2u;
+            vm_states[vm_id].error = 3u; // 3 = syscall trap
+            vm_states[vm_id].halted = 1u;
+        }
         case 0xFFu: { vm_states[vm_id].halted = 1u; }
         default: { vm_states[vm_id].halted = 1u; }
     }

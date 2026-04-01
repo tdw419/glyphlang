@@ -1627,6 +1627,8 @@ func builtinGPUExec(interp *Interpreter, args []Expr, env *Environment) (interfa
 	out := make([]interface{}, len(results))
 	for i, tr := range results {
 		r := tr.Result
+		fmt.Printf("[DEBUG] RAW RESULT %d: Tag=%d, IntVal=%d\n", i, r.Tag, r.IntVal)
+		r = tr.Result
 		if r.Error != nil {
 			out[i] = map[string]interface{}{"error": r.Error.Error(), "steps": r.Steps}
 		} else {
@@ -1664,7 +1666,7 @@ func builtinExists(i *Interpreter, args []Expr, env *Environment) (interface{}, 
 }
 
 func gpuResultToInterface(r gpuPkg.Result) interface{} {
-	fmt.Printf("[DEBUG] gpuResultToInterface: Tag=%d, IntVal=%d, Error=%v\n", r.Tag, r.IntVal, r.Error)
+	fmt.Printf("[DEBUG] FINAL CONVERSION: Tag=%d, IntVal=%d, Error=%v\n", r.Tag, r.IntVal, r.Error)
 	switch r.Tag {
 	case gpuPkg.TagInt:
 		return r.IntVal

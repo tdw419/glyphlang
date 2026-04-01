@@ -11,6 +11,6 @@
 - [x] 2.3 Implement capability inheritance: when `sys_spawn` is called, the child process's capabilities default to a subset of the parent's. The parent can explicitly restrict capabilities via a spawn flag.
 
 ## 3. Migration and testing
-- [ ] 3.1 Migrate existing ad-hoc builtins one by one: print → sys_print, file ops → sys_read/write/open/close, alloc → sys_alloc. Ensure each migration preserves existing behavior (all 54 passing test packages remain green).
-- [ ] 3.2 Add a comprehensive syscall test suite: test each syscall number, test capability rejection, test ENOSYS for unregistered numbers, test that the Go compiler produces correct bytecode for syscall-encoded builtins.
-- [ ] 3.3 Update the WGSL shader (vm.wgsl) to recognize `OpSyscall` if GPU-side execution needs to handle syscalls. For now, GPU execution can trap on syscalls since they require host runtime support.
+- [x] 3.1 Migrate existing ad-hoc builtins one by one: print → sys_print, file ops → sys_read/write/open/close, alloc → sys_alloc. Ensure each migration preserves existing behavior (all 54 passing test packages remain green).
+- [x] 3.2 Add a comprehensive syscall test suite: test each syscall number, test capability rejection, test ENOSYS for unregistered numbers, test that the Go compiler produces correct bytecode for syscall-encoded builtins.
+- [x] 3.3 Update the WGSL shader (vm.wgsl) to recognize `OpSyscall` if GPU-side execution needs to handle syscalls. For now, GPU execution can trap on syscalls since they require host runtime support.

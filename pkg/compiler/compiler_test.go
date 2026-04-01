@@ -4360,3 +4360,102 @@ func TestCompileForInKeyValueBytecode(t *testing.T) {
 		t.Errorf("E2E result: expected %v, got %v", expected, result)
 	}
 }
+
+// --- SEC-3: Compiler syscall emission tests ---
+
+// TestCompilerSyscallEmission verifies that the compiler emits OpSyscall
+// for builtins that have a syscall mapping, instead of OpCall.
+func TestCompilerSyscallEmission(t *testing.T) {
+	tests := []struct {
+		name         string
+		fnName       string
+		args         []ast.Expr
+		wantSyscall  byte
+	}{
+		{
+			name:        "time.now_emits_sys_time",
+			fnName:      "time.now",
+			args:        nil,
+			wantSyscall: vm.SysTime,
+		},
+		{
+			name:        "now_emits_sys_time",
+			fnName:      "now",
+			args:        nil,
+			wantSyscall: vm.SysTime,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewCompiler()
+
+			expr := &ast.FunctionCallExpr{
+				Name: tt.fnName,
+				Args: tt.args,
+			}
+			err := c.compileExpression(expr)
+			if err != nil {
+				t.Fatalf("compileExpression error: %v", err)
+			}
+
+			// The compiled code should contain [OpSyscall, wantSyscall]
+			code := c.code
+			found := false
+			for i := 0; i < len(code)-1; i++ {
+				if code[i] == byte(vm.OpSyscall) && code[i+1] == tt.wantSyscall {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected bytecode to contain [OpSyscall, 0x%02x], got: %v", tt.wantSyscall, code)
+			}
+		})
+	}
+}
+
+// TestCompilerSyscallEmissionDoesNotUseOpCall verifies that syscall-mapped
+// builtins do NOT emit OpCall — they should use OpSyscall instead.
+func TestCompilerSyscallEmissionDoesNotUseOpCall(t *testing.T) {
+	c := NewCompiler()
+	expr := &ast.FunctionCallExpr{
+		Name: "time.now",
+		Args: nil,
+	}
+	err := c.compileExpression(expr)
+	if err != nil {
+		t.Fatalf("compileExpression error: %v", err)
+	}
+
+	for _, b := range c.code {
+		if b == byte(vm.OpCall) {
+			t.Error("time.now should emit OpSyscall, not OpCall")
+		}
+	}
+}
+
+// TestCompilerNonSyscallBuiltinStillUsesOpCall verifies that builtins
+// without a syscall mapping still use OpCall.
+func TestCompilerNonSyscallBuiltinStillUsesOpCall(t *testing.T) {
+	c := NewCompiler()
+	expr := &ast.FunctionCallExpr{
+		Name: "length",
+		Args: []ast.Expr{&ast.LiteralExpr{Value: ast.StringLiteral{Value: "hello"}}},
+	}
+	err := c.compileExpression(expr)
+	if err != nil {
+		t.Fatalf("compileExpression error: %v", err)
+	}
+
+	found := false
+	for _, b := range c.code {
+		if b == byte(vm.OpCall) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("length() should still emit OpCall (not syscall-mapped)")
+	}
+}

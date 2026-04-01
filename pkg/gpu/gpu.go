@@ -216,6 +216,22 @@ func parseBytecodeLayout(bytecode []byte) (*Config, error) {
 		}
 	}
 
+	// Read string pool count (4 bytes, little-endian)
+	if offset+4 > len(bytecode) {
+		return nil, fmt.Errorf("missing string pool count")
+	}
+	strPoolCount := binary.LittleEndian.Uint32(bytecode[offset:])
+	offset += 4
+
+	// Skip string pool entries
+	for i := uint32(0); i < strPoolCount; i++ {
+		if offset+4 > len(bytecode) {
+			return nil, fmt.Errorf("truncated string pool entry at index %d", i)
+		}
+		strLen := int(binary.LittleEndian.Uint32(bytecode[offset:]))
+		offset += 4 + strLen
+	}
+
 	// Read instruction count (4 bytes, little-endian)
 	if offset+4 > len(bytecode) {
 		return nil, fmt.Errorf("missing instruction count")
@@ -305,26 +321,29 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 	copy(vars, initialVars)
 
 	var spawns []CpuSpawnRequest
-	base := int(config.CodeOffset)
+	// Initialize PC to code start if it's 0 (root VM)
+	if state.PC == 0 {
+		state.PC = config.CodeOffset
+	}
 
 	for state.Halted == 0 && state.Steps < MaxSteps {
 		pc := int(state.PC)
-		if base+pc >= len(bytecode) {
+		if pc >= len(bytecode) {
 			state.Halted = 1
 			break
 		}
 
-		op := bytecode[base+pc]
+		op := bytecode[pc]
 		nextPC := uint32(pc + 1)
 
 		switch op {
 		case 0x01: // OP_PUSH
-			if base+pc+5 > len(bytecode) {
+			if pc+5 > len(bytecode) {
 				state.Error = ErrStackOverflow
 				state.Halted = 1
 				break
 			}
-			constIdx := binary.LittleEndian.Uint32(bytecode[base+pc+1:])
+			constIdx := binary.LittleEndian.Uint32(bytecode[pc+1:])
 			nextPC = uint32(pc + 5)
 			val := loadConstant(bytecode, config, constIdx)
 			if state.SP >= MaxStack {
@@ -452,12 +471,12 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 			state.SP++
 
 		case 0x40: // OP_LOAD_VAR
-			if base+pc+5 > len(bytecode) {
+			if pc+5 > len(bytecode) {
 				state.Error = ErrStackOverflow
 				state.Halted = 1
 				break
 			}
-			varIdx := binary.LittleEndian.Uint32(bytecode[base+pc+1:])
+			varIdx := binary.LittleEndian.Uint32(bytecode[pc+1:])
 			nextPC = uint32(pc + 5)
 			if varIdx >= MaxVars {
 				state.Error = ErrMutatorOOB
@@ -473,12 +492,12 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 			state.SP++
 
 		case 0x41: // OP_STORE_VAR
-			if base+pc+5 > len(bytecode) {
+			if pc+5 > len(bytecode) {
 				state.Error = ErrStackOverflow
 				state.Halted = 1
 				break
 			}
-			varIdx := binary.LittleEndian.Uint32(bytecode[base+pc+1:])
+			varIdx := binary.LittleEndian.Uint32(bytecode[pc+1:])
 			nextPC = uint32(pc + 5)
 			if state.SP == 0 {
 				state.Error = ErrStackUnderflow
@@ -494,21 +513,21 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 			vars[varIdx] = stack[state.SP]
 
 		case 0x50: // OP_JUMP
-			if base+pc+5 > len(bytecode) {
+			if pc+5 > len(bytecode) {
 				state.Error = ErrStackOverflow
 				state.Halted = 1
 				break
 			}
-			target := binary.LittleEndian.Uint32(bytecode[base+pc+1:])
+			target := binary.LittleEndian.Uint32(bytecode[pc+1:])
 			nextPC = target
 
 		case 0x51: // OP_JUMP_IF_FALSE
-			if base+pc+5 > len(bytecode) {
+			if pc+5 > len(bytecode) {
 				state.Error = ErrStackOverflow
 				state.Halted = 1
 				break
 			}
-			target := binary.LittleEndian.Uint32(bytecode[base+pc+1:])
+			target := binary.LittleEndian.Uint32(bytecode[pc+1:])
 			if state.SP == 0 {
 				state.Error = ErrStackUnderflow
 				state.Halted = 1
@@ -546,14 +565,16 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 			childVars := make([]GpuValue, MaxVars)
 			copy(childVars, vars)
 
+			// Child result: push 0 onto child stack
+			childStackWithResult := append(childStack, GpuValue{TagInt, 0})
 			spawns = append(spawns, CpuSpawnRequest{
 				Offset: offset,
 				PC:     state.PC,
-				Stack:  childStack,
+				Stack:  childStackWithResult,
 				Vars:   childVars,
 			})
-			// Push child index (stub) back to parent
-			stack[state.SP] = GpuValue{TagInt, int32(len(spawns) - 1)}
+			// Push child ID (1-indexed) back to parent
+			stack[state.SP] = GpuValue{TagInt, int32(len(spawns))}
 			state.SP++
 
 		case 0xFF: // OP_HALT
@@ -574,6 +595,7 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 		state.Steps++
 	}
 
+	fmt.Printf("[DEBUG] runOneVM vmID=%d: Halted=%d, PC=%d, SP=%d, Tag=%d, Data=%d\n", vmID, state.Halted, state.PC, state.SP, state.ResultTag, state.ResultData)
 	return stateToResult(&state), spawns
 }
 

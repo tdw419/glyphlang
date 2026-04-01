@@ -2444,10 +2444,19 @@ func (vm *VM) registerBuiltins() {
 		return StringValue{Val: string(runes[start.Val:end.Val])}, nil
 	}
 
-	// print(val...) - print values to stdout
+	// print(val...) - print values to stdout.
+	// Routes through sys_print (syscall table) for each argument.
 	vm.builtins["print"] = func(args []Value) (Value, error) {
+		handler := syscallTable[SysPrint]
+		if handler == nil {
+			return nil, fmt.Errorf("sys_print not registered")
+		}
 		for i, arg := range args {
-			fmt.Printf("%v", valueToInterface(arg))
+			vm.Push(arg)
+			_, err := handler(vm)
+			if err != nil {
+				return nil, err
+			}
 			if i < len(args)-1 {
 				fmt.Print(" ")
 			}
