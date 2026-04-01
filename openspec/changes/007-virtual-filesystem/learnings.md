@@ -40,3 +40,7 @@
 - **[pattern]** (from SEC-2) [modified] bootstrap/compiler.glyph
 
 - **[discovery]** (from SEC-2) Agent strategy: modified 1 file
+
+- **[pattern]** (from SEC-3) [modified] glyph
+
+- **[discovery]** (from SEC-3) Agent strategy: modified 1 file

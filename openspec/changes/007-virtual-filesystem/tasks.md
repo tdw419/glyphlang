@@ -11,6 +11,6 @@
 - [x] 2.3 Wire read/write through the mount backend dispatch so operations go to the correct backend based on the file's mount point.
 
 ## 3. Mount point backends
-- [ ] 3.1 Implement the memory buffer backend: files stored as byte slices in a map. Used for `/tmp` and test fixtures. Zero persistence overhead.
-- [ ] 3.2 Implement the real filesystem backend: translate VFS paths to host OS paths within a chroot-like base directory. Read/write delegate to host OS syscalls.
-- [ ] 3.3 Implement the database backend: serialize file data to a key-value store table keyed by inode number. Support lazy loading of file contents.
+- [x] 3.1 Implement the memory buffer backend: files stored as byte slices in a map. Used for `/tmp` and test fixtures. Zero persistence overhead.
+- [x] 3.2 Implement the real filesystem backend: translate VFS paths to host OS paths within a chroot-like base directory. Read/write delegate to host OS syscalls.
+- [x] 3.3 Implement the database backend: serialize file data to a key-value store table keyed by inode number. Support lazy loading of file contents.
