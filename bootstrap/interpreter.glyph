@@ -951,37 +951,37 @@ import "./parser"
       $ i = i + 1
     }
 
+    # Try user-defined function FIRST (env lookup), then builtins.
+    # This ensures self-interpreted functions override host builtins,
+    # enabling the self-hosting double-eval path.
+    $ fr = env_get(env, expr.func_name)
+    if fr.error == "" {
+      $ fn = fr.value
+      if typeOf(fn) == "object" && fn.kind == "func_def" {
+        $ fn_env = env_new_child(fn.closure)
+        $ pi = 0
+        while pi < length(fn.params) {
+          $ pname = fn.params[pi].name
+          $ pval = null
+          if pi < length(arg_vals) { pval = arg_vals[pi] }
+          env_set(fn_env, pname, pval)
+          $ pi = pi + 1
+        }
+
+        $ bi = 0
+        while bi < length(fn.body) {
+          $ sr = exec_stmt(fn.body[bi], fn_env)
+          if sr.error != "" { > { value: null, error: sr.error } }
+          if sr.signal == "return" { > { value: sr.value, error: "" } }
+          $ bi = bi + 1
+        }
+        > { value: null, error: "" }
+      }
+    }
+
     $ br = call_builtin(expr.func_name, arg_vals)
     if br.error == "" { > br }
-    if br.error != "not_builtin:" + expr.func_name { > br }
-
-    $ fr = env_get(env, expr.func_name)
-    if fr.error != "" {
-      > { value: null, error: "undefined function: " + expr.func_name }
-    }
-    $ fn = fr.value
-    if typeOf(fn) != "object" || fn.kind != "func_def" {
-      > { value: null, error: expr.func_name + " is not a function" }
-    }
-
-    $ fn_env = env_new_child(fn.closure)
-    $ pi = 0
-    while pi < length(fn.params) {
-      $ pname = fn.params[pi].name
-      $ pval = null
-      if pi < length(arg_vals) { pval = arg_vals[pi] }
-      env_set(fn_env, pname, pval)
-      $ pi = pi + 1
-    }
-
-    $ bi = 0
-    while bi < length(fn.body) {
-      $ sr = exec_stmt(fn.body[bi], fn_env)
-      if sr.error != "" { > { value: null, error: sr.error } }
-      if sr.signal == "return" { > { value: sr.value, error: "" } }
-      $ bi = bi + 1
-    }
-    > { value: null, error: "" }
+    > br
   }
 
   # Method call: obj.method(args) — evaluates callee, then calls the result
@@ -1299,7 +1299,6 @@ import "./parser"
       if has_key(visited, resolved_path) {
         > { value: null, error: "circular import detected: " + resolved_path }
       }
-      $ visited[resolved_path] = true
       $ src = readFile(resolved_path)
       if length(src) == 0 {
         > { value: null, error: "import not found: " + resolved_path }
@@ -1309,7 +1308,22 @@ import "./parser"
       if ipr.error != "" {
         > { value: null, error: "import parse error (" + resolved_path + "): " + ipr.error }
       }
-      $ imr = exec_module(ipr.mod, env, new_base, visited)
+      # Build child visited: current ancestors + this file. Detects true
+      # cycles but allows diamond imports (same file imported from
+      # different branches of the import tree).
+      $ child_visited = {}
+      $ vk = keys(visited)
+      $ vi = 0
+      while vi < length(vk) {
+        $ cv = child_visited
+        $ cv[vk[vi]] = true
+        $ child_visited = cv
+        $ vi = vi + 1
+      }
+      $ cv = child_visited
+      $ cv[resolved_path] = true
+      $ child_visited = cv
+      $ imr = exec_module(ipr.mod, env, new_base, child_visited)
       if imr.error != "" { > imr }
     }
 
@@ -1320,7 +1334,6 @@ import "./parser"
       if has_key(visited, resolved_path) {
         > { value: null, error: "circular import detected: " + resolved_path }
       }
-      $ visited[resolved_path] = true
       $ src = readFile(resolved_path)
       if length(src) == 0 {
         > { value: null, error: "import not found: " + resolved_path }
@@ -1330,7 +1343,19 @@ import "./parser"
       if ipr.error != "" {
         > { value: null, error: "import parse error (" + resolved_path + "): " + ipr.error }
       }
-      $ imr = exec_module(ipr.mod, env, new_base, visited)
+      $ child_visited = {}
+      $ vk2 = keys(visited)
+      $ vi2 = 0
+      while vi2 < length(vk2) {
+        $ cv2 = child_visited
+        $ cv2[vk2[vi2]] = true
+        $ child_visited = cv2
+        $ vi2 = vi2 + 1
+      }
+      $ cv2 = child_visited
+      $ cv2[resolved_path] = true
+      $ child_visited = cv2
+      $ imr = exec_module(ipr.mod, env, new_base, child_visited)
       if imr.error != "" { > imr }
     }
 
@@ -1392,11 +1417,11 @@ import "./parser"
 ! eval_source(src: str, env: any, base_path: any) -> EvalResult {
   if env == null {
     $ env = env_new()
-    # Propagate eval_source into child env for meta-circular support.
-    # This allows programs executed by eval_source to call eval_source
-    # themselves, enabling the interpreter to interpret itself.
-    $ self_ref = eval_source
-    env_set(env, "eval_source", self_ref)
+    # Meta-circular support: programs executed by eval_source can call
+    # eval_source themselves via call_builtin dispatch (line ~841).
+    # No need to propagate through env_set — Go runtime can't store
+    # ast.Function values in dicts. The call_builtin handler catches
+    # eval_source calls and delegates here directly.
   }
   if base_path == null { $ base_path = "./" }
   $ p = parser.new_parser(src)
@@ -2610,6 +2635,43 @@ import "./parser"
     } else {
       print("  FAIL: expected circular import error but got none")
       $ failed = failed + 1
+    }
+  }
+
+  # ── Test 231: Self-hosting — parse + exec interpreter.glyph itself ──
+  print("")
+  print("TEST: self-hosting — parse interpreter.glyph source")
+  $ sh_src = readFile("bootstrap/interpreter.glyph")
+  if length(sh_src) == 0 {
+    print("  FAIL: could not read bootstrap/interpreter.glyph")
+    $ failed = failed + 1
+  } else {
+    print("  Step 1: read " + toString(length(sh_src)) + " chars")
+    $ sh_p = parser.new_parser(sh_src)
+    $ sh_pr = parser.parse(sh_p)
+    if sh_pr.error != "" {
+      print("  FAIL: parse error — " + sh_pr.error)
+      $ failed = failed + 1
+    } else {
+      $ sh_nitems = length(sh_pr.mod.items)
+      print("  Step 2: parsed into " + toString(sh_nitems) + " items")
+      # Use eval_source which internally creates env + propagates itself
+      # Pass null env so it creates a fresh one
+      $ sh_r = eval_source(sh_src, null, "bootstrap/")
+      if sh_r.error != "" {
+        print("  FAIL: eval_source on self — " + sh_r.error)
+        $ failed = failed + 1
+      } else {
+        print("  Step 3: eval_source on self succeeded")
+        # eval_source parsed + executed all functions into an env.
+        # The self-interpreted functions (eval_expr, exec_stmt, etc.)
+        # are now available in that env. eval_source returns the
+        # "result" binding which is set by the @ command run block.
+        # Since interpreter.glyph has no top-level $ result, this returns null.
+        print("  Step 4: self-interpreted value = " + toString(sh_r.value))
+        print("  PASS: SELF-HOSTING PARSE+EXEC MILESTONE")
+        $ passed = passed + 1
+      }
     }
   }
 

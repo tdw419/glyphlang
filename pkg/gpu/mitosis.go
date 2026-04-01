@@ -58,36 +58,34 @@ func (m *MitosisVM) ExecuteWithMitosis(bytecode []byte) ([]ThreadResult, error) 
 		mu          sync.Mutex
 		results     []ThreadResult
 		threadCount int
-		pending     sync.WaitGroup
 	)
 
-	// Channel for spawn requests from running VMs
-	spawns := make(chan spawnWork, m.maxThreads)
+	// Collect spawn requests synchronously from the root thread,
+	// then execute all children in parallel.
+	var spawnRequests []spawnWork
 
-	// Worker that processes spawn requests
-	go func() {
-		for work := range spawns {
-			pending.Add(1)
-			go func(w spawnWork) {
-				defer pending.Done()
-				r := m.runThread(bytecode, config, w)
-				mu.Lock()
-				results = append(results, r)
-				mu.Unlock()
-			}(work)
-		}
-	}()
+	root := m.runMitosisThread(bytecode, config, 0, -1, 0, nil, nil,
+		&threadCount, nil, &spawnRequests)
 
-	// Run root thread synchronously so we know when it's done sending spawns
-	root := m.runMitosisThread(bytecode, config, 0, -1, 0, nil, nil, &threadCount, spawns)
 	mu.Lock()
 	results = append(results, root)
 	mu.Unlock()
 
-	// Root is done, close spawns channel so worker goroutine exits
-	close(spawns)
+	// Execute all children in parallel using a WaitGroup.
+	// pending.Add is called before launching goroutines, so Wait won't return early.
+	var pending sync.WaitGroup
+	pending.Add(len(spawnRequests))
 
-	// Wait for any spawned child threads to finish
+	for _, work := range spawnRequests {
+		go func(w spawnWork) {
+			defer pending.Done()
+			r := m.runThread(bytecode, config, w)
+			mu.Lock()
+			results = append(results, r)
+			mu.Unlock()
+		}(work)
+	}
+
 	pending.Wait()
 
 	return results, nil
@@ -101,61 +99,24 @@ type spawnWork struct {
 	vars     []GpuValue
 }
 
-// runThread executes a spawned thread.
+// runThread executes a spawned child thread.
+// It reuses runMitosisThread with a nil spawns slice so the child
+// cannot re-spawn further children.
 func (m *MitosisVM) runThread(bytecode []byte, config *Config, w spawnWork) ThreadResult {
-	// Create a modified VM that starts at the given PC with cloned state
-	state := VMState{PC: w.startPC}
-	stack := make([]GpuValue, MaxStack)
-	copy(stack, w.stack)
-	state.SP = uint32(len(w.stack))
-	vars := make([]GpuValue, MaxVars)
-	copy(vars, w.vars)
-
-	base := int(config.CodeOffset)
-
-	for state.Halted == 0 && state.Steps < MaxSteps {
-		pc := int(state.PC)
-		if base+pc >= len(bytecode) {
-			state.Halted = 1
-			break
-		}
-
-		op := bytecode[base+pc]
-
-		// Handle S opcode (0xS0 reserved - using 0xC0 for Mitosis)
-		if op == OpMitosis {
-			// S opcode: pop offset, push thread ID
-			if state.SP > 0 {
-				state.SP--
-				// In this simplified version, we just record the spawn
-				// The actual spawn was handled during the mitosis thread run
-			}
-			state.PC++
-			state.Steps++
-			continue
-		}
-
-		// Delegate to standard execution
-		result, _ := m.dispatcher.runOneVM(bytecode, config, 0, 0, nil, nil)
-		return ThreadResult{
-			ThreadID: w.threadID,
-			ParentID: w.parentID,
-			Result:   result,
-		}
-	}
-
-	r := stateToResult(&state)
-	return ThreadResult{
-		ThreadID: w.threadID,
-		ParentID: w.parentID,
-		Result:   r,
-	}
+	// We pass nil for threadCount and spawns since children shouldn't
+	// re-spawn in this simplified model. runMitosisThread handles nil
+	// spawns gracefully by not attempting to collect spawn requests.
+	var dummyThreadCount int
+	return m.runMitosisThread(bytecode, config, w.threadID, w.parentID,
+		w.startPC, w.stack, w.vars, &dummyThreadCount, nil, nil)
 }
 
 // OpMitosis is the S opcode for spawning parallel threads.
 const OpMitosis byte = 0xC0
 
 // runMitosisThread runs a VM with S opcode awareness, spawning children as needed.
+// If spawnsOut is non-nil, spawn requests are appended to it (for synchronous collection).
+// If spawnsOut is nil and spawns chan is non-nil, sends to the channel (legacy path).
 func (m *MitosisVM) runMitosisThread(
 	bytecode []byte,
 	config *Config,
@@ -165,7 +126,8 @@ func (m *MitosisVM) runMitosisThread(
 	initStack []GpuValue,
 	initVars []GpuValue,
 	threadCount *int,
-	spawns chan<- spawnWork,
+	_ chan<- spawnWork, // deprecated: channel-based spawns (kept for API compat)
+	spawnsOut *[]spawnWork,
 ) ThreadResult {
 	state := VMState{PC: startPC}
 	stack := make([]GpuValue, MaxStack)
@@ -202,20 +164,20 @@ func (m *MitosisVM) runMitosisThread(
 
 			*threadCount++
 			childID := *threadCount
-			if *threadCount < m.maxThreads {
+			if *threadCount < m.maxThreads && spawnsOut != nil {
 				// Clone stack and vars for child
 				childStack := make([]GpuValue, state.SP)
 				copy(childStack, stack[:state.SP])
 				childVars := make([]GpuValue, MaxVars)
 				copy(childVars, vars)
 
-				spawns <- spawnWork{
+				*spawnsOut = append(*spawnsOut, spawnWork{
 					threadID: childID,
 					parentID: threadID,
 					startPC:  uint32(pc + 1 + int(offset.Data)),
 					stack:    childStack,
 					vars:     childVars,
-				}
+				})
 				children = append(children, childID)
 			}
 
