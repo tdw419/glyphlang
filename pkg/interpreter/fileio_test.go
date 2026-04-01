@@ -430,3 +430,56 @@ func TestReadFile_WriteThenReadFromGlyphSource(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, content, result)
 }
+
+// ─── SEC-2: Import path resolution and module loading ────────────────
+
+// TestImport_ModuleResolution verifies the full import pipeline:
+// main.glyph imports "./helper", calls helper.add(1, 2), result is 3.
+// This exercises: parse import statement → resolve path → readFile →
+// parse imported source → execute in module scope → bind exports as
+// namespace → call namespace.method().
+func TestImport_ModuleResolution(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create helper.glyph with an exported add function
+	helperSrc := `! add(a: int, b: int) -> int {
+  > a + b
+}`
+	helperFile := filepath.Join(tmpDir, "helper.glyph")
+	require.NoError(t, os.WriteFile(helperFile, []byte(helperSrc), 0644))
+
+	// Create main.glyph that imports helper and defines a run function
+	mainSrc := `import "./helper"
+! run() -> int {
+  > helper.add(1, 2)
+}`
+	mainFile := filepath.Join(tmpDir, "main.glyph")
+	require.NoError(t, os.WriteFile(mainFile, []byte(mainSrc), 0644))
+
+	// Parse main.glyph
+	mainMod := parseGlyph(t, mainSrc)
+
+	// Set up interpreter with ParseFunc wired to the parser
+	interp := NewInterpreter()
+	interp.moduleResolver.ParseFunc = func(source string) (*Module, error) {
+		lex := parser.NewLexer(source)
+		tokens, err := lex.Tokenize()
+		if err != nil {
+			return nil, err
+		}
+		p := parser.NewParser(tokens)
+		return p.Parse()
+	}
+
+	// Load main module with the temp dir as base path for imports
+	require.NoError(t, interp.LoadModuleWithPath(*mainMod, tmpDir))
+
+	// Call the run function and verify result
+	env := interp.globalEnv
+	result, err := interp.EvaluateExpression(FunctionCallExpr{
+		Name: "run",
+		Args: []Expr{},
+	}, env)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), result, "helper.add(1, 2) should return 3")
+}

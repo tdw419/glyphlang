@@ -9,5 +9,5 @@
 - [x] 2.2 If VM does not handle hasKey=1 correctly, fix ITER_NEXT handler to push both values when flag is set
 
 ## 3. End-to-end integration test
-- [ ] 3.1 Create `test_for_in_key_value.glyph` that iterates `for k, v in [10, 20, 30]`, collects results, and asserts k=0,v=10 through k=2,v=30
-- [ ] 3.2 Run the test through full pipeline (parse -> compile -> vm_exec) and verify pass
+- [x] 3.1 Create `test_for_in_key_value.glyph` that iterates `for k, v in [10, 20, 30]`, collects results, and asserts k=0,v=10 through k=2,v=30
+- [x] 3.2 Run the test through full pipeline (parse -> compile -> vm_exec) and verify pass

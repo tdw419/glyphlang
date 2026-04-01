@@ -1,8 +1,8 @@
 # Tasks: Bootstrap Module Imports
 
 ## 1. Add readFile builtin to bootstrap interpreter
-- [ ] 1.1 Implement `readFile(path)` as a builtin function accessible from .glyph code, returning the file contents as a string value
-- [ ] 1.2 Test: call `readFile("test.glyph")` from a .glyph program and verify it returns the file contents
+- [x] 1.1 Implement `readFile(path)` as a builtin function accessible from .glyph code, returning the file contents as a string value
+- [x] 1.2 Test: call `readFile("test.glyph")` from a .glyph program and verify it returns the file contents
 
 ## 2. Implement import path resolution and module loading
 - [ ] 2.1 When interpreter encounters `import "./parser"`, resolve to `./parser.glyph` relative to current file directory, call readFile, parse source, execute in a new module scope, and bind exported `!` functions to the module namespace
