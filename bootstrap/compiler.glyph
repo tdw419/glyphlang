@@ -326,10 +326,12 @@ const OP_HALT          = 255
 ! patch_jump(c: Compiler, pos: int) {
   $ target = length(c.instructions)
   $ b = intToBytes4(target)
-  $ c.instructions[pos] = b[0]
-  $ c.instructions[pos + 1] = b[1]
-  $ c.instructions[pos + 2] = b[2]
-  $ c.instructions[pos + 3] = b[3]
+  $ insts = c.instructions
+  $ insts[pos] = b[0]
+  $ insts[pos + 1] = b[1]
+  $ insts[pos + 2] = b[2]
+  $ insts[pos + 3] = b[3]
+  $ c.instructions = insts
 }
 
 ! add_constant(c: Compiler, val: any) -> int {
@@ -529,10 +531,12 @@ const OP_HALT          = 255
     $ loop_jump = emit_jump(c, OP_JUMP)
     # target is relative to instructions start, will be offset in compile()
     $ b = intToBytes4(start_pos)
-    $ c.instructions[loop_jump] = b[0]
-    $ c.instructions[loop_jump + 1] = b[1]
-    $ c.instructions[loop_jump + 2] = b[2]
-    $ c.instructions[loop_jump + 3] = b[3]
+    $ insts2 = c.instructions
+    $ insts2[loop_jump] = b[0]
+    $ insts2[loop_jump + 1] = b[1]
+    $ insts2[loop_jump + 2] = b[2]
+    $ insts2[loop_jump + 3] = b[3]
+    $ c.instructions = insts2
 
     patch_jump(c, jump_false_pos)
     
@@ -689,10 +693,12 @@ const OP_HALT          = 255
 
     # 12. Jump back to loop start
     $ loop_jump = emit_jump(c, OP_JUMP)
-    # target is relative to instructions start, will be offset in compile()
-    $ b = intToBytes4(loop_start)
-    $ c.instructions[loop_jump] = b[0]
-    $ c.instructions[loop_jump + 1] = b[1]
+    $ insts3 = c.instructions
+    $ insts3[loop_jump] = b[0]
+    $ insts3[loop_jump + 1] = b[1]
+    $ insts3[loop_jump + 2] = b[2]
+    $ insts3[loop_jump + 3] = b[3]
+    $ c.instructions = insts3
     $ c.instructions[loop_jump + 2] = b[2]
     $ c.instructions[loop_jump + 3] = b[3]
 
