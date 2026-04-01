@@ -10,5 +10,5 @@ labels:
 - vm
 - compiler
 priority: high
-status: in_progress
+status: completed
 title: Verify and test for-in with key,value pairs end-to-end

@@ -2138,3 +2138,127 @@ func TestIntToString(t *testing.T) {
 		})
 	}
 }
+
+// TestIterNextHasKeyE2E verifies that ITER_NEXT with hasKey=1 works correctly
+// in a full bytecode execution loop. It tests that:
+//  1. The VM pushes both key (index) and value onto the stack in correct order
+//     (key first, then value on top)
+//  2. OpStoreVar correctly assigns both key and value to named variables
+//  3. The accumulated result across iterations is correct
+//
+// The test program computes: result += k + v for each element in [10, 20, 30]
+// Expected: (0+10) + (1+20) + (2+30) = 63
+func TestIterNextHasKeyE2E(t *testing.T) {
+	// Constants layout:
+	//   0: IntValue(0)    - initial result value
+	//   1: IntValue(10)   - array element
+	//   2: IntValue(20)   - array element
+	//   3: IntValue(30)   - array element
+	//   4: StringValue("result")
+	//   5: StringValue("k")
+	//   6: StringValue("v")
+	//   7: StringValue("__iter_0")
+	constants := []Value{
+		IntValue{Val: 0},
+		IntValue{Val: 10},
+		IntValue{Val: 20},
+		IntValue{Val: 30},
+		StringValue{Val: "result"},
+		StringValue{Val: "k"},
+		StringValue{Val: "v"},
+		StringValue{Val: "__iter_0"},
+	}
+
+	bytecode := createBytecodeHeader(constants)
+	headerEnd := len(bytecode) // PC after header = start of instructions
+
+	// Helper to compute absolute PC from instruction offset
+	absPC := func(instrOffset int) uint32 {
+		return uint32(headerEnd + instrOffset)
+	}
+
+	op0 := uint32(0)
+	op1 := uint32(1)
+	op2 := uint32(2)
+	op3 := uint32(3)
+	op4 := uint32(4)
+	op5 := uint32(5)
+	op6 := uint32(6)
+	op7 := uint32(7)
+	op3elem := uint32(3)
+	hasKeyFlag := uint32(1)
+
+	// result = 0
+	bytecode = addInstruction(bytecode, OpPush, &op0)    // [0] result init
+	bytecode = addInstruction(bytecode, OpStoreVar, &op4) // [5] store result
+
+	// Build array [10, 20, 30]
+	bytecode = addInstruction(bytecode, OpPush, &op1)        // [10] push 10
+	bytecode = addInstruction(bytecode, OpPush, &op2)        // [15] push 20
+	bytecode = addInstruction(bytecode, OpPush, &op3)        // [20] push 30
+	bytecode = addInstruction(bytecode, OpBuildArray, &op3elem) // [25] build array
+
+	// Create iterator and store
+	bytecode = addInstruction(bytecode, OpGetIter, nil)    // [30] getiter - 1 byte
+	bytecode = addInstruction(bytecode, OpStoreVar, &op7)  // [31] store __iter_0
+
+	// Loop start at instruction offset 36
+	loopStart := 36
+
+	// Load iterator and check hasNext
+	bytecode = addInstruction(bytecode, OpLoadVar, &op7)    // [36] load __iter_0
+	bytecode = addInstruction(bytecode, OpIterHasNext, nil)  // [41] iterhasnext - 1 byte
+
+	// Jump to end if exhausted (placeholder, patched later)
+	jumpIfFalsePos := 42
+	bytecode = addInstruction(bytecode, OpJumpIfFalse, &op0) // [42] placeholder
+
+	// Load iterator and get next with hasKey=1
+	bytecode = addInstruction(bytecode, OpLoadVar, &op7)       // [47] load __iter_0
+	bytecode = addInstruction(bytecode, OpIterNext, &hasKeyFlag) // [52] iternext hasKey=1
+
+	// Store value (top of stack) then key (below)
+	bytecode = addInstruction(bytecode, OpStoreVar, &op6) // [57] store v
+	bytecode = addInstruction(bytecode, OpStoreVar, &op5) // [62] store k
+
+	// result = result + k + v
+	bytecode = addInstruction(bytecode, OpLoadVar, &op4) // [67] load result
+	bytecode = addInstruction(bytecode, OpLoadVar, &op5) // [72] load k
+	bytecode = addInstruction(bytecode, OpAdd, nil)      // [77] result + k
+	bytecode = addInstruction(bytecode, OpLoadVar, &op6) // [78] load v
+	bytecode = addInstruction(bytecode, OpAdd, nil)      // [83] + v
+	bytecode = addInstruction(bytecode, OpStoreVar, &op4) // [84] store result
+
+	// Jump back to loop start (OpJump requires a 4-byte operand)
+	bytecode = addInstruction(bytecode, OpJump, &op0) // [89] jump back (placeholder)
+	// Patch the jump target
+	jumpBackTarget := absPC(loopStart)
+	binary.LittleEndian.PutUint32(bytecode[headerEnd+89+1:headerEnd+89+5], jumpBackTarget)
+
+	// End: load and return result
+	endOffset := 94
+	bytecode = addInstruction(bytecode, OpLoadVar, &op4) // [94] load result
+	bytecode = addInstruction(bytecode, OpReturn, nil)   // [99] return
+
+	// Patch JumpIfFalse to jump to end
+	endTarget := absPC(endOffset)
+	binary.LittleEndian.PutUint32(bytecode[headerEnd+jumpIfFalsePos+1:headerEnd+jumpIfFalsePos+5], endTarget)
+
+	// Execute
+	vmInstance := NewVM()
+	result, err := vmInstance.Execute(bytecode)
+	if err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+
+	resultInt, ok := result.(IntValue)
+	if !ok {
+		t.Fatalf("Expected IntValue result, got %T", result)
+	}
+
+	// (0+10) + (1+20) + (2+30) = 63
+	expected := int64(63)
+	if resultInt.Val != expected {
+		t.Errorf("E2E result: expected %d, got %d", expected, resultInt.Val)
+	}
+}
