@@ -1,8 +1,8 @@
 # Tasks: Bootstrap VM Self-Hosting Milestone
 
 ## 1. Verify dynamic eval (nested interpretation)
-- [ ] 1.1 Test that `eval_source("print(1 + 2)")` works when called from within interpreted .glyph code -- the interpreter calls its own eval function recursively
-- [ ] 1.2 Test nested eval: `eval_source("eval_source(\"print(42)\")")` -- two levels of interpretation
+- [x] 1.1 Test that `eval_source("print(1 + 2)")` works when called from within interpreted .glyph code -- the interpreter calls its own eval function recursively
+- [x] 1.2 Test nested eval: `eval_source("eval_source(\"print(42)\")")` -- two levels of interpretation
 
 ## 2. Run interpreter.glyph on a simple test program
 - [ ] 2.1 Ensure interpreter.glyph can `import "./lexer"` and `import "./parser"` via module resolution, then read and execute a simple test program (e.g., `print(2 + 3)`) producing output `5`

@@ -12,5 +12,5 @@ labels:
 - self-hosting
 - milestone
 priority: high
-status: in_progress
+status: completed
 title: 'Self-hosting milestone: interpreter interprets itself'
