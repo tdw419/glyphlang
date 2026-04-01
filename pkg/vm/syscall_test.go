@@ -208,3 +208,191 @@ func TestSyscallGPUStub(t *testing.T) {
 		t.Errorf("expected 'not implemented' for GPU syscall, got: %v", err)
 	}
 }
+
+// --- Capability-based permission tests (SEC-2) ---
+
+// TestCapabilityConstants verifies the capability bit values.
+func TestCapabilityConstants(t *testing.T) {
+	tests := []struct {
+		name string
+		cap  uint16
+		bit  int
+	}{
+		{"CAP_FS", CAP_FS, 0},
+		{"CAP_PROC", CAP_PROC, 1},
+		{"CAP_MEM", CAP_MEM, 2},
+		{"CAP_IPC", CAP_IPC, 3},
+		{"CAP_IO", CAP_IO, 4},
+		{"CAP_TIME", CAP_TIME, 5},
+		{"CAP_GPU", CAP_GPU, 6},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expected := uint16(1) << tt.bit
+			if tt.cap != expected {
+				t.Errorf("%s = 0x%04X, want 0x%04X (bit %d)", tt.name, tt.cap, expected, tt.bit)
+			}
+		})
+	}
+	// Verify CAP_ALL includes all capabilities
+	if CAP_ALL != (CAP_FS | CAP_PROC | CAP_MEM | CAP_IPC | CAP_IO | CAP_TIME | CAP_GPU) {
+		t.Errorf("CAP_ALL = 0x%04X, expected all 7 bits set", CAP_ALL)
+	}
+}
+
+// TestCapabilityDefaults verifies that NewVM grants all capabilities by default.
+func TestCapabilityDefaults(t *testing.T) {
+	vm := NewVM()
+	if vm.Capabilities() != CAP_ALL {
+		t.Errorf("new VM capabilities = 0x%04X, want CAP_ALL 0x%04X", vm.Capabilities(), CAP_ALL)
+	}
+}
+
+// TestSetCapabilities verifies SetCapabilities and Capabilities round-trip.
+func TestSetCapabilities(t *testing.T) {
+	vm := NewVM()
+	vm.SetCapabilities(CAP_FS | CAP_MEM)
+	if got := vm.Capabilities(); got != CAP_FS|CAP_MEM {
+		t.Errorf("Capabilities() = 0x%04X, want 0x%04X", got, CAP_FS|CAP_MEM)
+	}
+}
+
+// TestEPERMRejectedWhenCapMissing tests that syscalls without the required
+// capability are rejected with EPERM.
+func TestEPERMRejectedWhenCapMissing(t *testing.T) {
+	// Test that sys_time requires CAP_TIME
+	vm := NewVM()
+	vm.SetCapabilities(0) // no capabilities
+	code := []byte{byte(OpSyscall), SysTime, byte(OpHalt)}
+	_, err := vm.executeRaw(code)
+	if err == nil {
+		t.Fatal("expected EPERM error, got nil")
+	}
+	if !strings.Contains(err.Error(), "EPERM") {
+		t.Errorf("expected EPERM error, got: %v", err)
+	}
+}
+
+// TestEPERMAllowedWhenCapPresent tests that syscalls succeed when the
+// required capability is present.
+func TestEPERMAllowedWhenCapPresent(t *testing.T) {
+	// sys_time requires CAP_TIME
+	vm := NewVM()
+	vm.SetCapabilities(CAP_TIME)
+	code := []byte{byte(OpSyscall), SysTime, byte(OpHalt)}
+	result, err := vm.executeRaw(code)
+	if err != nil {
+		t.Fatalf("expected success with CAP_TIME, got: %v", err)
+	}
+	if _, ok := result.(IntValue); !ok {
+		t.Errorf("expected IntValue, got %T", result)
+	}
+}
+
+// TestEPERMForEachCapability tests EPERM rejection for each capability group.
+func TestEPERMForEachCapability(t *testing.T) {
+	tests := []struct {
+		name      string
+		syscallNr byte
+		required  uint16
+	}{
+		{"SysRead_requires_CAP_FS", SysRead, CAP_FS},
+		{"SysWrite_requires_CAP_FS", SysWrite, CAP_FS},
+		{"SysOpen_requires_CAP_FS", SysOpen, CAP_FS},
+		{"SysClose_requires_CAP_FS", SysClose, CAP_FS},
+		{"SysSpawn_requires_CAP_PROC", SysSpawn, CAP_PROC},
+		{"SysKill_requires_CAP_PROC", SysKill, CAP_PROC},
+		{"SysWait_requires_CAP_PROC", SysWait, CAP_PROC},
+		{"SysSignal_requires_CAP_PROC", SysSignal, CAP_PROC},
+		{"SysAlloc_requires_CAP_MEM", SysAlloc, CAP_MEM},
+		{"SysFree_requires_CAP_MEM", SysFree, CAP_MEM},
+		{"SysSend_requires_CAP_IPC", SysSend, CAP_IPC},
+		{"SysRecv_requires_CAP_IPC", SysRecv, CAP_IPC},
+		{"SysPrint_requires_CAP_IO", SysPrint, CAP_IO},
+		{"SysTime_requires_CAP_TIME", SysTime, CAP_TIME},
+		{"SysGPUDispatch_requires_CAP_GPU", SysGPUDispatch, CAP_GPU},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vm := NewVM()
+			// Grant all capabilities EXCEPT the required one
+			vm.SetCapabilities(CAP_ALL & ^tt.required)
+			code := []byte{byte(OpSyscall), tt.syscallNr, byte(OpHalt)}
+			_, err := vm.executeRaw(code)
+			if err == nil {
+				t.Errorf("expected EPERM for syscall 0x%02x without cap 0x%04X", tt.syscallNr, tt.required)
+			} else if !strings.Contains(err.Error(), "EPERM") {
+				t.Errorf("expected EPERM, got: %v", err)
+			}
+		})
+	}
+}
+
+// TestSysExitNoCapabilityRequired tests that sys_exit (0x0E) requires no
+// capability — any process may exit.
+func TestSysExitNoCapabilityRequired(t *testing.T) {
+	vm := NewVM()
+	vm.SetCapabilities(0) // no capabilities at all
+	vm.Push(IntValue{Val: 0})
+	code := []byte{byte(OpSyscall), SysExit}
+	_, err := vm.executeRaw(code)
+	if err != nil {
+		t.Fatalf("sys_exit should work without any capability, got: %v", err)
+	}
+	if !vm.halted {
+		t.Error("expected VM to be halted after sys_exit")
+	}
+}
+
+// TestCapabilityInheritanceOnSpawn tests that a spawned child inherits
+// the parent's capabilities.
+func TestCapabilityInheritanceOnSpawn(t *testing.T) {
+	parentVM := NewVM()
+	pt := NewProcessTable()
+	parentVM.processTable = pt
+
+	// Register parent process
+	parentProc := &Process{
+		PID:   1,
+		PPID:  0,
+		State: ProcessRunning,
+		VM:    parentVM,
+		Caps:  CAP_FS | CAP_MEM, // restricted capabilities
+	}
+	pt.Register(parentProc)
+	parentVM.pid = 1
+	parentVM.SetCapabilities(CAP_FS | CAP_MEM)
+
+	// Set up bytecode for parent: OpSpawn then Halt
+	constants := []Value{}
+	bytecode := createBytecodeHeader(constants)
+	bytecode = addInstruction(bytecode, OpSpawn, nil)
+	bytecode = addInstruction(bytecode, OpHalt, nil)
+
+	parentVM.code = bytecode
+	layout, _ := parseBytecodeLayout(bytecode)
+	parentVM.pc = int(layout.CodeOffset)
+
+	// Execute spawn
+	err := parentVM.executeInstruction(OpSpawn)
+	if err != nil {
+		t.Fatalf("OpSpawn error: %v", err)
+	}
+
+	// Get child PID from parent stack
+	childPIDVal, _ := parentVM.Pop()
+	childPID := uint32(childPIDVal.(IntValue).Val)
+
+	// Verify child process exists and inherited capabilities
+	childProc, ok := pt.Get(childPID)
+	if !ok {
+		t.Fatalf("child process %d not found in process table", childPID)
+	}
+
+	if childProc.Caps != CAP_FS|CAP_MEM {
+		t.Errorf("child capabilities = 0x%04X, want 0x%04X (inherited from parent)", childProc.Caps, CAP_FS|CAP_MEM)
+	}
+	if childProc.VM.Capabilities() != CAP_FS|CAP_MEM {
+		t.Errorf("child VM capabilities = 0x%04X, want 0x%04X", childProc.VM.Capabilities(), CAP_FS|CAP_MEM)
+	}
+}

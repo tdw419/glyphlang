@@ -10,5 +10,5 @@ labels:
 - syscalls
 - os-vision
 priority: medium
-status: in_progress
+status: completed
 title: Formal numbered syscall dispatch table with capability permissions

@@ -30,6 +30,20 @@ func (s ProcessState) String() string {
 	}
 }
 
+// Capability bits for syscall permission control.
+const (
+	CAP_FS   uint16 = 1 << iota // bit 0: file operations (syscalls 0x00-0x03)
+	CAP_PROC                    // bit 1: process management (syscalls 0x04-0x07)
+	CAP_MEM                     // bit 2: heap operations (syscalls 0x08-0x09)
+	CAP_IPC                     // bit 3: inter-process communication (syscalls 0x0A-0x0B)
+	CAP_IO                      // bit 4: console I/O (syscall 0x0C)
+	CAP_TIME                    // bit 5: time access (syscall 0x0D)
+	CAP_GPU                     // bit 6: GPU dispatch (syscall 0x0F)
+)
+
+// CAP_ALL is the bitmask with all capabilities set.
+const CAP_ALL uint16 = CAP_FS | CAP_PROC | CAP_MEM | CAP_IPC | CAP_IO | CAP_TIME | CAP_GPU
+
 // Process represents a single VM process with its own execution context.
 type Process struct {
 	PID       uint32       // Process identifier
@@ -38,6 +52,7 @@ type Process struct {
 	ExitCode  int64        // Exit code (valid when State == Zombie)
 	VM        *VM          // The VM instance running this process
 	ChildPIDs []uint32     // List of child process PIDs
+	Caps      uint16       // Capability bitmask controlling allowed syscalls
 }
 
 // ProcessTable is a concurrent-safe map of PID -> Process.

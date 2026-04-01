@@ -34,6 +34,36 @@ const (
 // arguments from the stack and pushing the result.
 type SyscallHandler func(vm *VM) (Value, error)
 
+// syscallRequiredCap maps each syscall number to the capability it requires.
+// SysExit (0x0E) requires no capability — any process may exit.
+var syscallRequiredCap [256]uint16
+
+func init() {
+	// FS: syscalls 0x00-0x03
+	syscallRequiredCap[SysRead] = CAP_FS
+	syscallRequiredCap[SysWrite] = CAP_FS
+	syscallRequiredCap[SysOpen] = CAP_FS
+	syscallRequiredCap[SysClose] = CAP_FS
+	// PROC: syscalls 0x04-0x07
+	syscallRequiredCap[SysSpawn] = CAP_PROC
+	syscallRequiredCap[SysKill] = CAP_PROC
+	syscallRequiredCap[SysWait] = CAP_PROC
+	syscallRequiredCap[SysSignal] = CAP_PROC
+	// MEM: syscalls 0x08-0x09
+	syscallRequiredCap[SysAlloc] = CAP_MEM
+	syscallRequiredCap[SysFree] = CAP_MEM
+	// IPC: syscalls 0x0A-0x0B
+	syscallRequiredCap[SysSend] = CAP_IPC
+	syscallRequiredCap[SysRecv] = CAP_IPC
+	// IO: syscall 0x0C
+	syscallRequiredCap[SysPrint] = CAP_IO
+	// TIME: syscall 0x0D
+	syscallRequiredCap[SysTime] = CAP_TIME
+	// SysExit (0x0E) requires no capability — left as 0
+	// GPU: syscall 0x0F
+	syscallRequiredCap[SysGPUDispatch] = CAP_GPU
+}
+
 // syscallTable is the dispatch table indexed by syscall number.
 // Entries 0x00-0x0F are registered during init. Unregistered entries
 // return ENOSYS.
@@ -133,6 +163,8 @@ func initSyscallTable() {
 // execSyscall reads the next byte as the syscall number, looks up the handler
 // in the dispatch table, and calls it. Unregistered syscalls return ENOSYS.
 // The encoding is: [0xDD, syscall_number] — a 2-byte sequence.
+// Capability checking: if the VM's capability bitmask does not include the
+// required capability for this syscall, the call is rejected with EPERM.
 func (vm *VM) execSyscall() error {
 	if vm.pc >= len(vm.code) {
 		return fmt.Errorf("truncated syscall: missing syscall number at pc=%d", vm.pc)
@@ -140,6 +172,13 @@ func (vm *VM) execSyscall() error {
 
 	syscallNum := vm.code[vm.pc]
 	vm.pc++
+
+	// Capability check: reject if the VM lacks the required capability.
+	if required := syscallRequiredCap[syscallNum]; required != 0 {
+		if vm.capabilities&required == 0 {
+			return fmt.Errorf("EPERM: syscall 0x%02x requires capability 0x%04X, process has 0x%04X", syscallNum, required, vm.capabilities)
+		}
+	}
 
 	handler := syscallTable[syscallNum]
 	if handler == nil {
@@ -152,4 +191,14 @@ func (vm *VM) execSyscall() error {
 	}
 	vm.Push(result)
 	return nil
+}
+
+// SetCapabilities sets the capability bitmask for the VM.
+func (vm *VM) SetCapabilities(caps uint16) {
+	vm.capabilities = caps
+}
+
+// Capabilities returns the current capability bitmask.
+func (vm *VM) Capabilities() uint16 {
+	return vm.capabilities
 }

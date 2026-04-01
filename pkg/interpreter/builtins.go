@@ -1664,6 +1664,7 @@ func builtinExists(i *Interpreter, args []Expr, env *Environment) (interface{}, 
 }
 
 func gpuResultToInterface(r gpuPkg.Result) interface{} {
+	fmt.Printf("[DEBUG] gpuResultToInterface: Tag=%d, IntVal=%d, Error=%v\n", r.Tag, r.IntVal, r.Error)
 	switch r.Tag {
 	case gpuPkg.TagInt:
 		return r.IntVal

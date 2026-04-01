@@ -127,18 +127,19 @@ type CallFrame struct {
 // Clone creates a deep copy of the VM state for parallel execution (mitosis).
 func (vm *VM) Clone() *VM {
 	newVM := &VM{
-		env:        vm.env.Clone(), // TODO: Deep copy environment if needed
-		globals:    vm.globals,
-		constants:  vm.constants,
-		stringPool: vm.stringPool,
-		builtins:   vm.builtins,
-		functions:  vm.functions,
-		pc:         vm.pc,
-		code:       vm.code,
-		halted:     vm.halted,
-		maxSteps:   vm.maxSteps,
-		profiler:   vm.profiler,
-		nextIterID: vm.nextIterID,
+		env:          vm.env.Clone(), // TODO: Deep copy environment if needed
+		globals:      vm.globals,
+		constants:    vm.constants,
+		stringPool:   vm.stringPool,
+		builtins:     vm.builtins,
+		functions:    vm.functions,
+		pc:           vm.pc,
+		code:         vm.code,
+		halted:       vm.halted,
+		maxSteps:     vm.maxSteps,
+		profiler:     vm.profiler,
+		nextIterID:   vm.nextIterID,
+		capabilities: vm.capabilities,
 	}
 
 	// Deep copy stack
@@ -200,6 +201,10 @@ type VM struct {
 	// Heap allocator for dynamic memory management
 	heap *Heap
 	hp   uint32 // heap pointer register (mirrors heap.hp for external access)
+
+	// Capability bitmask controlling which syscalls this VM may invoke.
+	// Default is CAP_ALL (all capabilities). Set to restrict syscall access.
+	capabilities uint16
 }
 
 // SetProfiler sets the profiler for this VM.
@@ -228,6 +233,7 @@ func NewVM() *VM {
 		profiler:   NewSimpleProfiler(),
 		heap:       heap,
 		hp:         heapBase,
+		capabilities: CAP_ALL,
 	}
 	vm.registerBuiltins()
 	return vm
@@ -1857,12 +1863,13 @@ func (vm *VM) execSpawn() error {
 	childVM.pid = childPID
 	childVM.processTable = vm.processTable
 
-	// Create process entry
+	// Create process entry — child inherits parent's capabilities
 	childProc := &Process{
 		PID:   childPID,
 		PPID:  vm.pid,
 		State: ProcessReady,
 		VM:    childVM,
+		Caps:  vm.capabilities, // inherit parent's capabilities
 	}
 	vm.processTable.Register(childProc)
 

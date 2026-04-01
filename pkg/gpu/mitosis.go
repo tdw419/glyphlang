@@ -202,6 +202,7 @@ func (m *MitosisVM) runMitosisThread(
 	_ chan<- spawnWork, // deprecated: channel-based spawns (kept for API compat)
 	spawnsOut *[]spawnWork,
 ) ThreadResult {
+	fmt.Printf("[DEBUG] Entering runMitosisThread thread=%d, parent=%d, PC=%d\n", threadID, parentID, startPC)
 	state := VMState{PC: startPC}
 	stack := make([]GpuValue, MaxStack)
 	if initStack != nil {
@@ -385,16 +386,22 @@ func (m *MitosisVM) runMitosisThread(
 		case 0x61: // OP_RETURN
 			if state.SP > 0 {
 				val := stack[state.SP-1]
+				fmt.Printf("[DEBUG] OP_RETURN thread=%d: SP=%d, Tag=%d, Data=%d\n", threadID, state.SP, val.Tag, val.Data)
 				state.ResultTag = val.Tag
 				state.ResultData = val.Data
+			} else {
+				fmt.Printf("[DEBUG] OP_RETURN thread=%d: EMPTY STACK\n", threadID)
 			}
 			state.Halted = 1
 
 		case 0xFF: // OP_HALT
 			if state.SP > 0 {
 				val := stack[state.SP-1]
+				fmt.Printf("[DEBUG] OP_HALT thread=%d: SP=%d, Tag=%d, Data=%d\n", threadID, state.SP, val.Tag, val.Data)
 				state.ResultTag = val.Tag
 				state.ResultData = val.Data
+			} else {
+				fmt.Printf("[DEBUG] OP_HALT thread=%d: EMPTY STACK\n", threadID)
 			}
 			state.Halted = 1
 
