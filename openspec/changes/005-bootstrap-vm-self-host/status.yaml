@@ -1,16 +1,16 @@
-id: 005-bootstrap-vm-self-host
-title: "Self-hosting milestone: interpreter interprets itself"
-status: draft
-priority: high
 depends_on:
-  - 001-fix-broken-bootstrap-tests
-  - 002-bootstrap-vm-string-support
-  - 003-bootstrap-for-in-key-value
-  - 004-bootstrap-module-imports
-labels:
-  - autospec
-  - spec-defined
-  - bootstrap
-  - self-hosting
-  - milestone
+- 001-fix-broken-bootstrap-tests
+- 002-bootstrap-vm-string-support
+- 003-bootstrap-for-in-key-value
+- 004-bootstrap-module-imports
 github_issues: []
+id: 005-bootstrap-vm-self-host
+labels:
+- autospec
+- spec-defined
+- bootstrap
+- self-hosting
+- milestone
+priority: high
+status: in_progress
+title: 'Self-hosting milestone: interpreter interprets itself'

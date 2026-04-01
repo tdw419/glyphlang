@@ -9,5 +9,5 @@
 - [x] 2.2 Test: create two files where `main.glyph` does `import "./helper"` and calls `helper.add(1, 2)`, verify result is 3
 
 ## 3. Add circular import guard and module cache
-- [ ] 3.1 Add a `loaded_modules` map to interpreter state. Before loading a module, check if already loaded and return cached namespace. Prevents infinite recursion on circular imports.
-- [ ] 3.2 Test: create two files that import each other and verify no infinite loop (second import returns cached/empty namespace)
+- [x] 3.1 Add a `loaded_modules` map to interpreter state. Before loading a module, check if already loaded and return cached namespace. Prevents infinite recursion on circular imports.
+- [x] 3.2 Test: create two files that import each other and verify no infinite loop (second import returns cached/empty namespace)

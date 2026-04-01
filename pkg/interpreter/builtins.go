@@ -92,6 +92,7 @@ func init() {
 		"exists":      builtinExists,
 		"__mutator":   builtinMutator,
 		"__mitosis":   builtinMitosis,
+		"eval_source": builtinEvalSource,
 	}
 }
 
@@ -1856,4 +1857,89 @@ func builtinMutate(i *Interpreter, args []Expr, env *Environment) (interface{}, 
 		return nil, fmt.Errorf("mutate() takes exactly 2 arguments (value, offset), got %d", len(args))
 	}
 	return true, nil
+}
+
+// builtinEvalSource implements eval_source(source_string) — the dynamic
+// evaluation primitive for self-hosting. It parses and executes a GlyphLang
+// source string, returning a map { value, error }.
+//
+// The source can be:
+//   - A bare expression: "1 + 2" → evaluates and returns the result
+//   - A function call: "print(42)" → wraps in a command body, executes, returns nil
+//   - Full .glyph module: "! f() { > 5 } $ result = f()" → loads and executes
+//
+// Nested eval is supported: the inner interpreter also has eval_source
+// registered as a builtin, so eval_source("eval_source(\"...\")") works.
+func builtinEvalSource(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
+	if len(args) < 1 {
+		return nil, fmt.Errorf("eval_source() expects at least 1 argument, got %d", len(args))
+	}
+
+	srcArg, err := i.EvaluateExpression(args[0], env)
+	if err != nil {
+		return nil, err
+	}
+	src, ok := srcArg.(string)
+	if !ok {
+		return nil, fmt.Errorf("eval_source() expects a string argument, got %T", srcArg)
+	}
+
+	// We need a ParseFunc to parse the source. Use the interpreter's
+	// moduleResolver ParseFunc if available, otherwise fall back to a
+	// direct import of the parser package.
+	parseFunc := i.moduleResolver.ParseFunc
+	if parseFunc == nil {
+		return map[string]interface{}{"value": nil, "error": "no parser available (moduleResolver.ParseFunc not set)"}, nil
+	}
+
+	// Try parsing the source as-is (valid .glyph module)
+	mod, parseErr := parseFunc(src)
+	if parseErr != nil {
+		// Source isn't valid top-level .glyph. Try wrapping strategies:
+
+		// Strategy 1: Wrap as a command body with a result assignment
+		// (for bare expressions like "1 + 2" or function calls like "print(42)")
+		wrapped1 := "@ command __eval__ {\n  $ __eval_result__ = " + src + "\n}"
+		mod, parseErr = parseFunc(wrapped1)
+		if parseErr != nil {
+			// Strategy 2: Wrap as a plain command body (for mixed source with
+			// function defs + statements like "! f() {...} $ x = f()")
+			wrapped2 := "@ command __eval__ {\n  " + src + "\n}"
+			mod, parseErr = parseFunc(wrapped2)
+			if parseErr != nil {
+				return map[string]interface{}{"value": nil, "error": fmt.Sprintf("parse error: %v", parseErr)}, nil
+			}
+		}
+	}
+
+	// Create a child interpreter for the evaluated source. It inherits
+	// the ParseFunc so nested eval_source calls work.
+	childInterp := NewInterpreter()
+	childInterp.moduleResolver.ParseFunc = parseFunc
+
+	// Load the module into the child interpreter
+	if loadErr := childInterp.LoadModule(*mod); loadErr != nil {
+		return map[string]interface{}{"value": nil, "error": fmt.Sprintf("load error: %v", loadErr)}, nil
+	}
+
+	// Check if there's a "__eval__" command (from wrapped expression source)
+	var result interface{}
+	if cmd, ok := childInterp.GetCommand("__eval__"); ok {
+		var execErr error
+		result, execErr = childInterp.ExecuteCommand(&cmd, nil)
+		if execErr != nil {
+			return map[string]interface{}{"value": nil, "error": fmt.Sprintf("exec error: %v", execErr)}, nil
+		}
+		// If the command set a __eval_result__ variable, use that as the value
+		if evalResult, err := childInterp.globalEnv.Get("__eval_result__"); err == nil {
+			result = evalResult
+		}
+	} else {
+		// For full module source, check for a "result" variable in global env
+		if val, err := childInterp.globalEnv.Get("result"); err == nil {
+			result = val
+		}
+	}
+
+	return map[string]interface{}{"value": result, "error": ""}, nil
 }
