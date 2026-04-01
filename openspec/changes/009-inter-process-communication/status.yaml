@@ -8,5 +8,5 @@ labels:
 - ipc
 - os-vision
 priority: medium
-status: in_progress
+status: completed
 title: IPC channels for inter-process messaging and shared memory

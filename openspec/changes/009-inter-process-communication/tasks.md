@@ -6,9 +6,9 @@
 - [x] 1.3 Add `OpRecv` opcode: dequeue a value from the channel buffer. If buffer is empty, block the receiving process. If buffer has data, dequeue and wake any blocked sender. Place the received value on the operand stack.
 
 ## 2. Shared memory regions
-- [ ] 2.1 Implement `OpShmCreate(size)`: allocate a shared memory region of the given size. Return a handle (integer ID). Register the region with the creator's PID as owner.
-- [ ] 2.2 Implement `OpShmMap(handle)`: validate that the calling process has access to the region. Map the shared bytes into the process's address space at a reserved heap offset. Return a pointer value.
-- [ ] 2.3 Implement access control: track which PIDs have access to each shared region. Support explicit grant/revoke of access between processes.
+- [x] 2.1 Implement `OpShmCreate(size)`: allocate a shared memory region of the given size. Return a handle (integer ID). Register the region with the creator's PID as owner.
+- [x] 2.2 Implement `OpShmMap(handle)`: validate that the calling process has access to the region. Map the shared bytes into the process's address space at a reserved heap offset. Return a pointer value.
+- [x] 2.3 Implement access control: track which PIDs have access to each shared region. Support explicit grant/revoke of access between processes.
 
 ## 3. Synchronization primitives
 - [ ] 3.1 Implement mutex: `OpMutexCreate` / `OpMutexLock` / `OpMutexUnlock`. Lock blocks if already held; unlock wakes one waiting process.

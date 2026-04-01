@@ -516,6 +516,14 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 		return vm.execSend()
 	case OpRecv:
 		return vm.execRecv()
+	case OpShmCreate:
+		return vm.execShmCreate()
+	case OpShmMap:
+		return vm.execShmMap()
+	case OpShmGrant:
+		return vm.execShmGrant()
+	case OpShmRevoke:
+		return vm.execShmRevoke()
 	case OpHalt:
 		vm.halted = true
 		return nil
