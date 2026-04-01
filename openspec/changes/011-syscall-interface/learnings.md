@@ -110,3 +110,17 @@
 - `pkg/vm/syscall_test.go` — added 7 tests: dispatch table completeness, ENOSYS sweep, cap rejection sweep, print full, alloc validation, free validation, required cap mapping verification
 - `openspec/changes/011-syscall-interface/tasks.md` — checked off steps 3.1, 3.2, 3.3
 - `openspec/changes/011-syscall-interface/learnings.md` — added SEC-3 learnings
+
+- **[pattern]** (from SEC-3) [modified] glyph
+
+- **[pattern]** (from SEC-3) [modified] pkg/compiler/compiler.go
+
+- **[pattern]** (from SEC-3) [modified] pkg/compiler/compiler_test.go
+
+- **[pattern]** (from SEC-3) [modified] pkg/vm/syscall_test.go
+
+- **[pattern]** (from SEC-3) [modified] pkg/gpu/gpu.go
+
+- **[discovery]** (from SEC-3) Agent strategy: modified 8 files
+
+- **[discovery]** (from SEC-3) Tests improved by 7 (45 -> 52)

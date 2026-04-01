@@ -1,11 +1,12 @@
-id: 012-gpu-execution-fix
-title: "Fix broken GPU execution path: constant encoding mismatch and missing WGSL opcodes"
-status: draft
-priority: critical
 depends_on: []
-labels:
-  - autospec
-  - spec-defined
-  - gpu
-  - bugfix
 github_issues: []
+id: 012-gpu-execution-fix
+labels:
+- autospec
+- spec-defined
+- gpu
+- bugfix
+priority: critical
+status: completed
+title: 'Fix broken GPU execution path: constant encoding mismatch and missing WGSL
+  opcodes'

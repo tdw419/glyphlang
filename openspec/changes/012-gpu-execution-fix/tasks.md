@@ -6,9 +6,9 @@
 - [x] 1.3 Align the two: update the WGSL shader to read 8-byte constants with the correct stride and byte offset. Update the Rust runner's constant buffer preparation to match. Verify with a simple test program that prints a constant.
 
 ## 2. Complete missing WGSL opcodes
-- [ ] 2.1 Diff the Go compiler's opcode set (`pkg/compiler/opcodes.go` or equivalent) against the WGSL shader's switch/match statement. List all opcodes emitted by the compiler that are not handled by the shader.
-- [ ] 2.2 Implement the missing opcodes in vm.wgsl. For each missing opcode, add a case to the main dispatch switch that performs the same operation as the CPU VM. Use WGSL-compatible operations (no heap allocation, no syscalls).
-- [ ] 2.3 Handle opcodes that cannot run on GPU gracefully: add a trap/error code for "unsupported on GPU" and ensure the Rust runner can detect and report this to the caller.
+- [x] 2.1 Diff the Go compiler's opcode set (`pkg/compiler/opcodes.go` or equivalent) against the WGSL shader's switch/match statement. List all opcodes emitted by the compiler that are not handled by the shader.
+- [x] 2.2 Implement the missing opcodes in vm.wgsl. For each missing opcode, add a case to the main dispatch switch that performs the same operation as the CPU VM. Use WGSL-compatible operations (no heap allocation, no syscalls).
+- [x] 2.3 Handle opcodes that cannot run on GPU gracefully: add a trap/error code for "unsupported on GPU" and ensure the Rust runner can detect and report this to the caller.
 
 ## 3. GPU verification tests
 - [ ] 3.1 Create a test harness that compiles a GlyphLang program to GLYP bytecode, executes it on the CPU VM, executes it on the GPU via the Rust runner, and compares the results (register state, output values).
