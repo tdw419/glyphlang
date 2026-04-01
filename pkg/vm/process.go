@@ -43,10 +43,11 @@ type Process struct {
 // ProcessTable is a concurrent-safe map of PID -> Process.
 // It handles PID allocation, registration, lookup, reparenting, and cleanup.
 type ProcessTable struct {
-	mu        sync.RWMutex
-	processes map[uint32]*Process
-	nextPID   uint32
-	waitChans map[uint32]chan struct{} // PID -> channel signaled when process becomes zombie
+	mu           sync.RWMutex
+	processes    map[uint32]*Process
+	nextPID      uint32
+	waitChans    map[uint32]chan struct{} // PID -> channel signaled when process becomes zombie
+	channelTable *ChannelTable           // lazily initialized on first channel creation
 }
 
 // NewProcessTable creates an empty process table with PID allocation starting at 1.

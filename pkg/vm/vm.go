@@ -510,6 +510,12 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 		return vm.execKill()
 	case OpWait:
 		return vm.execWait()
+	case OpChannelCreate:
+		return vm.execChannelCreate()
+	case OpSend:
+		return vm.execSend()
+	case OpRecv:
+		return vm.execRecv()
 	case OpHalt:
 		vm.halted = true
 		return nil

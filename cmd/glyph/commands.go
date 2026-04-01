@@ -41,6 +41,15 @@ func runCompile(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse failed: %w", err)
 	}
 
+	// Resolve and flatten imports
+	visited := make(map[string]bool)
+	absFile, _ := filepath.Abs(filePath)
+	visited[absFile] = true
+	err = resolveAndFlattenModule(module, filepath.Dir(filePath), visited)
+	if err != nil {
+		return fmt.Errorf("import resolution failed: %w", err)
+	}
+
 	// Determine optimization level
 	var optLevelEnum compiler.OptimizationLevel
 	switch optLevel {
@@ -58,22 +67,10 @@ func runCompile(cmd *cobra.Command, args []string) error {
 	c := compiler.NewCompilerWithOptLevel(optLevelEnum)
 	var bytecode []byte
 
-	// Find first route and compile it
-	for _, item := range module.Items {
-		if route, ok := item.(*ast.Route); ok {
-			bytecode, err = c.CompileRoute(route)
-			if err != nil {
-				return fmt.Errorf("compilation failed: %w", err)
-			}
-			break
-                }
-                if fn, ok := item.(*ast.Function); ok {
-                        bytecode, err = c.CompileFunction(fn)
-                        if err != nil {
-                                return fmt.Errorf("compilation failed: %w", err)
-                        }
-                        break
-                }
+		// Compile module using unified logic (handles routes, commands, and functions)
+	bytecode, err = c.Compile(module)
+	if err != nil {
+		return fmt.Errorf("compilation failed: %w", err)
 	}
 
 	if bytecode == nil {

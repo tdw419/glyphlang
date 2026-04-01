@@ -24,3 +24,7 @@
 - **[discovery]** (from SEC-3) Tests: 53 -> 53 passing (no regressions), 8 new tests added all pass. Same 3 pre-existing failing packages (gpu, interpreter, decompiler).
 - **[discovery]** (from SEC-3) Clone() shares globals/functions maps by reference. For Mitosis this is fine (GPU parallel read), but for process isolation it's wrong. Fix was applied in execSpawn only, not Clone(), to avoid breaking Mitosis.
 - **[learning]** (from SEC-3) The Process struct's ChildPIDs field needed to be maintained in three places: execSpawn (add), SetZombie (remove), Reparent (transfer). Missing any one creates inconsistencies.
+
+- **[discovery]** (from SEC-3) Agent strategy: modified 7 files, fix attempt
+
+- **[discovery]** (from SEC-3) Tests regressed by 1 (54 -> 53)

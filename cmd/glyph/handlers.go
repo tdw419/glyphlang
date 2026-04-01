@@ -725,3 +725,53 @@ func openURL(urlStr string) error {
 
 	return cmd.Start()
 }
+
+// resolveAndFlattenModule recursively resolves all imports and merges their items into the main module.
+func resolveAndFlattenModule(module *ast.Module, baseDir string, visited map[string]bool) error {
+	var flattenedItems []ast.Item
+	
+	for _, item := range module.Items {
+		if imp, ok := item.(*ast.ImportStatement); ok {
+			// Resolve path
+			path := imp.Path
+			if strings.HasPrefix(path, "./") {
+				path = filepath.Join(baseDir, path[2:])
+			}
+			if !strings.HasSuffix(path, ".glyph") {
+				path += ".glyph"
+			}
+			
+			absPath, _ := filepath.Abs(path)
+			
+			if visited[absPath] {
+				continue
+			}
+			visited[absPath] = true
+			
+			// Read and parse
+			source, err := os.ReadFile(absPath)
+			if err != nil {
+				return fmt.Errorf("import not found: %s", path)
+			}
+			
+			importedModule, err := parseSource(string(source))
+			if err != nil {
+				return fmt.Errorf("parse error in %s: %w", path, err)
+			}
+			
+			// Recursively flatten
+			err = resolveAndFlattenModule(importedModule, filepath.Dir(absPath), visited)
+			if err != nil {
+				return err
+			}
+			
+			// Add items from imported module
+			flattenedItems = append(flattenedItems, importedModule.Items...)
+		} else {
+			flattenedItems = append(flattenedItems, item)
+		}
+	}
+	
+	module.Items = flattenedItems
+	return nil
+}

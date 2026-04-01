@@ -1,9 +1,9 @@
 # Tasks: Inter-Process Communication
 
 ## 1. Channel-based messaging
-- [ ] 1.1 Implement channel data structure: a typed circular buffer with sender/receiver wait queues. Channel IDs are allocated from a global namespace.
-- [ ] 1.2 Add `OpSend` opcode: serialize the value into the channel buffer. If buffer is full, block the sending process (set state to blocked, add to channel's sender wait queue). If buffer has space, enqueue and wake any blocked receiver.
-- [ ] 1.3 Add `OpRecv` opcode: dequeue a value from the channel buffer. If buffer is empty, block the receiving process. If buffer has data, dequeue and wake any blocked sender. Place the received value on the operand stack.
+- [x] 1.1 Implement channel data structure: a typed circular buffer with sender/receiver wait queues. Channel IDs are allocated from a global namespace.
+- [x] 1.2 Add `OpSend` opcode: serialize the value into the channel buffer. If buffer is full, block the sending process (set state to blocked, add to channel's sender wait queue). If buffer has space, enqueue and wake any blocked receiver.
+- [x] 1.3 Add `OpRecv` opcode: dequeue a value from the channel buffer. If buffer is empty, block the receiving process. If buffer has data, dequeue and wake any blocked sender. Place the received value on the operand stack.
 
 ## 2. Shared memory regions
 - [ ] 2.1 Implement `OpShmCreate(size)`: allocate a shared memory region of the given size. Return a handle (integer ID). Register the region with the creator's PID as owner.

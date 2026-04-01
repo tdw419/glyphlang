@@ -206,7 +206,39 @@ func (d *Decompiler) readInstruction() (InstructionInfo, error) {
 
 	info.Opcode = opcodeToString(opcode)
 
-	// Handle operands
+	// Handle special multi-operand opcodes
+	if opcode == vm.OpDefFunc {
+		// name_idx(4), param_count(4), body_length(4)
+		if d.offset+12 > len(d.bytecode) {
+			return info, fmt.Errorf("truncated DEF_FUNC header")
+		}
+		nameIdx := binary.LittleEndian.Uint32(d.bytecode[d.offset : d.offset+4])
+		d.offset += 4
+		paramCount := binary.LittleEndian.Uint32(d.bytecode[d.offset : d.offset+4])
+		d.offset += 4
+		bodyLength := binary.LittleEndian.Uint32(d.bytecode[d.offset : d.offset+4])
+		d.offset += 4
+
+		// Skip param names (4 * paramCount)
+		if d.offset+int(paramCount)*4 > len(d.bytecode) {
+			return info, fmt.Errorf("truncated DEF_FUNC params")
+		}
+		d.offset += int(paramCount) * 4
+
+		info.Operand = fmt.Sprintf("%d", nameIdx)
+		
+		// Get function name from constants if possible
+		funcName := "unknown"
+		if int(nameIdx) < len(d.constants) {
+			if sv, ok := d.constants[nameIdx].(vm.StringValue); ok {
+				funcName = sv.Val
+			}
+		}
+		info.Comment = fmt.Sprintf("; %s(%d params), body: %d bytes", funcName, paramCount, bodyLength)
+		return info, nil
+	}
+
+	// Handle standard 4-byte operands
 	if hasOperand(opcode) {
 		if d.offset+4 > len(d.bytecode) {
 			return info, fmt.Errorf("truncated operand")
@@ -409,6 +441,7 @@ func hasOperand(op vm.Opcode) bool {
 		vm.OpCall:        true,
 		vm.OpBuildObject: true,
 		vm.OpBuildArray:  true,
+		vm.OpAsync:       true,
 	}
 	return withOperand[op]
 }
