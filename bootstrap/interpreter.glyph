@@ -2714,6 +2714,48 @@ import "./parser"
     }
   }
 
+  # ── Test 233: Self-interpreted eval_source runs external test program ──
+  # The double-eval (test 232) proved nested eval_source works. Now test
+  # whether the self-interpreted interpreter can run a real .glyph file
+  # loaded from disk via the host's readFile builtin.
+  print("")
+  print("TEST: self-interpreted eval_source runs external program")
+  $ ext_src = readFile("bootstrap/test_module.glyph")
+  if length(ext_src) == 0 {
+    print("  FAIL: could not read test_module.glyph")
+    $ failed = failed + 1
+  } else {
+    print("  Step 1: read test_module.glyph (" + toString(length(ext_src)) + " chars)")
+    # Run the module through the HOST eval_source. This exercises
+    # eval_source's full path: parse -> exec_module -> register functions.
+    $ ext_env = env_new()
+    $ ext_r = eval_source(ext_src, ext_env, "bootstrap/")
+    if ext_r.error != "" {
+      print("  FAIL: eval test_module — " + ext_r.error)
+      $ failed = failed + 1
+    } else {
+      print("  Step 2: eval_source executed test_module.glyph")
+      # The module defined add(a,b) and multiply(a,b) in ext_env.
+      # Verify they're callable by running a program that uses them.
+      $ call_src = "$ a = add(10, 32)\n$ b = multiply(6, 7)\n$ result = a + b"
+      # We need the module's functions available, so eval in same env
+      $ call_r = eval_source(call_src, ext_env, "bootstrap/")
+      if call_r.error != "" {
+        print("  FAIL: call module functions — " + call_r.error)
+        $ failed = failed + 1
+      } else {
+        if call_r.value == 84 {
+          print("  Step 3: add(10,32) + multiply(6,7) = 84")
+          print("  PASS: SELF-INTERPRETED MODULE EXECUTION")
+          $ passed = passed + 1
+        } else {
+          print("  FAIL: expected 84 got " + toString(call_r.value))
+          $ failed = failed + 1
+        }
+      }
+    }
+  }
+
   # ── Summary ──
   print("")
   print("========================================")

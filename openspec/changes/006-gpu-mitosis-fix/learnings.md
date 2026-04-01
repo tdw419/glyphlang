@@ -52,3 +52,15 @@
 
 - **[modified]** pkg/gpu/mitosis.go — added `ForceGPUError` field, `FallbackWarnings()`, `logFallbackWarning()`, `attemptGPUExecution()`, `executeCPUFallback()`; refactored `ExecuteWithMitosis` into GPU-attempt + CPU-fallback
 - **[added]** pkg/gpu/mitosis_fallback_test.go — 3 tests: fallback warning emitted, no warning without error, correct results on fallback
+
+- **[pattern]** (from SEC-3) [modified] bootstrap/interpreter.glyph
+
+- **[pattern]** (from SEC-3) [modified] pkg/gpu/mitosis.go
+
+- **[pattern]** (from SEC-3) [added] pkg/gpu/mitosis_fallback_test.go
+
+- **[pattern]** (from SEC-3) [modified] openspec/changes/006-gpu-mitosis-fix/learnings.md
+
+- **[pattern]** (from SEC-3) [modified] openspec/changes/006-gpu-mitosis-fix/tasks.md
+
+- **[discovery]** (from SEC-3) Agent strategy: created 1 file, modified 4 files, refactored, added tests, fix attempt

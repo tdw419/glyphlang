@@ -1,9 +1,9 @@
 # Tasks: Virtual Filesystem (VFS) Layer
 
 ## 1. Inode table and path resolution
-- [ ] 1.1 Define the inode struct in VM memory: file type (regular/dir/mount), size, data pointer, permissions, reference count. Reserve a fixed region in the VM address space for the inode table.
-- [ ] 1.2 Implement path resolution that splits `/`-delimited paths, resolves `.` and `..`, and walks the directory tree from root. Return ENOENT/EINVAL errors for invalid paths.
-- [ ] 1.3 Add directory inode support: list entries, create/delete entries, maintain parent links for `..` traversal.
+- [x] 1.1 Define the inode struct in VM memory: file type (regular/dir/mount), size, data pointer, permissions, reference count. Reserve a fixed region in the VM address space for the inode table.
+- [x] 1.2 Implement path resolution that splits `/`-delimited paths, resolves `.` and `..`, and walks the directory tree from root. Return ENOENT/EINVAL errors for invalid paths.
+- [x] 1.3 Add directory inode support: list entries, create/delete entries, maintain parent links for `..` traversal.
 
 ## 2. File I/O opcodes
 - [ ] 2.1 Add `OpOpen`, `OpClose`, `OpRead`, `OpWrite`, `OpSeek` opcodes to the VM opcode table. Each opcode takes the appropriate operands (path string for open, fd + buffer for read/write).
