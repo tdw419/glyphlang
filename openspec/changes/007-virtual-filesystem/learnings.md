@@ -18,3 +18,25 @@
 - `Inode.Data()` returns a copy (not the original slice) to prevent callers from mutating inode state directly. `SetData()` also copies.
 - `Rmdir` checks for entries other than "." and ".." to determine emptiness — correct POSIX behavior.
 - Unlink decrements Nlink and only frees the inode when both Nlink and RefCount reach zero, supporting the file descriptor table that will be added in section 2.
+
+## pattern
+
+- **[pattern]** (from SEC-1) [modified] bootstrap/interpreter.glyph
+
+- **[pattern]** (from SEC-1) [added] pkg/vfs/path_test.go
+
+- **[pattern]** (from SEC-1) [added] pkg/vfs/inode_test.go
+
+- **[pattern]** (from SEC-1) [added] pkg/vfs/inode.go
+
+- **[pattern]** (from SEC-1) [added] pkg/vfs/directory_test.go
+
+## discovery
+
+- **[discovery]** (from SEC-1) Agent strategy: created 6 files, modified 2 files, added tests, fix attempt
+
+- **[discovery]** (from SEC-1) Tests improved by 1 (53 -> 54)
+
+- **[pattern]** (from SEC-2) [modified] bootstrap/compiler.glyph
+
+- **[discovery]** (from SEC-2) Agent strategy: modified 1 file

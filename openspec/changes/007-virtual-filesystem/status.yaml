@@ -8,5 +8,5 @@ labels:
 - vfs
 - os-vision
 priority: high
-status: in_progress
+status: completed
 title: Virtual filesystem (VFS) layer for GlyphLang VM

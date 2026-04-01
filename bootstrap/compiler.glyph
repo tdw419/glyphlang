@@ -201,6 +201,9 @@ const OP_HALT          = 255
     i = i + 1
   }
 
+  # String pool count (empty for now)
+  bytes = bytes + intToBytes4(0)
+
   $ inst_cnt = length(c.instructions)
   bytes = bytes + intToBytes4(inst_cnt)
 
@@ -531,12 +534,12 @@ const OP_HALT          = 255
     $ loop_jump = emit_jump(c, OP_JUMP)
     # target is relative to instructions start, will be offset in compile()
     $ b = intToBytes4(start_pos)
-    $ insts2 = c.instructions
-    $ insts2[loop_jump] = b[0]
-    $ insts2[loop_jump + 1] = b[1]
-    $ insts2[loop_jump + 2] = b[2]
-    $ insts2[loop_jump + 3] = b[3]
-    $ c.instructions = insts2
+    $ insts_while = c.instructions
+    $ insts_while[loop_jump] = b[0]
+    $ insts_while[loop_jump + 1] = b[1]
+    $ insts_while[loop_jump + 2] = b[2]
+    $ insts_while[loop_jump + 3] = b[3]
+    $ c.instructions = insts_while
 
     patch_jump(c, jump_false_pos)
     
@@ -621,10 +624,12 @@ const OP_HALT          = 255
     $ loop_ctx = c.loop_stack[top_idx]
     $ jump_pos = emit_jump(c, OP_JUMP)
     $ b = intToBytes4(loop_ctx.start_pos)
-    $ c.instructions[jump_pos] = b[0]
-    $ c.instructions[jump_pos + 1] = b[1]
-    $ c.instructions[jump_pos + 2] = b[2]
-    $ c.instructions[jump_pos + 3] = b[3]
+    $ insts_cont = c.instructions
+    $ insts_cont[jump_pos] = b[0]
+    $ insts_cont[jump_pos + 1] = b[1]
+    $ insts_cont[jump_pos + 2] = b[2]
+    $ insts_cont[jump_pos + 3] = b[3]
+    $ c.instructions = insts_cont
     > ""
   }
 
@@ -671,7 +676,7 @@ const OP_HALT          = 255
     emit_byte(c, OP_LOAD_VAR)
     emit_bytes4(c, iter_idx)
     emit_byte(c, OP_ITER_NEXT)
-    emit_byte(c, has_key)
+    emit_bytes4(c, has_key)
 
     # 9. Store value variable (top of stack)
     emit_byte(c, OP_STORE_VAR)
@@ -693,14 +698,13 @@ const OP_HALT          = 255
 
     # 12. Jump back to loop start
     $ loop_jump = emit_jump(c, OP_JUMP)
-    $ insts3 = c.instructions
-    $ insts3[loop_jump] = b[0]
-    $ insts3[loop_jump + 1] = b[1]
-    $ insts3[loop_jump + 2] = b[2]
-    $ insts3[loop_jump + 3] = b[3]
-    $ c.instructions = insts3
-    $ c.instructions[loop_jump + 2] = b[2]
-    $ c.instructions[loop_jump + 3] = b[3]
+    $ b = intToBytes4(loop_start)
+    $ insts_for = c.instructions
+    $ insts_for[loop_jump] = b[0]
+    $ insts_for[loop_jump + 1] = b[1]
+    $ insts_for[loop_jump + 2] = b[2]
+    $ insts_for[loop_jump + 3] = b[3]
+    $ c.instructions = insts_for
 
     # 13. Patch jump to end
     patch_jump(c, jump_end_pos)
