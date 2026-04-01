@@ -1,8 +1,8 @@
 # Tasks: Bootstrap VM String Support
 
 ## 1. Add tagged value representation to VM
-- [ ] 1.1 Define value tag constants (INT_TAG=0, STRING_TAG=1, REF_TAG=2) and add parallel `tags []int` array to VM state, or refactor stack/locals to use a Value struct with tag field
-- [ ] 1.2 Update all existing opcode handlers to set INT_TAG when pushing values, and verify 230/230 existing tests still pass
+- [-] 1.1 Define value tag constants (INT_TAG=0, STRING_TAG=1, REF_TAG=2) and add parallel `tags []int` array to VM state, or refactor stack/locals to use a Value struct with tag field
+- [-] 1.2 Update all existing opcode handlers to set INT_TAG when pushing values, and verify 230/230 existing tests still pass
 
 ## 2. Add string pool to VM
 - [ ] 2.1 Add `string_pool []string` to VM struct and `OP_LOAD_STRING` opcode that loads a string literal by index into the string pool and pushes a tagged STRING value onto the stack

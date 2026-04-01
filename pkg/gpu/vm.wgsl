@@ -33,6 +33,7 @@ const MAX_STEPS: u32 = 100000u;
 
 const CONST_INT: u32   = 1u;
 const CONST_FLOAT: u32 = 2u;
+const OP_TELEMETRY: u32 = 0xC2u;
 
 fn read_byte(offset: u32) -> u32 {
     let word = bytecode[offset / 4u];
@@ -104,6 +105,7 @@ fn exec_step(vm_id: u32) {
                 spawn_requests[3u + slot * 3u] = u32(offset_val.data);
             }
         }
+        case OP_TELEMETRY: { /* telemetry: no-op for now */ }
         case 0xFFu: { vm_states[vm_id].halted = 1u; }
         default: { vm_states[vm_id].halted = 1u; }
     }

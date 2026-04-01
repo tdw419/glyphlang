@@ -28,3 +28,7 @@
 - **[discovery]** (from SEC-1) Agent strategy: modified 4 files
 
 - **[discovery]** (from SEC-1) Tests improved by 1 (53 -> 54)
+
+- **[discovery]** (from SEC-1) Agent strategy: modified 1 file, fix attempt
+
+- **[discovery]** (from SEC-2) Agent strategy: no-action
