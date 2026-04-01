@@ -687,17 +687,26 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 			childVars := make([]GpuValue, MaxVars)
 			copy(childVars, vars)
 
-			// Child result: push 0 onto child stack
-			childStackWithResult := append(childStack, GpuValue{TagInt, 0})
+			// Child result: push 1 onto child stack (spawn success, matching Go VM BoolValue(true))
+			childStackWithResult := append(childStack, GpuValue{TagInt, 1})
 			spawns = append(spawns, CpuSpawnRequest{
 				Offset: offset,
 				PC:     state.PC,
 				Stack:  childStackWithResult,
 				Vars:   childVars,
 			})
-			// Push 0 (the spawn slot for this VM's first child)
-			stack[state.SP] = GpuValue{TagInt, 0}
+			// Push 1 (spawn success indicator, matching Go VM BoolValue(true))
+			stack[state.SP] = GpuValue{TagInt, 1}
 			state.SP++
+
+		case 0xC2: // OP_TELEMETRY — pop a value and discard it
+			if state.SP == 0 {
+				state.Error = ErrStackUnderflow
+				state.Halted = 1
+				break
+			}
+			state.SP--
+			state.PC++
 
 		case 0xC1: // OP_MUTATOR — self-modify code at PC + offset
 			if state.SP < 2 {
