@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -179,14 +180,21 @@ func (r *PersistentRunner) Submit(bytecode []byte, numVMs, workgroupCount int) (
 
 	results := make([]Result, len(resp.Results))
 	for i, res := range resp.Results {
-		results[i] = Result{
+		r := Result{
 			Tag:    res.ResultTag,
 			IntVal: int64(res.ResultData),
 			Steps:  res.Steps,
 		}
-		if res.Error != 0 {
-			results[i].Error = fmt.Errorf("GPU error code: %d", res.Error)
+		switch res.ResultTag {
+		case TagFloat:
+			r.FloatVal = float64(math.Float32frombits(uint32(res.ResultData)))
+		case TagBool:
+			r.BoolVal = res.ResultData != 0
 		}
+		if res.Error != 0 {
+			r.Error = fmt.Errorf("GPU error code: %d", res.Error)
+		}
+		results[i] = r
 	}
 
 	return results, nil

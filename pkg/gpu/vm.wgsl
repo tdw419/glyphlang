@@ -36,8 +36,41 @@ const CONST_INT: u32   = 1u;
 const CONST_FLOAT: u32 = 2u;
 const CONST_BOOL: u32  = 3u;
 const CONST_STRING: u32 = 4u;
-const OP_TELEMETRY: u32 = 0xC2u;
-const OP_SYSCALL: u32 = 0xDDu;
+
+// Named opcode constants (synchronized with pkg/vm/vm.go)
+const OP_PUSH: u32        = 0x01u;
+const OP_POP: u32         = 0x02u;
+const OP_ADD: u32         = 0x10u;
+const OP_SUB: u32         = 0x11u;
+const OP_MUL: u32         = 0x12u;
+const OP_DIV: u32         = 0x13u;
+const OP_MOD: u32         = 0x14u;
+const OP_EQ: u32          = 0x20u;
+const OP_NE: u32          = 0x21u;
+const OP_LT: u32          = 0x22u;
+const OP_GT: u32          = 0x23u;
+const OP_GE: u32          = 0x24u;
+const OP_LE: u32          = 0x25u;
+const OP_AND: u32         = 0x26u;
+const OP_OR: u32          = 0x27u;
+const OP_NOT: u32         = 0x28u;
+const OP_NEG: u32         = 0x29u;
+const OP_LOAD_VAR: u32    = 0x40u;
+const OP_STORE_VAR: u32   = 0x41u;
+const OP_JUMP: u32        = 0x50u;
+const OP_JUMP_IF_FALSE: u32 = 0x51u;
+const OP_RETURN: u32      = 0x61u;
+const OP_MITOSIS: u32     = 0xC0u;
+const OP_MUTATOR: u32     = 0xC1u;
+const OP_TELEMETRY: u32   = 0xC2u;
+const OP_SYSCALL: u32     = 0xDDu;
+const OP_HALT: u32        = 0xFFu;
+
+// Error codes
+const ERR_STACK_OVERFLOW: u32  = 1u;
+const ERR_STACK_UNDERFLOW: u32 = 2u;
+const ERR_DIV_BY_ZERO: u32     = 3u;
+const ERR_MUTATOR_OOB: u32     = 5u;
 
 fn read_byte(offset: u32) -> u32 {
     let word = bytecode[offset / 4u];
@@ -112,21 +145,59 @@ fn exec_step(vm_id: u32) {
     let op = read_byte(pc);
     var next_pc = pc + 1u;
     switch (op) {
+        case 0x00u: { /* NOP */ }
         case 0x01u: { push(vm_id, load_constant(read_u32(pc + 1u)).tag, load_constant(read_u32(pc + 1u)).data); next_pc = pc + 5u; }
         case 0x02u: { pop(vm_id); }
         case 0x10u: { let b = pop(vm_id); let a = pop(vm_id); push(vm_id, TAG_INT, a.data + b.data); }
+        case 0x11u: { let b = pop(vm_id); let a = pop(vm_id); push(vm_id, TAG_INT, a.data - b.data); }
+        case 0x12u: { let b = pop(vm_id); let a = pop(vm_id); push(vm_id, TAG_INT, a.data * b.data); }
+        case 0x13u: {
+            let b = pop(vm_id); let a = pop(vm_id);
+            if (b.data == 0) { vm_states[vm_id].error = ERR_DIV_BY_ZERO; vm_states[vm_id].halted = 1u; }
+            else { push(vm_id, TAG_INT, a.data / b.data); }
+        }
+        case 0x14u: {
+            let b = pop(vm_id); let a = pop(vm_id);
+            if (b.data == 0) { vm_states[vm_id].error = ERR_DIV_BY_ZERO; vm_states[vm_id].halted = 1u; }
+            else { push(vm_id, TAG_INT, a.data % b.data); }
+        }
+        case 0x20u: { let b = pop(vm_id); let a = pop(vm_id); push(vm_id, TAG_BOOL, select(0, 1, a.tag == b.tag && a.data == b.data)); }
+        case 0x21u: { let b = pop(vm_id); let a = pop(vm_id); push(vm_id, TAG_BOOL, select(0, 1, a.tag != b.tag || a.data != b.data)); }
+        case 0x22u: { let b = pop(vm_id); let a = pop(vm_id); push(vm_id, TAG_BOOL, select(0, 1, a.data < b.data)); }
+        case 0x23u: { let b = pop(vm_id); let a = pop(vm_id); push(vm_id, TAG_BOOL, select(0, 1, a.data > b.data)); }
+        case 0x24u: { let b = pop(vm_id); let a = pop(vm_id); push(vm_id, TAG_BOOL, select(0, 1, a.data >= b.data)); }
+        case 0x25u: { let b = pop(vm_id); let a = pop(vm_id); push(vm_id, TAG_BOOL, select(0, 1, a.data <= b.data)); }
+        case 0x26u: { let b = pop(vm_id); let a = pop(vm_id); push(vm_id, TAG_BOOL, select(0, 1, a.data != 0 && b.data != 0)); }
+        case 0x27u: { let b = pop(vm_id); let a = pop(vm_id); push(vm_id, TAG_BOOL, select(0, 1, a.data != 0 || b.data != 0)); }
+        case 0x28u: { let a = pop(vm_id); push(vm_id, TAG_BOOL, select(0, 1, a.data == 0)); }
+        case 0x29u: { let a = pop(vm_id); push(vm_id, a.tag, -a.data); }
         case 0x40u: { let vidx = read_u32(pc + 1u); let val = vars[vm_id * MAX_VARS + (vidx % MAX_VARS)]; push(vm_id, val.tag, val.data); next_pc = pc + 5u; }
         case 0x41u: { let vidx = read_u32(pc + 1u); let val = pop(vm_id); vars[vm_id * MAX_VARS + (vidx % MAX_VARS)] = val; next_pc = pc + 5u; }
-        case 0x50u: { next_pc = read_u32(pc + 1u); }
-        case 0x51u: { let cond = pop(vm_id); if (cond.data == 0) { next_pc = read_u32(pc + 1u); } else { next_pc = pc + 5u; } }
+        case 0x50u: { next_pc = read_u32(pc + 1u) + config.code_offset; }
+        case 0x51u: { let cond = pop(vm_id); if (cond.data == 0) { next_pc = read_u32(pc + 1u) + config.code_offset; } else { next_pc = pc + 5u; } }
         case 0x61u: { let val = pop(vm_id); vm_states[vm_id].result_tag = val.tag; vm_states[vm_id].result_data = val.data; vm_states[vm_id].halted = 1u; }
-        case 0xC0u: { 
+        case OP_MITOSIS: { 
             let offset_val = pop(vm_id); let slot = atomicAdd(&spawn_requests[0], 1u);
-            push(vm_id, TAG_INT, i32(slot)); 
+            push(vm_id, TAG_INT, 0); 
             if (slot < 4096u) {
                 atomicStore(&spawn_requests[1u + slot * 3u], vm_id);
                 atomicStore(&spawn_requests[2u + slot * 3u], next_pc);
                 atomicStore(&spawn_requests[3u + slot * 3u], u32(offset_val.data));
+            }
+        }
+        case OP_MUTATOR: {
+            // MUTATOR: pop offset then value, write value byte to bytecode[PC + offset]
+            let offset_val = pop(vm_id);
+            let value_val = pop(vm_id);
+            let tgt = pc + u32(offset_val.data);
+            if (tgt >= config.code_offset + config.bytecode_len) {
+                vm_states[vm_id].error = ERR_MUTATOR_OOB; vm_states[vm_id].halted = 1u;
+            } else {
+                // Write a byte: compute word index and shift
+                let word_idx = tgt / 4u;
+                let byte_off = (tgt % 4u) * 8u;
+                let mask = ~(0xFFu << byte_off);
+                bytecode[word_idx] = (bytecode[word_idx] & mask) | ((u32(value_val.data) & 0xFFu) << byte_off);
             }
         }
         case OP_TELEMETRY: { /* telemetry: no-op for now */ }

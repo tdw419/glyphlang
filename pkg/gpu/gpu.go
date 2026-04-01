@@ -454,6 +454,22 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 			stack[state.SP] = GpuValue{TagBool, int32(res)}
 			state.SP++
 
+		case 0x21: // OP_NE
+			if state.SP < 2 {
+				state.Error = ErrStackUnderflow
+				state.Halted = 1
+				break
+			}
+			b := stack[state.SP-1]
+			a := stack[state.SP-2]
+			state.SP -= 2
+			res := 0
+			if a.Tag != b.Tag || a.Data != b.Data {
+				res = 1
+			}
+			stack[state.SP] = GpuValue{TagBool, int32(res)}
+			state.SP++
+
 		case 0x22: // OP_LT
 			if state.SP < 2 {
 				state.Error = ErrStackUnderflow
@@ -468,6 +484,112 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 				res = 1
 			}
 			stack[state.SP] = GpuValue{TagBool, int32(res)}
+			state.SP++
+
+		case 0x23: // OP_GT
+			if state.SP < 2 {
+				state.Error = ErrStackUnderflow
+				state.Halted = 1
+				break
+			}
+			b := stack[state.SP-1]
+			a := stack[state.SP-2]
+			state.SP -= 2
+			res := 0
+			if a.Data > b.Data {
+				res = 1
+			}
+			stack[state.SP] = GpuValue{TagBool, int32(res)}
+			state.SP++
+
+		case 0x24: // OP_GE
+			if state.SP < 2 {
+				state.Error = ErrStackUnderflow
+				state.Halted = 1
+				break
+			}
+			b := stack[state.SP-1]
+			a := stack[state.SP-2]
+			state.SP -= 2
+			res := 0
+			if a.Data >= b.Data {
+				res = 1
+			}
+			stack[state.SP] = GpuValue{TagBool, int32(res)}
+			state.SP++
+
+		case 0x25: // OP_LE
+			if state.SP < 2 {
+				state.Error = ErrStackUnderflow
+				state.Halted = 1
+				break
+			}
+			b := stack[state.SP-1]
+			a := stack[state.SP-2]
+			state.SP -= 2
+			res := 0
+			if a.Data <= b.Data {
+				res = 1
+			}
+			stack[state.SP] = GpuValue{TagBool, int32(res)}
+			state.SP++
+
+		case 0x26: // OP_AND
+			if state.SP < 2 {
+				state.Error = ErrStackUnderflow
+				state.Halted = 1
+				break
+			}
+			b := stack[state.SP-1]
+			a := stack[state.SP-2]
+			state.SP -= 2
+			res := 0
+			if a.Data != 0 && b.Data != 0 {
+				res = 1
+			}
+			stack[state.SP] = GpuValue{TagBool, int32(res)}
+			state.SP++
+
+		case 0x27: // OP_OR
+			if state.SP < 2 {
+				state.Error = ErrStackUnderflow
+				state.Halted = 1
+				break
+			}
+			b := stack[state.SP-1]
+			a := stack[state.SP-2]
+			state.SP -= 2
+			res := 0
+			if a.Data != 0 || b.Data != 0 {
+				res = 1
+			}
+			stack[state.SP] = GpuValue{TagBool, int32(res)}
+			state.SP++
+
+		case 0x28: // OP_NOT
+			if state.SP < 1 {
+				state.Error = ErrStackUnderflow
+				state.Halted = 1
+				break
+			}
+			a := stack[state.SP-1]
+			state.SP--
+			res := 0
+			if a.Data == 0 {
+				res = 1
+			}
+			stack[state.SP] = GpuValue{TagBool, int32(res)}
+			state.SP++
+
+		case 0x29: // OP_NEG
+			if state.SP < 1 {
+				state.Error = ErrStackUnderflow
+				state.Halted = 1
+				break
+			}
+			a := stack[state.SP-1]
+			state.SP--
+			stack[state.SP] = GpuValue{a.Tag, -a.Data}
 			state.SP++
 
 		case 0x40: // OP_LOAD_VAR
@@ -519,7 +641,7 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 				break
 			}
 			target := binary.LittleEndian.Uint32(bytecode[pc+1:])
-			nextPC = target
+			nextPC = target + config.CodeOffset
 
 		case 0x51: // OP_JUMP_IF_FALSE
 			if pc+5 > len(bytecode) {
@@ -535,7 +657,7 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 			}
 			state.SP--
 			if stack[state.SP].Data == 0 {
-				nextPC = target
+				nextPC = target + config.CodeOffset
 			} else {
 				nextPC = uint32(pc + 5)
 			}
@@ -573,9 +695,26 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 				Stack:  childStackWithResult,
 				Vars:   childVars,
 			})
-			// Push child ID (1-indexed) back to parent
-			stack[state.SP] = GpuValue{TagInt, int32(len(spawns))}
+			// Push 0 (the spawn slot for this VM's first child)
+			stack[state.SP] = GpuValue{TagInt, 0}
 			state.SP++
+
+		case 0xC1: // OP_MUTATOR — self-modify code at PC + offset
+			if state.SP < 2 {
+				state.Error = ErrStackUnderflow
+				state.Halted = 1
+				break
+			}
+			offsetVal := stack[state.SP-1].Data
+			value := stack[state.SP-2].Data
+			state.SP -= 2
+			target := int(state.PC) + int(offsetVal)
+			if target < 0 || target >= len(bytecode) {
+				state.Error = ErrMutatorOOB
+				state.Halted = 1
+				break
+			}
+			bytecode[target] = byte(value)
 
 		case 0xFF: // OP_HALT
 			if state.SP > 0 {
