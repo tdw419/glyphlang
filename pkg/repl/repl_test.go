@@ -89,7 +89,7 @@ func TestREPLBasicExpression(t *testing.T) {
 			input := strings.NewReader(tt.input + ":quit\n")
 			output := &bytes.Buffer{}
 
-			r := New(input, output, "test")
+			r := New(input, output, "test", false)
 			r.Start()
 
 			if !strings.Contains(output.String(), tt.expected) {
@@ -104,7 +104,7 @@ func TestREPLVariablePersistence(t *testing.T) {
 	input := strings.NewReader("$ x = 10\nx * 2\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -125,7 +125,7 @@ func TestREPLHelpCommand(t *testing.T) {
 	input := strings.NewReader(":help\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -181,7 +181,7 @@ func TestREPLTypeCommand(t *testing.T) {
 			input := strings.NewReader(tt.input)
 			output := &bytes.Buffer{}
 
-			r := New(input, output, "test")
+			r := New(input, output, "test", false)
 			r.Start()
 
 			if !strings.Contains(output.String(), tt.expected) {
@@ -196,7 +196,7 @@ func TestREPLResetCommand(t *testing.T) {
 	input := strings.NewReader("$ x = 10\n:reset\nx\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -217,7 +217,7 @@ func TestREPLUnknownCommand(t *testing.T) {
 	input := strings.NewReader(":unknown\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	if !strings.Contains(output.String(), "unknown command") {
@@ -231,7 +231,7 @@ func TestREPLMultilineInput(t *testing.T) {
 	input := strings.NewReader("{\n  x: 1\n}\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -270,7 +270,7 @@ func TestIsInputComplete(t *testing.T) {
 		{"'single'", true},
 	}
 
-	r := New(strings.NewReader(""), &bytes.Buffer{}, "test")
+	r := New(strings.NewReader(""), &bytes.Buffer{}, "test", false)
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
@@ -299,7 +299,7 @@ func TestDetectInputType(t *testing.T) {
 		{"type User { }", inputTypeTypeDef},
 	}
 
-	r := New(strings.NewReader(""), &bytes.Buffer{}, "test")
+	r := New(strings.NewReader(""), &bytes.Buffer{}, "test", false)
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
@@ -340,7 +340,7 @@ func TestREPLFunctionDefinition(t *testing.T) {
 	input := strings.NewReader("! double(n: int) -> int { > n * 2 }\ndouble(21)\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -361,7 +361,7 @@ func TestREPLVarsCommand(t *testing.T) {
 	input := strings.NewReader("$ x = 10\n$ y = \"hello\"\n:vars\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -380,7 +380,7 @@ func TestREPLLetStatement(t *testing.T) {
 	input := strings.NewReader("let x = 42\nx\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -396,7 +396,7 @@ func TestREPLReturnStatement(t *testing.T) {
 	input := strings.NewReader("return 100\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -412,7 +412,7 @@ func TestREPLEmptyInput(t *testing.T) {
 	input := strings.NewReader("\n\n\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	err := r.Start()
 
 	if err != nil {
@@ -450,7 +450,7 @@ func TestStop(t *testing.T) {
 	input := strings.NewReader("")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 
 	// Verify the REPL is not running initially
 	if r.running {
@@ -471,7 +471,7 @@ func TestGetEnvironment(t *testing.T) {
 	input := strings.NewReader("")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	env := r.GetEnvironment()
 
 	if env == nil {
@@ -494,7 +494,7 @@ func TestGetInterpreter(t *testing.T) {
 	input := strings.NewReader("")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	interp := r.GetInterpreter()
 
 	if interp == nil {
@@ -512,7 +512,7 @@ func TestResetDirectly(t *testing.T) {
 	input := strings.NewReader("")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 
 	// Define a variable in the environment
 	r.env.Define("x", int64(10))
@@ -547,7 +547,7 @@ func TestResetDirectly(t *testing.T) {
 // TestPrintResultNil tests printResult with nil value.
 func TestPrintResultNil(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	r.printResult(nil)
 
@@ -559,7 +559,7 @@ func TestPrintResultNil(t *testing.T) {
 // TestPrintResultNonNil tests printResult with a non-nil value.
 func TestPrintResultNonNil(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	r.printResult(int64(42))
 
@@ -587,7 +587,7 @@ func TestPrintResultVariousTypes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			output := &bytes.Buffer{}
-			r := New(strings.NewReader(""), output, "test")
+			r := New(strings.NewReader(""), output, "test", false)
 			r.printResult(tt.value)
 			if !strings.Contains(output.String(), tt.expected) {
 				t.Errorf("Expected output to contain %q, got %q", tt.expected, output.String())
@@ -628,7 +628,7 @@ func TestTypesCommand(t *testing.T) {
 	input := strings.NewReader(":types\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -642,7 +642,7 @@ func TestFunctionsCommandNoFunctions(t *testing.T) {
 	input := strings.NewReader(":functions\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -656,7 +656,7 @@ func TestFunctionsCommandWithFunctions(t *testing.T) {
 	input := strings.NewReader("! add(a: int, b: int) -> int { > a + b }\n:functions\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -673,7 +673,7 @@ func TestFnsAliasCommand(t *testing.T) {
 	input := strings.NewReader(":fns\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -689,7 +689,7 @@ func TestClearCommand(t *testing.T) {
 	input := strings.NewReader(":clear\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	// The REPL should still be functional after :clear
@@ -705,7 +705,7 @@ func TestClsAliasCommand(t *testing.T) {
 	input := strings.NewReader(":cls\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -719,7 +719,7 @@ func TestTypeCommandNoArgs(t *testing.T) {
 	input := strings.NewReader(":type\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -733,7 +733,7 @@ func TestTypeCommandShortAlias(t *testing.T) {
 	input := strings.NewReader(":t 42\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -747,7 +747,7 @@ func TestLoadCommandNoArgs(t *testing.T) {
 	input := strings.NewReader(":load\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -761,7 +761,7 @@ func TestLoadCommandNonexistentFile(t *testing.T) {
 	input := strings.NewReader(":load nonexistent_file_xyz\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -775,7 +775,7 @@ func TestLoadCommandWithExtension(t *testing.T) {
 	input := strings.NewReader(":load nonexistent.glyph\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -796,7 +796,7 @@ func TestLoadFileValidFile(t *testing.T) {
 	}
 
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	err := r.LoadFile(filePath)
 	if err != nil {
@@ -817,7 +817,7 @@ func TestLoadFileValidFile(t *testing.T) {
 // TestLoadFileNonexistent tests LoadFile with a nonexistent file.
 func TestLoadFileNonexistent(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	err := r.LoadFile("/nonexistent/path/to/file.glyph")
 	if err == nil {
@@ -838,7 +838,7 @@ func TestLoadFileInvalidSyntax(t *testing.T) {
 	}
 
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	err := r.LoadFile(filePath)
 	if err == nil {
@@ -858,7 +858,7 @@ func TestLoadCommandValidFile(t *testing.T) {
 	input := strings.NewReader(":load " + filePath + "\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -872,7 +872,7 @@ func TestLoadCommandShortAlias(t *testing.T) {
 	input := strings.NewReader(":l nonexistent_file\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -885,7 +885,7 @@ func TestLoadCommandShortAlias(t *testing.T) {
 // TestEvaluateTypeDef tests type definition through the REPL.
 func TestEvaluateTypeDef(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	// Call evaluateTypeDef directly since colon-prefixed input goes through
 	// executeCommand when entered via processLine
@@ -903,7 +903,7 @@ func TestEvaluateTypeDef(t *testing.T) {
 // TestEvaluateTypeDefWithTypeKeyword tests type definition using the 'type' keyword.
 func TestEvaluateTypeDefWithTypeKeyword(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	err := r.evaluateTypeDef("type User {\n  name: str!\n  age: int\n}")
 	if err != nil {
@@ -914,7 +914,7 @@ func TestEvaluateTypeDefWithTypeKeyword(t *testing.T) {
 // TestEvaluateFunctionDefinition tests function definition through processLine.
 func TestEvaluateFunctionDefinition(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	err := r.processLine("! square(n: int) -> int { > n * n }")
 	if err != nil {
@@ -939,7 +939,7 @@ func TestEvaluateFunctionDefinition(t *testing.T) {
 // TestEvaluateFunctionParseError tests function definition with invalid syntax.
 func TestEvaluateFunctionParseError(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	// Use evaluateFunction directly with invalid syntax to trigger parse error
 	err := r.evaluateFunction("! @@@ invalid {{{ }")
@@ -954,7 +954,7 @@ func TestEvaluateFunctionParseError(t *testing.T) {
 // TestEvaluateTypeDefDirectly tests evaluateTypeDef directly.
 func TestEvaluateTypeDefDirectly(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	err := r.evaluateTypeDef(": Color {\n  r: int!\n  g: int!\n  b: int!\n}")
 	if err != nil {
@@ -970,7 +970,7 @@ func TestEvaluateTypeDefDirectly(t *testing.T) {
 // TestEvaluateTypeDefParseError tests evaluateTypeDef with invalid syntax.
 func TestEvaluateTypeDefParseError(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	err := r.evaluateTypeDef(": {{{ invalid")
 	if err == nil {
@@ -987,7 +987,7 @@ func TestResetViaCommand(t *testing.T) {
 	input := strings.NewReader("$ x = 10\n:r\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -1001,7 +1001,7 @@ func TestExitCommand(t *testing.T) {
 	input := strings.NewReader(":exit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -1015,7 +1015,7 @@ func TestQuitShortAlias(t *testing.T) {
 	input := strings.NewReader(":q\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -1029,7 +1029,7 @@ func TestHelpShortAlias(t *testing.T) {
 	input := strings.NewReader(":h\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -1043,7 +1043,7 @@ func TestVarsShortAlias(t *testing.T) {
 	input := strings.NewReader(":v\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -1199,7 +1199,7 @@ func TestVarsCommandWithFunctions(t *testing.T) {
 	input := strings.NewReader("$ x = 10\n! noop() -> int { > 0 }\n:vars\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -1225,7 +1225,7 @@ func TestVarsCommandNoVars(t *testing.T) {
 	input := strings.NewReader(":vars\n:quit\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	r.Start()
 
 	result := output.String()
@@ -1237,7 +1237,7 @@ func TestVarsCommandNoVars(t *testing.T) {
 // TestEvaluateExpressionError tests expression evaluation errors.
 func TestEvaluateExpressionError(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	// Evaluate an undefined variable
 	err := r.evaluateExpression("undefinedVar123")
@@ -1249,7 +1249,7 @@ func TestEvaluateExpressionError(t *testing.T) {
 // TestProcessLineEmptyAfterTrim tests processLine with whitespace-only input.
 func TestProcessLineEmptyAfterTrim(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	// When input buffer is empty and we get a line that is just whitespace,
 	// it should be added to buffer, then the buffer trims to empty and returns nil
@@ -1262,7 +1262,7 @@ func TestProcessLineEmptyAfterTrim(t *testing.T) {
 // TestResetPreservesModuleResolver tests that Reset properly reinitializes the module resolver.
 func TestResetPreservesModuleResolver(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	r.Reset()
 
@@ -1278,7 +1278,7 @@ func TestResetPreservesModuleResolver(t *testing.T) {
 // has items but none match *ast.Function (the generic "Function defined" path).
 func TestEvaluateFunctionGenericFallback(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	// Define a function normally - it should show the specific name
 	err := r.evaluateFunction("! myFunc(x: int) -> int { > x }")
@@ -1295,7 +1295,7 @@ func TestEvaluateFunctionGenericFallback(t *testing.T) {
 // TestEvaluateTypeDefColonSyntax tests type definition with colon syntax via evaluateTypeDef.
 func TestEvaluateTypeDefColonSyntax(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	err := r.evaluateTypeDef(": Address {\n  street: str!\n  city: str!\n  zip: str!\n}")
 	if err != nil {
@@ -1318,7 +1318,7 @@ func TestLoadFileWithTypeDefinition(t *testing.T) {
 	}
 
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	err := r.LoadFile(filePath)
 	if err != nil {
@@ -1334,7 +1334,7 @@ func TestLoadFileWithTypeDefinition(t *testing.T) {
 // TestFunctionsCommandMultiple tests :functions with multiple functions defined.
 func TestFunctionsCommandMultiple(t *testing.T) {
 	output := &bytes.Buffer{}
-	r := New(strings.NewReader(""), output, "test")
+	r := New(strings.NewReader(""), output, "test", false)
 
 	// Define functions in the environment directly
 	fn1 := ast.Function{
@@ -1391,7 +1391,7 @@ func TestExecuteCommandDirectly(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			output := &bytes.Buffer{}
-			r := New(strings.NewReader(""), output, "test")
+			r := New(strings.NewReader(""), output, "test", false)
 			err := r.executeCommand(tt.command)
 			if tt.wantErr && err == nil {
 				t.Errorf("Expected error for %q", tt.command)
@@ -1418,7 +1418,7 @@ func TestNewCreatesValidREPL(t *testing.T) {
 	input := strings.NewReader("")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "1.0.0")
+	r := New(input, output, "1.0.0", false)
 
 	if r.interp == nil {
 		t.Error("Expected interpreter to be initialized")
@@ -1449,7 +1449,7 @@ func TestStartEOFTermination(t *testing.T) {
 	input := strings.NewReader("42\n")
 	output := &bytes.Buffer{}
 
-	r := New(input, output, "test")
+	r := New(input, output, "test", false)
 	err := r.Start()
 	if err != nil {
 		t.Errorf("Expected no error on EOF termination, got: %v", err)
