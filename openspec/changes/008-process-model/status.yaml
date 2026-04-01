@@ -1,0 +1,12 @@
+id: 008-process-model
+title: "Formal process abstraction with PIDs and lifecycle management"
+status: draft
+priority: high
+depends_on:
+  - 006-gpu-mitosis-fix
+labels:
+  - autospec
+  - spec-defined
+  - process-model
+  - os-vision
+github_issues: []

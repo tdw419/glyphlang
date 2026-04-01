@@ -1,0 +1,12 @@
+id: 007-virtual-filesystem
+title: "Virtual filesystem (VFS) layer for GlyphLang VM"
+status: draft
+priority: high
+depends_on:
+  - 002-bootstrap-vm-string-support
+labels:
+  - autospec
+  - spec-defined
+  - vfs
+  - os-vision
+github_issues: []

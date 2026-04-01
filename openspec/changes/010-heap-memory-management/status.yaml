@@ -1,0 +1,12 @@
+id: 010-heap-memory-management
+title: "Dynamic heap memory management for the VM"
+status: draft
+priority: high
+depends_on:
+  - 002-bootstrap-vm-string-support
+labels:
+  - autospec
+  - spec-defined
+  - memory
+  - os-vision
+github_issues: []

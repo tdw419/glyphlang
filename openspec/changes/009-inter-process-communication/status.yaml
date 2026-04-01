@@ -1,0 +1,12 @@
+id: 009-inter-process-communication
+title: "IPC channels for inter-process messaging and shared memory"
+status: draft
+priority: medium
+depends_on:
+  - 008-process-model
+labels:
+  - autospec
+  - spec-defined
+  - ipc
+  - os-vision
+github_issues: []
