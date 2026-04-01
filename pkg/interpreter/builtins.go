@@ -1608,7 +1608,7 @@ func builtinGPUExec(interp *Interpreter, args []Expr, env *Environment) (interfa
 		bytecodeBytes[idx] = byte(n)
 	}
 
-	numVMs := 1
+	// numVMs := 1
 	if len(args) == 2 {
 		nVal, err := interp.EvaluateExpression(args[1], env)
 		if err != nil {
@@ -1619,14 +1619,14 @@ func builtinGPUExec(interp *Interpreter, args []Expr, env *Environment) (interfa
 		}
 	}
 
-	dispatcher := gpuPkg.NewDispatcher()
-	results, err := dispatcher.Execute(bytecodeBytes, numVMs)
+	dispatcher := gpuPkg.NewMitosisVM(4096)
+	results, err := dispatcher.ExecuteWithMitosis(bytecodeBytes)
 	if err != nil {
 		return nil, fmt.Errorf("GPU execution failed: %w", err)
 	}
 
-	if numVMs == 1 {
-		r := results[0]
+	if len(results) == 1 {
+		r := results[0].Result
 		if r.Error != nil {
 			return nil, fmt.Errorf("GPU VM error: %w", r.Error)
 		}
@@ -1635,15 +1635,15 @@ func builtinGPUExec(interp *Interpreter, args []Expr, env *Environment) (interfa
 
 	// Multiple VMs: return array of results
 	out := make([]interface{}, len(results))
-	for i, r := range results {
+	for i, tr := range results {
+		r := tr.Result
 		if r.Error != nil {
-			out[i] = map[string]interface{}{"error": r.Error.Error(), "steps": int64(r.Steps)}
+			out[i] = map[string]interface{}{"error": r.Error.Error(), "steps": r.Steps}
 		} else {
 			out[i] = gpuResultToInterface(r)
 		}
 	}
 	return out, nil
-}
 
 func builtinArgs(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
 	result := make([]interface{}, len(os.Args))
