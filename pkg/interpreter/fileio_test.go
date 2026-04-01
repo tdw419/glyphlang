@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	. "github.com/glyphlang/glyph/pkg/ast"
+	"github.com/glyphlang/glyph/pkg/parser"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -323,4 +324,109 @@ func TestFileIO_ArgsLength(t *testing.T) {
 	assert.Equal(t, "script.glyph", arr[2])
 	assert.Equal(t, "hello", arr[3])
 	assert.Equal(t, "world", arr[4])
+}
+
+// ─── SEC-1: readFile from .glyph source (full parser pipeline) ─────
+
+// parseGlyph is a test helper that lexes, tokenizes, and parses .glyph source
+// into a Module AST.
+func parseGlyph(t *testing.T, src string) *Module {
+	t.Helper()
+	lex := parser.NewLexer(src)
+	tokens, err := lex.Tokenize()
+	require.NoError(t, err, "lexer failed")
+	p := parser.NewParser(tokens)
+	mod, err := p.Parse()
+	require.NoError(t, err, "parser failed")
+	return mod
+}
+
+// TestReadFile_FromGlyphSource verifies that readFile("test.glyph") called
+// from parsed .glyph source code returns the file contents as a string.
+// This exercises the full lexer -> parser -> evaluator pipeline (SEC-1 step 1.2).
+func TestReadFile_FromGlyphSource(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a .glyph file with known content to be read
+	targetFile := filepath.Join(tmpDir, "test.glyph")
+	targetContent := "// hello from glyph\n$ x = 42"
+	require.NoError(t, os.WriteFile(targetFile, []byte(targetContent), 0644))
+
+	// Define the file path in the environment so the .glyph function can reference it
+	interp := NewInterpreter()
+	env := interp.globalEnv
+	env.Define("__targetPath", targetFile)
+
+	// Parse a .glyph program that defines a function calling readFile
+	src := `! loadFile() -> string {
+  > readFile(__targetPath)
+}`
+	mod := parseGlyph(t, src)
+	require.NoError(t, interp.LoadModule(*mod))
+
+	// Call the parsed function through the evaluator
+	result, err := interp.EvaluateExpression(FunctionCallExpr{
+		Name: "loadFile",
+		Args: []Expr{},
+	}, env)
+	require.NoError(t, err)
+	assert.Equal(t, targetContent, result, "readFile should return exact file contents")
+}
+
+// TestReadFile_NonexistentFromGlyphSource verifies that readFile on a
+// nonexistent file returns an empty string when called from .glyph source.
+func TestReadFile_NonexistentFromGlyphSource(t *testing.T) {
+	interp := NewInterpreter()
+	env := interp.globalEnv
+	env.Define("__badPath", "/tmp/glyphlang_no_such_file_xyz.txt")
+
+	src := `! loadMissing() -> string {
+  > readFile(__badPath)
+}`
+	mod := parseGlyph(t, src)
+	require.NoError(t, interp.LoadModule(*mod))
+
+	result, err := interp.EvaluateExpression(FunctionCallExpr{
+		Name: "loadMissing",
+		Args: []Expr{},
+	}, env)
+	require.NoError(t, err)
+	assert.Equal(t, "", result, "readFile of nonexistent file should return empty string")
+}
+
+// TestReadFile_WriteThenReadFromGlyphSource verifies the writeFile -> readFile
+// round-trip through parsed .glyph source.
+func TestReadFile_WriteThenReadFromGlyphSource(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "data.txt")
+	content := "glyphlang file I/O test content"
+
+	interp := NewInterpreter()
+	env := interp.globalEnv
+	env.Define("__filePath", filePath)
+	env.Define("__content", content)
+
+	src := `! writeData() {
+  $ _ = writeFile(__filePath, __content)
+}
+! readData() -> string {
+  > readFile(__filePath)
+}`
+	mod := parseGlyph(t, src)
+	require.NoError(t, interp.LoadModule(*mod))
+
+	// Write the file via the parsed function
+	_, err := interp.EvaluateExpression(FunctionCallExpr{
+		Name: "writeData",
+		Args: []Expr{},
+	}, env)
+	require.NoError(t, err)
+
+	// Read it back via the parsed function
+	result, err := interp.EvaluateExpression(FunctionCallExpr{
+		Name: "readData",
+		Args: []Expr{},
+	}, env)
+	require.NoError(t, err)
+	assert.Equal(t, content, result)
 }
