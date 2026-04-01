@@ -483,3 +483,97 @@ func TestImport_ModuleResolution(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), result, "helper.add(1, 2) should return 3")
 }
+
+// ─── SEC-3: Circular import guard and module cache ─────────────────
+
+// TestCircularImport_NoInfiniteLoop creates two .glyph files that import
+// each other (A imports B, B imports A) and verifies the interpreter
+// terminates without infinite recursion. The second (circular) import
+// should return the partially-initialised module from cache rather than
+// recursing. Both modules should load successfully and their own
+// functions must remain callable.
+func TestCircularImport_NoInfiniteLoop(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// alpha.glyph imports ./beta and exports an identity function
+	alphaSrc := `import "./beta"
+! alphaFn(x: int) -> int {
+  > x
+}`
+	alphaFile := filepath.Join(tmpDir, "alpha.glyph")
+	require.NoError(t, os.WriteFile(alphaFile, []byte(alphaSrc), 0644))
+
+	// beta.glyph imports ./alpha (circular) and exports its own function
+	betaSrc := `import "./alpha"
+! betaFn(x: int) -> int {
+  > x + 1
+}`
+	betaFile := filepath.Join(tmpDir, "beta.glyph")
+	require.NoError(t, os.WriteFile(betaFile, []byte(betaSrc), 0644))
+
+	// Wire interpreter with real parser
+	interp := NewInterpreter()
+	interp.moduleResolver.ParseFunc = func(source string) (*Module, error) {
+		lex := parser.NewLexer(source)
+		tokens, err := lex.Tokenize()
+		if err != nil {
+			return nil, err
+		}
+		p := parser.NewParser(tokens)
+		return p.Parse()
+	}
+
+	// Loading alpha must not hang or error
+	require.NoError(t, interp.LoadModuleWithPath(*parseGlyph(t, alphaSrc), tmpDir))
+
+	// alphaFn should be callable
+	env := interp.globalEnv
+	result, err := interp.EvaluateExpression(FunctionCallExpr{
+		Name: "alphaFn",
+		Args: []Expr{LiteralExpr{Value: IntLiteral{Value: 42}}},
+	}, env)
+	require.NoError(t, err)
+	assert.Equal(t, int64(42), result, "alphaFn(42) should return 42")
+
+	// betaFn should also be loaded and callable
+	result, err = interp.EvaluateExpression(FunctionCallExpr{
+		Name: "betaFn",
+		Args: []Expr{LiteralExpr{Value: IntLiteral{Value: 7}}},
+	}, env)
+	require.NoError(t, err)
+	assert.Equal(t, int64(8), result, "betaFn(7) should return 8")
+}
+
+// TestCircularImport_CachePreventsReload verifies that importing the same
+// module twice returns the cached entry on the second import (no re-parse).
+func TestCircularImport_CachePreventsReload(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	utilSrc := `! utilFn() -> int { > 99 }`
+	utilFile := filepath.Join(tmpDir, "util.glyph")
+	require.NoError(t, os.WriteFile(utilFile, []byte(utilSrc), 0644))
+
+	mainSrc := `import "./util"
+import "./util"
+! run() -> int { > util.utilFn() }`
+	mainFile := filepath.Join(tmpDir, "main.glyph")
+	require.NoError(t, os.WriteFile(mainFile, []byte(mainSrc), 0644))
+
+	interp := NewInterpreter()
+	parseCount := 0
+	interp.moduleResolver.ParseFunc = func(source string) (*Module, error) {
+		parseCount++
+		lex := parser.NewLexer(source)
+		tokens, err := lex.Tokenize()
+		if err != nil {
+			return nil, err
+		}
+		p := parser.NewParser(tokens)
+		return p.Parse()
+	}
+
+	require.NoError(t, interp.LoadModuleWithPath(*parseGlyph(t, mainSrc), tmpDir))
+
+	// util.glyph should be parsed exactly once (cached on second import)
+	assert.Equal(t, 1, parseCount, "module should only be parsed once due to cache")
+}

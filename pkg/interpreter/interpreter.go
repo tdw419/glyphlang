@@ -35,9 +35,10 @@ type Interpreter struct {
 	httpHandler      interface{}              // HTTP client handler for outbound requests
 	providerHandlers map[string]interface{}   // Generic provider registry: type name -> handler
 	providerDefs     map[string]ProviderDef   // Provider contract definitions
-	moduleResolver   *ModuleResolver          // Module resolver for handling imports
-	importedModules  map[string]*LoadedModule // Imported modules by alias/name
-	constants        map[string]struct{}      // Tracks names that are constants (immutable)
+	moduleResolver     *ModuleResolver          // Module resolver for handling imports
+	importedModules    map[string]*LoadedModule // Imported modules by alias/name
+	loadedInternals    map[string]struct{}       // Tracks module paths whose internals have been loaded (circular import guard)
+	constants          map[string]struct{}       // Tracks names that are constants (immutable)
 	contracts        map[string]ContractDef   // Contract definitions by name
 	traitDefs        map[string]TraitDef      // Trait definitions by name
 	macros           map[string]*MacroDef     // Macro definitions by name
@@ -62,9 +63,10 @@ func NewInterpreter() *Interpreter {
 		typeChecker:      typeChecker,
 		providerHandlers: make(map[string]interface{}),
 		providerDefs:     make(map[string]ProviderDef),
-		moduleResolver:   NewModuleResolver(),
-		importedModules:  make(map[string]*LoadedModule),
-		constants:        make(map[string]struct{}),
+		moduleResolver:     NewModuleResolver(),
+		importedModules:    make(map[string]*LoadedModule),
+		loadedInternals:    make(map[string]struct{}),
+		constants:          make(map[string]struct{}),
 		contracts:        make(map[string]ContractDef),
 		traitDefs:        make(map[string]TraitDef),
 		macros:           make(map[string]*MacroDef),
@@ -307,10 +309,21 @@ func (i *Interpreter) processImport(importStmt *ImportStatement, basePath string
 // are only registered if they don't already exist to avoid overwriting
 // explicit imports or previously loaded definitions. The module's own
 // import statements are also processed to load transitive dependencies.
-// Circular imports are safe because processImport checks the module cache.
+// Circular imports are safe: once a module's internals have been loaded,
+// subsequent calls return immediately via the loadedInternals guard.
 func (i *Interpreter) loadModuleInternals(mod *LoadedModule) error {
 	if mod == nil || mod.Exports == nil {
 		return nil
+	}
+
+	// Circular import guard: if this module's internals have already been
+	// loaded (or are currently being loaded), skip re-processing. This
+	// prevents infinite recursion when A imports B and B imports A.
+	if mod.Path != "" {
+		if _, loaded := i.loadedInternals[mod.Path]; loaded {
+			return nil
+		}
+		i.loadedInternals[mod.Path] = struct{}{}
 	}
 
 	// Process the module's own imports to resolve transitive dependencies.
