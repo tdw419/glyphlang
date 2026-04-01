@@ -552,6 +552,11 @@ func (vm *VM) execAdd() error {
 			vm.Push(FloatValue{Val: float64(av.Val) + bv.Val})
 			return nil
 		}
+		if bv, ok := b.(StringValue); ok {
+			// int + string: coerce int to string and concatenate
+			vm.Push(StringValue{Val: intToString(av.Val) + bv.Val})
+			return nil
+		}
 	case FloatValue:
 		if bv, ok := b.(FloatValue); ok {
 			vm.Push(FloatValue{Val: av.Val + bv.Val})
@@ -561,9 +566,23 @@ func (vm *VM) execAdd() error {
 			vm.Push(FloatValue{Val: av.Val + float64(bv.Val)})
 			return nil
 		}
-	case StringValue:
 		if bv, ok := b.(StringValue); ok {
-			vm.Push(StringValue{Val: av.Val + bv.Val})
+			// float + string: coerce float to string and concatenate
+			vm.Push(StringValue{Val: floatToString(av.Val) + bv.Val})
+			return nil
+		}
+	case StringValue:
+		// If either operand is a string, concatenate by converting both to string
+		vm.Push(StringValue{Val: av.Val + valueToString(b)})
+		return nil
+	case BoolValue:
+		if bv, ok := b.(StringValue); ok {
+			// bool + string: coerce bool to string and concatenate
+			s := "false"
+			if av.Val {
+				s = "true"
+			}
+			vm.Push(StringValue{Val: s + bv.Val})
 			return nil
 		}
 	case ArrayValue:
@@ -2209,6 +2228,14 @@ func (vm *VM) registerBuiltins() {
 	vm.builtins["toString"] = func(args []Value) (Value, error) {
 		if len(args) != 1 {
 			return nil, fmt.Errorf("toString() takes exactly 1 argument, got %d", len(args))
+		}
+		return StringValue{Val: valueToString(args[0])}, nil
+	}
+
+	// str(val) - alias for toString, convert value to string
+	vm.builtins["str"] = func(args []Value) (Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("str() takes exactly 1 argument, got %d", len(args))
 		}
 		return StringValue{Val: valueToString(args[0])}, nil
 	}

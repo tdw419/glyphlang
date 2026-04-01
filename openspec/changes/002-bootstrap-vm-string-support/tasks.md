@@ -5,8 +5,8 @@
 - [-] 1.2 Update all existing opcode handlers to set INT_TAG when pushing values, and verify 230/230 existing tests still pass
 
 ## 2. Add string pool to VM
-- [ ] 2.1 Add `string_pool []string` to VM struct and `OP_LOAD_STRING` opcode that loads a string literal by index into the string pool and pushes a tagged STRING value onto the stack
-- [ ] 2.2 Update compiler to emit `OP_LOAD_STRING` for string literals with the string stored in a constant pool section of the bytecode
+- [x] 2.1 Add `string_pool []string` to VM struct and `OP_LOAD_STRING` opcode that loads a string literal by index into the string pool and pushes a tagged STRING value onto the stack
+- [x] 2.2 Update compiler to emit `OP_LOAD_STRING` for string literals with the string stored in a constant pool section of the bytecode
 
 ## 3. Implement OP_ADD type dispatch for strings
 - [ ] 3.1 Modify OP_ADD handler: if both operands are INT_TAG, do integer add; if either is STRING_TAG, convert both to string representation and concatenate, pushing result as STRING_TAG

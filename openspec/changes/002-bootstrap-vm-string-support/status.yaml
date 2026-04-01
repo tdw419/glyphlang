@@ -9,5 +9,5 @@ labels:
 - vm
 - strings
 priority: high
-status: in_progress
+status: completed
 title: Bootstrap VM string type tagging and concatenation

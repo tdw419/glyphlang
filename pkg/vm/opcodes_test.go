@@ -499,9 +499,9 @@ func TestTypeCompatibilityErrors(t *testing.T) {
 		errorMsg string
 	}{
 		{
-			name: "add string and integer",
+			name: "add boolean and integer",
 			setup: func(vm *VM) {
-				vm.Push(StringValue{Val: "hello"})
+				vm.Push(BoolValue{Val: true})
 				vm.Push(IntValue{Val: 42})
 			},
 			execFunc: func(vm *VM) error { return vm.execAdd() },
