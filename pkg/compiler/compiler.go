@@ -86,10 +86,21 @@ func (c *Compiler) Compile(module *ast.Module) ([]byte, error) {
 		return nil, fmt.Errorf("macro expansion failed: %w", err)
 	}
 
-	// For now, compile the first route we find
+	// Compile the first route or command we find, including module-level functions
+	// Collect all module-level functions first
+	var moduleFuncs []*ast.Function
+	for _, item := range expandedModule.Items {
+		if fn, ok := item.(*ast.Function); ok {
+			moduleFuncs = append(moduleFuncs, fn)
+		}
+	}
+
 	for _, item := range expandedModule.Items {
 		if route, ok := item.(*ast.Route); ok {
-			return c.CompileRoute(route)
+			return c.CompileRouteWithFunctions(route, moduleFuncs)
+		}
+		if cmd, ok := item.(*ast.Command); ok {
+			return c.CompileCommandWithFunctions(cmd, moduleFuncs)
 		}
 	}
 
@@ -121,6 +132,11 @@ func (c *Compiler) Compile(module *ast.Module) ([]byte, error) {
 
 // CompileRoute compiles a route to bytecode
 func (c *Compiler) CompileRoute(route *ast.Route) ([]byte, error) {
+	return c.CompileRouteWithFunctions(route, nil)
+}
+
+// CompileRouteWithFunctions compiles a route along with module-level functions.
+func (c *Compiler) CompileRouteWithFunctions(route *ast.Route, moduleFuncs []*ast.Function) ([]byte, error) {
 	// Reset compiler state for each route
 	c.Reset()
 
@@ -159,6 +175,13 @@ func (c *Compiler) CompileRoute(route *ast.Route) ([]byte, error) {
 	if route.Auth != nil {
 		authIdx := c.addConstant(vm.StringValue{Val: "auth"})
 		c.symbolTable.DefineBuiltin("auth", authIdx)
+	}
+
+	// Compile module-level functions as OP_DEF_FUNC entries
+	for _, fn := range moduleFuncs {
+		if err := c.compileModuleFunction(fn); err != nil {
+			return nil, fmt.Errorf("compile function %s: %w", fn.Name, err)
+		}
 	}
 
 	// Optimize route body before compilation
@@ -213,6 +236,13 @@ func (c *Compiler) CompileFunction(fn *ast.Function) ([]byte, error) {
 
 // CompileCommand compiles a CLI command to bytecode
 func (c *Compiler) CompileCommand(cmd *ast.Command) ([]byte, error) {
+	return c.CompileCommandWithFunctions(cmd, nil)
+}
+
+// CompileCommandWithFunctions compiles a CLI command along with module-level functions.
+// It first emits OP_DEF_FUNC for each function (so they're available when the command runs),
+// then compiles the command body.
+func (c *Compiler) CompileCommandWithFunctions(cmd *ast.Command, moduleFuncs []*ast.Function) ([]byte, error) {
 	c.Reset()
 
 	// Create command scope
@@ -222,6 +252,14 @@ func (c *Compiler) CompileCommand(cmd *ast.Command) ([]byte, error) {
 	for _, param := range cmd.Params {
 		nameIdx := c.addConstant(vm.StringValue{Val: param.Name})
 		c.symbolTable.Define(param.Name, nameIdx)
+	}
+
+	// Compile all module-level functions as OP_DEF_FUNC entries.
+	// Each function's body is inlined into the instruction stream with a DEF_FUNC header.
+	for _, fn := range moduleFuncs {
+		if err := c.compileModuleFunction(fn); err != nil {
+			return nil, fmt.Errorf("compile function %s: %w", fn.Name, err)
+		}
 	}
 
 	// Optimize and compile body
@@ -237,6 +275,70 @@ func (c *Compiler) CompileCommand(cmd *ast.Command) ([]byte, error) {
 	}
 
 	return c.buildBytecode()
+}
+
+// compileModuleFunction emits OP_DEF_FUNC for a module-level function.
+// It records the function name, param count, body length, param names, then the body opcodes.
+func (c *Compiler) compileModuleFunction(fn *ast.Function) error {
+	nameIdx := c.addConstant(vm.StringValue{Val: fn.Name})
+
+	// Switch to function scope for parameter resolution
+	outerScope := c.symbolTable
+	funcScope := c.symbolTable.EnterScope(FunctionScope)
+	c.symbolTable = funcScope
+
+	// Define params in function scope
+	for _, param := range fn.Params {
+		pidx := c.addConstant(vm.StringValue{Val: param.Name})
+		c.symbolTable.Define(param.Name, pidx)
+	}
+
+	// Compile the function body to measure its length
+	bodyStart := len(c.code)
+	optimizedBody := c.optimizer.OptimizeStatements(fn.Body)
+	for _, stmt := range optimizedBody {
+		if err := c.compileStatement(stmt); err != nil {
+			c.symbolTable = outerScope
+			return err
+		}
+	}
+	// Add implicit return null if needed
+	if len(optimizedBody) == 0 || !isReturnStatement(optimizedBody[len(optimizedBody)-1]) {
+		nullIdx := c.addConstant(vm.NullValue{})
+		c.emitWithOperand(vm.OpPush, uint32(nullIdx))
+		c.emit(vm.OpReturn)
+	}
+	bodyEnd := len(c.code)
+
+	// Restore outer scope
+	c.symbolTable = outerScope
+
+	// Now we need to emit OP_DEF_FUNC before the body opcodes.
+	// Strategy: record the body opcodes, prepend DEF_FUNC header, re-append body.
+	bodyOps := make([]byte, bodyEnd-bodyStart)
+	copy(bodyOps, c.code[bodyStart:bodyEnd])
+	c.code = c.code[:bodyStart]
+
+	// Emit DEF_FUNC header: opcode + name_idx(4) + param_count(4) + body_length(4) + [param_name_idx(4)]...
+	paramCount := len(fn.Params)
+	bodyLength := len(bodyOps)
+	c.emitWithOperand(vm.OpDefFunc, uint32(nameIdx))
+	// Raw 4-byte operands (readOperand in the VM reads 4 bytes each)
+	buf4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(paramCount))
+	c.code = append(c.code, buf4...)
+	binary.LittleEndian.PutUint32(buf4, uint32(bodyLength))
+	c.code = append(c.code, buf4...)
+	for _, param := range fn.Params {
+		pidx := c.addConstant(vm.StringValue{Val: param.Name})
+		binary.LittleEndian.PutUint32(buf4, uint32(pidx))
+		c.code = append(c.code, buf4...)
+	}
+
+	// Re-emit body
+	c.code = append(c.code, bodyOps...)
+
+	return nil
 }
 
 // CompileCronTask compiles a cron task to bytecode
