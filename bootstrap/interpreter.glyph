@@ -833,6 +833,16 @@ import "./parser"
     > { value: false, error: "" }
   }
 
+  # eval_source: meta-circular recursive eval — delegates to the outer
+  # eval_source function (defined in this same module). When a program
+  # executed by eval_source calls eval_source(...) itself, this builtin
+  # path catches it and recurses, enabling the interpreter to interpret
+  # itself.
+  if name == "eval_source" {
+    if length(args) == 0 { > { value: null, error: "eval_source: no source" } }
+    > eval_source(args[0], null, null)
+  }
+
   > { value: null, error: "not_builtin:" + name }
 }
 
