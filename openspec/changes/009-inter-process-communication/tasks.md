@@ -11,6 +11,6 @@
 - [x] 2.3 Implement access control: track which PIDs have access to each shared region. Support explicit grant/revoke of access between processes.
 
 ## 3. Synchronization primitives
-- [ ] 3.1 Implement mutex: `OpMutexCreate` / `OpMutexLock` / `OpMutexUnlock`. Lock blocks if already held; unlock wakes one waiting process.
-- [ ] 3.2 Implement semaphore: `OpSemCreate(n)` / `OpSemWait` / `OpSemSignal`. Wait decrements (blocks at zero), signal increments (wakes one waiter).
-- [ ] 3.3 Wire synchronization state into the process scheduler: when a process is unblocked (lock released, semaphore signaled), move it from blocked to ready state.
+- [x] 3.1 Implement mutex: `OpMutexCreate` / `OpMutexLock` / `OpMutexUnlock`. Lock blocks if already held; unlock wakes one waiting process.
+- [x] 3.2 Implement semaphore: `OpSemCreate(n)` / `OpSemWait` / `OpSemSignal`. Wait decrements (blocks at zero), signal increments (wakes one waiter).
+- [x] 3.3 Wire synchronization state into the process scheduler: when a process is unblocked (lock released, semaphore signaled), move it from blocked to ready state.

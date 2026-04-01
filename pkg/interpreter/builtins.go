@@ -1608,16 +1608,6 @@ func builtinGPUExec(interp *Interpreter, args []Expr, env *Environment) (interfa
 		bytecodeBytes[idx] = byte(n)
 	}
 
-	// numVMs := 1
-	if len(args) == 2 {
-		nVal, err := interp.EvaluateExpression(args[1], env)
-		if err != nil {
-			return nil, err
-		}
-		if n, ok := nVal.(int64); ok {
-			numVMs = int(n)
-		}
-	}
 
 	dispatcher := gpuPkg.NewMitosisVM(4096)
 	results, err := dispatcher.ExecuteWithMitosis(bytecodeBytes)
@@ -1644,6 +1634,7 @@ func builtinGPUExec(interp *Interpreter, args []Expr, env *Environment) (interfa
 		}
 	}
 	return out, nil
+}
 
 func builtinArgs(i *Interpreter, args []Expr, env *Environment) (interface{}, error) {
 	result := make([]interface{}, len(os.Args))

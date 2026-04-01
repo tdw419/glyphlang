@@ -49,6 +49,7 @@ type ProcessTable struct {
 	waitChans    map[uint32]chan struct{} // PID -> channel signaled when process becomes zombie
 	channelTable *ChannelTable           // lazily initialized on first channel creation
 	shmTable     *SharedMemoryTable      // lazily initialized on first shm_create
+	syncTable    *SyncTable              // lazily initialized on first mutex/sem create
 }
 
 // NewProcessTable creates an empty process table with PID allocation starting at 1.

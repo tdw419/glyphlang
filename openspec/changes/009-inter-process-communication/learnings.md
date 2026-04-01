@@ -54,3 +54,51 @@
 - **[added]** pkg/vm/shm_test.go — 23 tests covering table ops, access control, opcodes, and integration
 - **[modified]** pkg/vm/process.go — added shmTable field to ProcessTable
 - **[modified]** pkg/vm/vm.go — wired 4 new opcodes into executeInstruction
+
+- **[pattern]** (from SEC-2) [modified] pkg/vm/process.go
+
+- **[pattern]** (from SEC-2) [added] pkg/vm/shm.go
+
+- **[pattern]** (from SEC-2) [added] pkg/vm/shm_test.go
+
+- **[pattern]** (from SEC-2) [modified] pkg/vm/vm.go
+
+- **[pattern]** (from SEC-2) [modified] openspec/changes/009-inter-process-communication/learnings.md
+
+- **[discovery]** (from SEC-2) Agent strategy: created 2 files, modified 4 files, added tests
+
+- **[discovery]** (from SEC-3) Agent strategy: modified 1 file
+
+- **[discovery]** (from SEC-3) Tests regressed by 7 (52 -> 45)
+
+- **[discovery]** (from SEC-3) Agent strategy: no-action
+
+---
+
+# Learnings: SEC-3 Synchronization primitives
+
+## What worked
+- Following the exact same pattern as channels and shm: standalone data structures with their own mutexes, lazily-initialized SyncTable on ProcessTable.
+- Putting Mutex and Semaphore in a single `sync.go` file keeps related code together without creating too many tiny files.
+- Opcodes 0xD7-0xDC right after the shm opcodes keeps the opcode space sequential.
+- Deadlock detection in Mutex.Lock (same PID tries to acquire twice) catches a common programming error.
+- FIFO wait queues on both Mutex and Semaphore ensure fairness.
+- Semaphore Signal transfers a permit directly to a waiting process (count stays same) rather than incrementing then decrementing — cleaner semantics.
+- 36 tests covering data structures, tables, opcodes, error cases, and integration scenarios.
+
+## What didn't
+- Previous attempts (1 and 2) failed because they tried to modify the `builtins.go` file instead of adding proper opcodes. The existing IPC pattern is all opcode-based, not builtin-based.
+- Attempt 1 regressed 7 tests — likely from modifying the wrong file or adding conflicting code.
+
+## What I'd do differently
+- Could add a Barrier primitive as mentioned in the proposal, but the tasks.md only specifies mutex and semaphore.
+- Could add `OpMutexTryLock` (non-blocking variant) but it's out of scope.
+
+## Files touched
+- **[added]** pkg/vm/sync.go — Mutex, Semaphore, SyncTable, 6 opcodes (OpMutexCreate/Lock/Unlock, OpSemCreate/Wait/Signal)
+- **[added]** pkg/vm/sync_test.go — 36 tests
+- **[modified]** pkg/vm/process.go — added syncTable field to ProcessTable
+- **[modified]** pkg/vm/vm.go — wired 6 new opcodes into executeInstruction
+
+## discovery
+- **[discovery]** (from SEC-3 attempt 3) Agent strategy: created 2 files, modified 2 files, added 36 tests. All existing tests pass, 0 regressions.

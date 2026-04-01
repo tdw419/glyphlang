@@ -524,6 +524,18 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 		return vm.execShmGrant()
 	case OpShmRevoke:
 		return vm.execShmRevoke()
+	case OpMutexCreate:
+		return vm.execMutexCreate()
+	case OpMutexLock:
+		return vm.execMutexLock()
+	case OpMutexUnlock:
+		return vm.execMutexUnlock()
+	case OpSemCreate:
+		return vm.execSemCreate()
+	case OpSemWait:
+		return vm.execSemWait()
+	case OpSemSignal:
+		return vm.execSemSignal()
 	case OpHalt:
 		vm.halted = true
 		return nil
