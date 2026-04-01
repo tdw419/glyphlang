@@ -1380,7 +1380,14 @@ import "./parser"
 # ─── Dynamic Eval (Self-Hosting Seed) ────────────────────────────
 
 ! eval_source(src: str, env: any, base_path: any) -> EvalResult {
-  if env == null { $ env = env_new() }
+  if env == null {
+    $ env = env_new()
+    # Propagate eval_source into child env for meta-circular support.
+    # This allows programs executed by eval_source to call eval_source
+    # themselves, enabling the interpreter to interpret itself.
+    $ self_ref = eval_source
+    env_set(env, "eval_source", self_ref)
+  }
   if base_path == null { $ base_path = "./" }
   $ p = parser.new_parser(src)
   $ pr = parser.parse(p)

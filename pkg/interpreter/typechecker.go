@@ -85,9 +85,14 @@ func GetRuntimeType(value interface{}) Type {
 	case map[string]interface{}:
 		// For objects, we return a generic named type
 		return NamedType{Name: "object"}
+	case Function:
+		// Functions are represented as named "function" type
+		return NamedType{Name: "function"}
+	case *Function:
+		return NamedType{Name: "function"}
 	default:
 		return nil
-	}
+}
 }
 
 // CheckType validates that a value matches an expected type annotation

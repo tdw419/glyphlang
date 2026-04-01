@@ -2,11 +2,14 @@ package interpreter
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/glyphlang/glyph/pkg/ast"
 	"github.com/glyphlang/glyph/pkg/parser"
@@ -246,5 +249,209 @@ func TestSEC2_RunTest(t *testing.T) {
 
 	if !strings.Contains(output, "5") {
 		t.Errorf("expected result 5 in output, got: %s", output)
+	}
+}
+
+// ─── SEC-3: Meta-circular test — interpreter interprets itself ───
+
+// callBootstrapEvalSource calls the bootstrap interpreter's eval_source
+// function directly, bypassing the Go builtin dispatch. This forces
+// interpretation through the bootstrap's own parser+exec_module chain.
+//
+// The bootstrap's eval_source(src, env, base_path) is a .glyph function
+// that uses parser.new_parser, parser.parse, and exec_module — the full
+// bootstrap interpretation pipeline written in GlyphLang itself.
+func callBootstrapEvalSource(interp *Interpreter, src string) (interface{}, error) {
+	fn, ok := interp.GetFunction("eval_source")
+	if !ok {
+		return nil, fmt.Errorf("eval_source function not found in bootstrap")
+	}
+
+	args := []Expr{
+		LiteralExpr{Value: StringLiteral{Value: src}},
+	}
+
+	return interp.executeFunction(fn, args, interp.globalEnv)
+}
+
+// TestSEC3_BootstrapEvalSource_Fibonacci verifies that the bootstrap
+// interpreter's eval_source (written in .glyph) can interpret a recursive
+// fibonacci program and produce the correct result.
+//
+// Interpretation stack:
+//   Level 0: Go test harness
+//   Level 1: Go interpreter executing bootstrap's eval_source (.glyph code)
+//   Level 2: Bootstrap's own parser + exec_module running the fibonacci program
+//
+// The fibonacci program defines fib(n) recursively and computes fib(10) = 55.
+func TestSEC3_BootstrapEvalSource_Fibonacci(t *testing.T) {
+	interp := sec2Setup(t)
+
+	// A fibonacci program that the bootstrap interpreter must parse and execute
+	// through its own parser + exec_module chain.
+	fibProgram := `! fib(n: int) -> int {
+  if n <= 1 { > n }
+  > fib(n - 1) + fib(n - 2)
+}
+$ result = fib(10)`
+
+	result, err := callBootstrapEvalSource(interp, fibProgram)
+	if err != nil {
+		t.Fatalf("bootstrap eval_source call failed: %v", err)
+	}
+
+	// The bootstrap's eval_source returns an EvalResult map: { value, error }
+	resMap, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map result, got %T: %v", result, result)
+	}
+
+	if errStr, _ := resMap["error"].(string); errStr != "" {
+		t.Fatalf("bootstrap eval_source returned error: %s", errStr)
+	}
+
+	value := resMap["value"]
+	if value == nil {
+		t.Fatal("bootstrap eval_source returned nil value")
+	}
+
+	valInt, ok := value.(int64)
+	if !ok {
+		t.Fatalf("expected int64 value, got %T: %v", value, value)
+	}
+
+	if valInt != 55 {
+		t.Errorf("expected fibonacci(10) = 55, got %d", valInt)
+	}
+}
+
+// TestSEC3_MetaCircular_NestedEval verifies the full 3-level interpretation
+// stack: the bootstrap interpreter's eval_source interprets a program that
+// itself calls eval_source to interpret fibonacci.
+//
+// Interpretation stack:
+//   Level 0: Go test harness
+//   Level 1: Go interpreter executing bootstrap's eval_source
+//   Level 2: Bootstrap's eval_source running a wrapper program
+//   Level 3: The wrapper program's eval_source call running fibonacci
+//
+// This is the "interpreter interpreting itself interpreting a program" moment.
+func TestSEC3_MetaCircular_NestedEval(t *testing.T) {
+	interp := sec2Setup(t)
+
+	// Outer program: uses the bootstrap's eval_source to evaluate a fibonacci
+	// program. The inner eval_source is resolved from the bootstrap's env —
+	// it's the same .glyph function, called recursively.
+	fibSrc := `! fib(n: int) -> int {
+  if n <= 1 { > n }
+  > fib(n - 1) + fib(n - 2)
+}
+$ result = fib(10)`
+
+	// The outer program calls eval_source with the fibonacci source.
+	// Inside the bootstrap's exec, this resolves eval_source from the env
+	// and calls it, creating the meta-circular nesting.
+	outerProgram := `$ r = eval_source("` + strings.ReplaceAll(fibSrc, `"`, `\"`) + `")
+$ result = r.value`
+
+	// Capture stdout for debugging
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	start := time.Now()
+	result, err := callBootstrapEvalSource(interp, outerProgram)
+	elapsed := time.Since(start)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	r.Close()
+
+	output := buf.String()
+
+	if err != nil {
+		t.Fatalf("meta-circular eval_source call failed: %v\nOutput:\n%s", err, output)
+	}
+
+	// Document performance metrics
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+	t.Logf("=== SEC-3 Performance Metrics ===")
+	t.Logf("  Time: %v", elapsed)
+	t.Logf("  HeapAlloc: %d KB", memStats.HeapAlloc/1024)
+	t.Logf("  TotalAlloc: %d KB", memStats.TotalAlloc/1024)
+	t.Logf("  Stack: 3 levels (Go → bootstrap eval_source → nested eval_source → fibonacci)")
+
+	resMap, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map result, got %T: %v\nOutput:\n%s", result, result, output)
+	}
+
+	if errStr, _ := resMap["error"].(string); errStr != "" {
+		t.Fatalf("outer eval_source returned error: %s\nOutput:\n%s", errStr, output)
+	}
+
+	value := resMap["value"]
+	if value == nil {
+		t.Fatalf("outer eval_source returned nil value\nOutput:\n%s", output)
+	}
+
+	valInt, ok := value.(int64)
+	if !ok {
+		t.Fatalf("expected int64 value, got %T: %v\nOutput:\n%s", value, value, output)
+	}
+
+	if valInt != 55 {
+		t.Errorf("meta-circular fibonacci(10) = expected 55, got %d\nOutput:\n%s", valInt, output)
+	}
+}
+
+// TestSEC3_BootstrapEvalSource_PrintOutput verifies that the bootstrap
+// interpreter can execute a fibonacci program that uses print() to output
+// the result, capturing stdout to confirm correctness.
+func TestSEC3_BootstrapEvalSource_PrintOutput(t *testing.T) {
+	interp := sec2Setup(t)
+
+	fibProgram := `! fib(n: int) -> int {
+  if n <= 1 { > n }
+  > fib(n - 1) + fib(n - 2)
+}
+$ r = fib(10)
+print(r)`
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	result, err := callBootstrapEvalSource(interp, fibProgram)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	r.Close()
+
+	if err != nil {
+		t.Fatalf("bootstrap eval_source call failed: %v", err)
+	}
+
+	output := buf.String()
+
+	resMap, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map result, got %T: %v", result, result)
+	}
+
+	if errStr, _ := resMap["error"].(string); errStr != "" {
+		t.Fatalf("bootstrap eval_source returned error: %s", errStr)
+	}
+
+	if !strings.Contains(output, "55") {
+		t.Errorf("expected output to contain '55', got: %q", output)
 	}
 }
