@@ -1,0 +1,14 @@
+id: 003-bootstrap-for-in-key-value
+title: "Verify and test for-in with key,value pairs end-to-end"
+status: draft
+priority: high
+depends_on:
+  - 001-fix-broken-bootstrap-tests
+  - 002-bootstrap-vm-string-support
+labels:
+  - autospec
+  - spec-defined
+  - bootstrap
+  - vm
+  - compiler
+github_issues: []

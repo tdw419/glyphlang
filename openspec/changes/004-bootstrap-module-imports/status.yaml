@@ -1,0 +1,14 @@
+id: 004-bootstrap-module-imports
+title: "Module import resolution using readFile builtin"
+status: draft
+priority: high
+depends_on:
+  - 001-fix-broken-bootstrap-tests
+  - 002-bootstrap-vm-string-support
+labels:
+  - autospec
+  - spec-defined
+  - bootstrap
+  - interpreter
+  - modules
+github_issues: []

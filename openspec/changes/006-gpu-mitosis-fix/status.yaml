@@ -1,0 +1,13 @@
+id: 006-gpu-mitosis-fix
+title: "Fix #88: Mitosis children not executing (PC=0 init bug)"
+status: draft
+priority: critical
+depends_on: []
+labels:
+  - autospec
+  - spec-defined
+  - gpu
+  - mitosis
+  - bug
+github_issues:
+  - "#88"
