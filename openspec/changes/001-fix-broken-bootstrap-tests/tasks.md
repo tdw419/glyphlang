@@ -1,8 +1,8 @@
 # Tasks: Fix Broken Bootstrap Tests
 
 ## 1. Fix test_compiler_mutable_closure.glyph parse error
-- [ ] 1.1 Restructure the if-block containing `> false` on same line as `print()` to eliminate parse ambiguity (move comparison to temp variable or split across lines)
-- [ ] 1.2 Run the test and verify it passes through the Go parser and bootstrap interpreter
+- [x] 1.1 Restructure the if-block containing `> false` on same line as `print()` to eliminate parse ambiguity (move comparison to temp variable or split across lines)
+- [x] 1.2 Run the test and verify it passes through the Go parser and bootstrap interpreter
 
 ## 2. Fix test_vm_bootstrap.glyph module-level call
 - [ ] 2.1 Replace bare `run_tests()` with `@ run_tests()` wrapper syntax accepted by Go parser
