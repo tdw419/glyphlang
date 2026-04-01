@@ -125,7 +125,7 @@ func TestCompileNoRoutes(t *testing.T) {
 	cmd.Flags().Uint8("opt-level", 2, "")
 	err = runCompile(cmd, []string{srcFile})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no routes found")
+	assert.Contains(t, err.Error(), "no runnable item")
 }
 
 // --- Decompile error cases ---
