@@ -628,6 +628,338 @@ func TestLoadStorePtrViaBytecode(t *testing.T) {
 	}
 }
 
+// --- Step 3.1: Reference counting on OpStorePtr ---
+
+func TestStorePtrIncrementsNewTargetRefcount(t *testing.T) {
+	vm := NewVM()
+
+	// Allocate block A (target)
+	vm.Push(IntValue{Val: 8})
+	vm.execAlloc()
+	ptrA, _ := vm.Pop()
+
+	// Allocate block B (container), set type tag to ptr
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptrB, _ := vm.Pop()
+
+	blockB, _ := vm.heap.GetBlock(ptrB.(PointerValue).Address)
+	blockB.TypeTag = TypeTagPtr
+
+	// Initial refcount of block A should be 1
+	blockA, _ := vm.heap.GetBlock(ptrA.(PointerValue).Address)
+	if blockA.RefCount != 1 {
+		t.Fatalf("expected initial refcount 1, got %d", blockA.RefCount)
+	}
+
+	// Store ptrA into block B
+	vm.Push(ptrB)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(ptrA)
+	vm.execStorePtr()
+
+	// Refcount of block A should now be 2
+	if blockA.RefCount != 2 {
+		t.Errorf("expected refcount 2 after store, got %d", blockA.RefCount)
+	}
+}
+
+func TestStorePtrDecrementsOldTargetRefcount(t *testing.T) {
+	vm := NewVM()
+
+	// Allocate block A
+	vm.Push(IntValue{Val: 8})
+	vm.execAlloc()
+	ptrA, _ := vm.Pop()
+
+	// Allocate block C
+	vm.Push(IntValue{Val: 8})
+	vm.execAlloc()
+	ptrC, _ := vm.Pop()
+
+	// Allocate block B (container), set type tag to ptr
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptrB, _ := vm.Pop()
+
+	blockB, _ := vm.heap.GetBlock(ptrB.(PointerValue).Address)
+	blockB.TypeTag = TypeTagPtr
+
+	blockA, _ := vm.heap.GetBlock(ptrA.(PointerValue).Address)
+	blockC, _ := vm.heap.GetBlock(ptrC.(PointerValue).Address)
+
+	// Store ptrA into block B
+	vm.Push(ptrB)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(ptrA)
+	vm.execStorePtr()
+
+	if blockA.RefCount != 2 {
+		t.Fatalf("expected refcount 2, got %d", blockA.RefCount)
+	}
+
+	// Overwrite with ptrC — should decrement A's refcount, increment C's
+	vm.Push(ptrB)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(ptrC)
+	vm.execStorePtr()
+
+	if blockA.RefCount != 1 {
+		t.Errorf("expected A refcount 1 after overwrite, got %d", blockA.RefCount)
+	}
+	if blockC.RefCount != 2 {
+		t.Errorf("expected C refcount 2 after store, got %d", blockC.RefCount)
+	}
+}
+
+func TestStorePtrFreesBlockWhenRefcountReachesZero(t *testing.T) {
+	vm := NewVM()
+
+	// Allocate block A (refcount = 1)
+	vm.Push(IntValue{Val: 8})
+	vm.execAlloc()
+	ptrA, _ := vm.Pop()
+	addrA := ptrA.(PointerValue).Address
+
+	// Allocate block B (container), set type tag to ptr
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptrB, _ := vm.Pop()
+
+	blockB, _ := vm.heap.GetBlock(ptrB.(PointerValue).Address)
+	blockB.TypeTag = TypeTagPtr
+
+	// Store ptrA into block B → refcount(A) = 2
+	vm.Push(ptrB)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(ptrA)
+	vm.execStorePtr()
+
+	// Explicitly free ptrA → refcount(A) = 1 (still alive because B holds it)
+	vm.Push(ptrA)
+	vm.execFree()
+
+	// Overwrite B[0] with a different value — since B is TypeTagPtr,
+	// we need to store a different pointer. Let's allocate C and store it.
+	vm.Push(IntValue{Val: 8})
+	vm.execAlloc()
+	ptrC, _ := vm.Pop()
+
+	vm.Push(ptrB)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(ptrC)
+	vm.execStorePtr()
+
+	// Block A should now be freed (refcount went to 0)
+	blockA, err := vm.heap.GetBlock(addrA)
+	if err != nil {
+		t.Fatalf("block A should still exist in map: %v", err)
+	}
+	if !blockA.Freed {
+		t.Error("expected block A to be freed after refcount reached 0")
+	}
+}
+
+func TestStorePtrNonPointerValueNoRefcount(t *testing.T) {
+	vm := NewVM()
+
+	// Store an integer into a raw block — should not affect refcounts
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptr, _ := vm.Pop()
+
+	vm.Push(ptr)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(IntValue{Val: 42})
+	err := vm.execStorePtr()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestStorePtrOverwriteNullPointerNoDecrement(t *testing.T) {
+	vm := NewVM()
+
+	// Allocate block B with TypeTagPtr — initially data is all zeros
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptrB, _ := vm.Pop()
+
+	blockB, _ := vm.heap.GetBlock(ptrB.(PointerValue).Address)
+	blockB.TypeTag = TypeTagPtr
+
+	// Allocate block A
+	vm.Push(IntValue{Val: 8})
+	vm.execAlloc()
+	ptrA, _ := vm.Pop()
+	blockA, _ := vm.heap.GetBlock(ptrA.(PointerValue).Address)
+
+	// Store ptrA into B[0] — old value was 0 (null), no decrement should happen
+	vm.Push(ptrB)
+	vm.Push(IntValue{Val: 0})
+	vm.Push(ptrA)
+	vm.execStorePtr()
+
+	// refcount(A) should be 2 (initial + new store)
+	if blockA.RefCount != 2 {
+		t.Errorf("expected refcount 2, got %d", blockA.RefCount)
+	}
+}
+
+// --- Step 3.2: Automatic cleanup on frame pop ---
+
+func TestReturnDecrementsRefcounts(t *testing.T) {
+	vm := NewVM()
+
+	// Allocate a block
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptr, _ := vm.Pop()
+	addr := ptr.(PointerValue).Address
+
+	block, _ := vm.heap.GetBlock(addr)
+	if block.RefCount != 1 {
+		t.Fatalf("expected initial refcount 1, got %d", block.RefCount)
+	}
+
+	// Set up: push a call frame, store pointer in local env, then return
+	vm.callStack = append(vm.callStack, CallFrame{
+		returnPC:        0,
+		returnBytecode:  vm.code,
+		returnConstants: vm.constants,
+		env:             NewEnvironment(nil),
+	})
+
+	// Current env has a local variable holding the pointer
+	vm.env.Values["p"] = ptr
+
+	// Return should decrement refcount and free the block
+	vm.Push(IntValue{Val: 0}) // return value on stack
+	err := vm.execReturn()
+	if err != nil {
+		t.Fatalf("execReturn error: %v", err)
+	}
+
+	// Block should be freed (refcount went from 1 to 0)
+	block, err = vm.heap.GetBlock(addr)
+	if err != nil {
+		t.Fatalf("block should still exist: %v", err)
+	}
+	if !block.Freed {
+		t.Error("expected block to be freed after frame cleanup")
+	}
+}
+
+func TestReturnDoesNotFreeSharedBlock(t *testing.T) {
+	vm := NewVM()
+
+	// Allocate a block
+	vm.Push(IntValue{Val: 16})
+	vm.execAlloc()
+	ptr, _ := vm.Pop()
+	addr := ptr.(PointerValue).Address
+
+	block, _ := vm.heap.GetBlock(addr)
+	// Manually bump refcount to simulate another reference
+	block.RefCount = 2
+
+	// Set up call frame with pointer in local env
+	vm.callStack = append(vm.callStack, CallFrame{
+		returnPC:        0,
+		returnBytecode:  vm.code,
+		returnConstants: vm.constants,
+		env:             NewEnvironment(nil),
+	})
+	vm.env.Values["p"] = ptr
+
+	vm.Push(IntValue{Val: 0})
+	vm.execReturn()
+
+	// Block should NOT be freed (refcount went from 2 to 1)
+	block, _ = vm.heap.GetBlock(addr)
+	if block.Freed {
+		t.Error("expected block to NOT be freed — still has one reference")
+	}
+	if block.RefCount != 1 {
+		t.Errorf("expected refcount 1, got %d", block.RefCount)
+	}
+}
+
+func TestReturnNoPointersInLocals(t *testing.T) {
+	vm := NewVM()
+
+	// Set up call frame with non-pointer locals
+	vm.callStack = append(vm.callStack, CallFrame{
+		returnPC:        0,
+		returnBytecode:  vm.code,
+		returnConstants: vm.constants,
+		env:             NewEnvironment(nil),
+	})
+	vm.env.Values["x"] = IntValue{Val: 42}
+	vm.env.Values["y"] = StringValue{Val: "hello"}
+
+	vm.Push(IntValue{Val: 0})
+	err := vm.execReturn()
+	if err != nil {
+		t.Fatalf("execReturn with non-pointer locals should succeed: %v", err)
+	}
+}
+
+func TestReturnCleansUpMultiplePointers(t *testing.T) {
+	vm := NewVM()
+
+	// Allocate two blocks
+	vm.Push(IntValue{Val: 8})
+	vm.execAlloc()
+	ptr1, _ := vm.Pop()
+	addr1 := ptr1.(PointerValue).Address
+
+	vm.Push(IntValue{Val: 8})
+	vm.execAlloc()
+	ptr2, _ := vm.Pop()
+	addr2 := ptr2.(PointerValue).Address
+
+	// Set up call frame
+	vm.callStack = append(vm.callStack, CallFrame{
+		returnPC:        0,
+		returnBytecode:  vm.code,
+		returnConstants: vm.constants,
+		env:             NewEnvironment(nil),
+	})
+	vm.env.Values["a"] = ptr1
+	vm.env.Values["b"] = ptr2
+
+	vm.Push(IntValue{Val: 0})
+	vm.execReturn()
+
+	// After cleanup, at least one block should be freed.
+	// Coalescing may merge them, so only one entry remains in the map.
+	freedCount := 0
+	for _, b := range vm.heap.blocks {
+		if b.Freed {
+			freedCount++
+		}
+	}
+	// Both were refcount 1 and had no other references, so both should be freed
+	// (possibly merged into one coalesced block)
+	if freedCount == 0 {
+		t.Error("expected at least one block to be freed")
+	}
+
+	// Verify the blocks are no longer usable (freed or coalesced away)
+	b1, err1 := vm.heap.GetBlock(addr1)
+	b2, err2 := vm.heap.GetBlock(addr2)
+	// Either the block is freed or it was coalesced away (err != nil)
+	addr1Freed := err1 != nil || b1.Freed
+	addr2Freed := err2 != nil || b2.Freed
+	if !addr1Freed {
+		t.Error("expected block 1 to be freed")
+	}
+	if !addr2Freed {
+		t.Error("expected block 2 to be freed")
+	}
+}
+
 func TestAllocReturnsPointerViaBytecode(t *testing.T) {
 	constants := []Value{IntValue{Val: 64}}
 	bytecode := createBytecodeHeader(constants)

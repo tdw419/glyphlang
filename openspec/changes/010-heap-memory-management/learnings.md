@@ -36,3 +36,32 @@
 - Added refcount increment on StorePtr when the value is a PointerValue and the target block has TypeTagPtr.
 - Tests cover: i64 round-trip, f64 round-trip (with explicit TypeTag), ptr round-trip (with TypeTagPtr), multi-slot offsets, overwrite, out-of-bounds (SEGFAULT), invalid pointer, use-after-free, stack underflow.
 - 16 new tests added (72 total in pkg/vm, up from 56).
+
+- **[pattern]** (from SEC-2) [modified] pkg/vm/heap.go
+
+- **[pattern]** (from SEC-2) [modified] pkg/vm/vm.go
+
+- **[pattern]** (from SEC-2) [modified] pkg/vm/heap_test.go
+
+- **[pattern]** (from SEC-2) [modified] openspec/changes/010-heap-memory-management/learnings.md
+
+- **[pattern]** (from SEC-2) [modified] openspec/changes/010-heap-memory-management/tasks.md
+
+- **[discovery]** (from SEC-2) Agent strategy: modified 5 files, fix attempt
+
+## SEC-3 implementation
+
+- Refcount increment on StorePtr was already implemented in SEC-2. SEC-3 added the missing piece: decrementing the old value's refcount when a TypeTagPtr slot is overwritten.
+- The old value is read from block.Data before the new value is written. If oldAddr != 0 (null pointer), `decrementRefcount` is called on it. This handles the case where a pointer slot is overwritten with a new pointer — the old target gets decremented, the new target gets incremented.
+- `decrementRefcount` helper on Heap: decrements refcount, calls `Free` if it reaches 0. Guard against already-freed blocks.
+- `ReleaseEnv` helper on Heap: iterates environment values, calls `decrementRefcount` for each PointerValue. Called from `execReturn` before restoring the caller's frame.
+- Coalescing can merge adjacent freed blocks, deleting entries from the blocks map. Tests must handle `GetBlock` returning an error for coalesced-away blocks. Use `err != nil || block.Freed` pattern.
+- Cyclic reference limitation documented on the Heap type. Reference counting cannot collect cycles; programs should use acyclic data structures. Future mark-and-sweep GC can be added.
+- 9 new tests added covering: increment on store, decrement on overwrite, auto-free at refcount 0, null-pointer overwrite (no spurious decrement), frame cleanup (single pointer, shared pointer, non-pointer locals, multiple pointers with coalescing).
+
+- **[pattern]** (from SEC-3) [modified] pkg/vm/heap.go
+- **[pattern]** (from SEC-3) [modified] pkg/vm/vm.go
+- **[pattern]** (from SEC-3) [modified] pkg/vm/heap_test.go
+- **[pattern]** (from SEC-3) [modified] openspec/changes/010-heap-memory-management/learnings.md
+- **[pattern]** (from SEC-3) [modified] openspec/changes/010-heap-memory-management/tasks.md
+- **[discovery]** (from SEC-3) Agent strategy: modified 4 files, 9 tests added, all passing

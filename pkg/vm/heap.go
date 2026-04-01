@@ -64,6 +64,20 @@ func (v PointerValue) MarshalJSON() ([]byte, error) {
 }
 
 // Heap manages dynamic memory allocations for a VM instance.
+//
+// Memory management uses reference counting. Every heap block starts with
+// RefCount=1 on allocation. Storing a pointer into a TypeTagPtr block
+// increments the target's refcount; overwriting a pointer slot decrements
+// the old target's refcount. When a function frame is popped (execReturn),
+// all PointerValues in the frame's local environment have their refcounts
+// decremented. Blocks reaching refcount 0 are freed automatically.
+//
+// Known limitation: reference counting cannot collect cyclic data structures.
+// If block A holds a pointer to block B, and B holds a pointer back to A,
+// neither will ever reach refcount 0 even when no external references remain.
+// GlyphLang programs should prefer acyclic data structures (trees, flat lists,
+// etc.). A future mark-and-sweep garbage collection pass can be added to
+// reclaim cycles if needed.
 type Heap struct {
 	blocks map[uint32]*HeapBlock // address -> block
 	hp     uint32                // heap pointer (bump allocator)
@@ -206,6 +220,33 @@ func (h *Heap) removeFreeList(addr uint32) {
 	}
 }
 
+// decrementRefcount decrements the reference count of the block at the given
+// data address. If refcount reaches zero, the block is freed automatically.
+func (h *Heap) decrementRefcount(dataAddr uint32) {
+	block, err := h.GetBlock(dataAddr)
+	if err != nil || block.Freed {
+		return
+	}
+	block.RefCount--
+	if block.RefCount <= 0 {
+		h.Free(dataAddr)
+	}
+}
+
+// ReleaseEnv scans an environment for heap pointers and decrements their
+// refcounts. Blocks reaching refcount 0 are freed automatically.
+// This should be called when a function frame is popped.
+func (h *Heap) ReleaseEnv(env *Environment) {
+	if env == nil {
+		return
+	}
+	for _, val := range env.Values {
+		if ptr, ok := val.(PointerValue); ok {
+			h.decrementRefcount(ptr.Address)
+		}
+	}
+}
+
 // GetBlock returns the heap block for a given data address.
 func (h *Heap) GetBlock(dataAddr uint32) (*HeapBlock, error) {
 	headerAddr := dataAddr - headerSize
@@ -337,6 +378,13 @@ func (h *Heap) Store(dataAddr uint32, offset uint32, value Value) error {
 		if !ok {
 			return fmt.Errorf("store: cannot store %s into ptr block", value.Type())
 		}
+
+		// Decrement refcount of the old value at this slot (if it was a valid pointer)
+		oldAddr := binary.LittleEndian.Uint64(block.Data[offset : offset+8])
+		if oldAddr != 0 {
+			h.decrementRefcount(uint32(oldAddr))
+		}
+
 		binary.LittleEndian.PutUint64(block.Data[offset:offset+8], uint64(ptr.Address))
 		// Increment refcount of the pointed-to block
 		targetBlock, err := h.GetBlock(ptr.Address)

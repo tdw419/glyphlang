@@ -11,6 +11,6 @@
 - [x] 2.3 Add bounds checking: verify that (ptr + offset) falls within the heap region. Trap with SEGFAULT on out-of-bounds access.
 
 ## 3. Reference counting
-- [ ] 3.1 Add refcount increment/decrement to the block header. On every `OpStorePtr` that writes a heap pointer, increment the new target's refcount and decrement the old target's refcount.
-- [ ] 3.2 Implement automatic cleanup: when a function frame is popped, scan its local variables for heap pointers and decrement refcounts. When refcount reaches zero, trigger `OpFree` on the block.
-- [ ] 3.3 Handle cyclic references with a documented limitation: reference counting cannot collect cycles. Document that the language should prefer acyclic data structures, and that a future mark-and-sweep GC pass can be added if needed.
+- [x] 3.1 Add refcount increment/decrement to the block header. On every `OpStorePtr` that writes a heap pointer, increment the new target's refcount and decrement the old target's refcount.
+- [x] 3.2 Implement automatic cleanup: when a function frame is popped, scan its local variables for heap pointers and decrement refcounts. When refcount reaches zero, trigger `OpFree` on the block.
+- [x] 3.3 Handle cyclic references with a documented limitation: reference counting cannot collect cycles. Document that the language should prefer acyclic data structures, and that a future mark-and-sweep GC pass can be added if needed.

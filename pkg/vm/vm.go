@@ -1606,6 +1606,10 @@ func (vm *VM) execReturn() error {
 		return nil
 	}
 
+	// Release heap pointers held in the current frame's local variables.
+	// This decrements refcounts and frees blocks that reach refcount 0.
+	vm.heap.ReleaseEnv(vm.env)
+
 	// Pop call frame
 	frame := vm.callStack[len(vm.callStack)-1]
 	vm.callStack = vm.callStack[:len(vm.callStack)-1]
