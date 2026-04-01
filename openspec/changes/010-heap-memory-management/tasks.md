@@ -1,9 +1,9 @@
 # Tasks: Dynamic Heap Memory Management
 
 ## 1. Heap allocator implementation
-- [ ] 1.1 Define the heap region in VM memory layout. Add a HeapPointer (HP) register to the VM state. Initialize HP to heap_base. Define heap_base as a configurable constant (default: address 0x10000, leaving room for stack and globals below).
-- [ ] 1.2 Implement `OpAlloc(size)`: compute total block size (header + data + padding). Search free list for a best-fit block. If none found, bump HP. Write block header (size, refcount=1, type_tag). Return the data pointer (header address + header_size).
-- [ ] 1.3 Implement `OpFree(ptr)`: look up the block header at (ptr - header_size). If refcount is 0, add to free list. Coalesce with adjacent free blocks. Guard against double-free by zeroing the type_tag.
+- [x] 1.1 Define the heap region in VM memory layout. Add a HeapPointer (HP) register to the VM state. Initialize HP to heap_base. Define heap_base as a configurable constant (default: address 0x10000, leaving room for stack and globals below).
+- [x] 1.2 Implement `OpAlloc(size)`: compute total block size (header + data + padding). Search free list for a best-fit block. If none found, bump HP. Write block header (size, refcount=1, type_tag). Return the data pointer (header address + header_size).
+- [x] 1.3 Implement `OpFree(ptr)`: look up the block header at (ptr - header_size). If refcount is 0, add to free list. Coalesce with adjacent free blocks. Guard against double-free by zeroing the type_tag.
 
 ## 2. Pointer load/store opcodes
 - [ ] 2.1 Implement `OpLoadPtr(ptr, offset)`: compute effective address (ptr + offset). Read the value from VM memory at that address. Decode based on the block's type_tag (i32, i64, f64, string, ptr). Push the decoded value onto the operand stack.

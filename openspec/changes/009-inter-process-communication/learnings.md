@@ -102,3 +102,15 @@
 
 ## discovery
 - **[discovery]** (from SEC-3 attempt 3) Agent strategy: created 2 files, modified 2 files, added 36 tests. All existing tests pass, 0 regressions.
+
+- **[pattern]** (from SEC-3) [modified] pkg/vm/process.go
+
+- **[pattern]** (from SEC-3) [modified] pkg/vm/vm.go
+
+- **[pattern]** (from SEC-3) [added] pkg/vm/sync_test.go
+
+- **[pattern]** (from SEC-3) [added] pkg/vm/sync.go
+
+- **[pattern]** (from SEC-3) [modified] openspec/changes/009-inter-process-communication/learnings.md
+
+- **[discovery]** (from SEC-3) Agent strategy: created 2 files, modified 4 files, added tests, fix attempt

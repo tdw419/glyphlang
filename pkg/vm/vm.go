@@ -77,6 +77,12 @@ const (
 	OpKill  Opcode = 0xC4 // Terminate process by PID
 	OpWait  Opcode = 0xC5 // Block until target process becomes zombie, reap it
 
+	// Heap memory management opcodes
+	OpAlloc    Opcode = 0xE0 // Allocate heap block: pops size, pushes pointer
+	OpFree     Opcode = 0xE1 // Free heap block: pops pointer
+	OpLoadPtr  Opcode = 0xE2 // Load value from heap at ptr+offset
+	OpStorePtr Opcode = 0xE3 // Store value to heap at ptr+offset
+
 	OpHalt Opcode = 0xFF
 )
 
@@ -150,6 +156,10 @@ func (vm *VM) Clone() *VM {
 		}
 	}
 
+	// Clone heap state
+	newVM.heap = NewHeap()
+	newVM.hp = vm.hp
+
 	return newVM
 }
 
@@ -183,6 +193,10 @@ type VM struct {
 
 	// Process table for lifecycle management (nil = no process model)
 	processTable *ProcessTable
+
+	// Heap allocator for dynamic memory management
+	heap *Heap
+	hp   uint32 // heap pointer register (mirrors heap.hp for external access)
 }
 
 // SetProfiler sets the profiler for this VM.
@@ -192,6 +206,7 @@ func (vm *VM) SetProfiler(p ProfileRecorder) {
 
 // NewVM creates a new virtual machine
 func NewVM() *VM {
+	heap := NewHeap()
 	vm := &VM{
 		stack:      make([]Value, 0, 256),
 		env:        NewEnvironment(nil),
@@ -206,6 +221,8 @@ func NewVM() *VM {
 		pc:         0,
 		halted:     false,
 		profiler:   NewSimpleProfiler(),
+		heap:       heap,
+		hp:         heapBase,
 	}
 	vm.registerBuiltins()
 	return vm
@@ -536,6 +553,10 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 		return vm.execSemWait()
 	case OpSemSignal:
 		return vm.execSemSignal()
+	case OpAlloc:
+		return vm.execAlloc()
+	case OpFree:
+		return vm.execFree()
 	case OpHalt:
 		vm.halted = true
 		return nil
