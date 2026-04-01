@@ -9,4 +9,4 @@
 - [x] 2.2 Run the test on GPU and verify children execute with correct PC values and produce expected output
 
 ## 3. Add CPU Mitosis fallback detection
-- [ ] 3.1 Add error handling in the Mitosis path that catches GPU execution failures and logs a warning, setting up the infrastructure for CPU fallback (full fallback is #78)
+- [x] 3.1 Add error handling in the Mitosis path that catches GPU execution failures and logs a warning, setting up the infrastructure for CPU fallback (full fallback is #78)

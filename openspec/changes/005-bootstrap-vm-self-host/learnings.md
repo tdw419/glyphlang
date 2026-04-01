@@ -18,3 +18,7 @@
 - **[discovery]** (from SEC-3) Agent strategy: modified 3 files, fix attempt
 
 - **[discovery]** (from SEC-3) Tests regressed by 1 (54 -> 53)
+
+- **[pattern]** (from SEC-3) [modified] bootstrap/interpreter.glyph
+
+- **[discovery]** (from SEC-3) Agent strategy: modified 1 file, fix attempt

@@ -15,3 +15,40 @@
 - Design the bytecode layout with POP from the start when multiple spawns are needed
 - Test the full pipeline (ExecuteWithMitosis) before the individual components — the WaitGroup race would have been caught earlier
 - The channel-based architecture was overengineered for the actual workload; synchronous collection with parallel child execution is simpler and correct
+
+## pattern
+
+- **[pattern]** (from SEC-2) [modified] bootstrap/interpreter.glyph
+
+- **[pattern]** (from SEC-2) [added] bootstrap/test_self_host.glyph
+
+- **[pattern]** (from SEC-2) [modified] pkg/gpu/mitosis.go
+
+- **[pattern]** (from SEC-2) [added] pkg/gpu/mitosis_integration_test.go
+
+- **[pattern]** (from SEC-2) [modified] openspec/changes/006-gpu-mitosis-fix/learnings.md
+
+## discovery
+
+- **[discovery]** (from SEC-2) Agent strategy: created 2 files, modified 4 files, refactored, added tests, fix attempt
+
+---
+
+# Learnings: SEC-3 CPU Mitosis Fallback Detection
+
+## What worked
+- Adding `ForceGPUError` field for testability — allows testing fallback path without mocking GPU hardware
+- Separating `attemptGPUExecution` from `executeCPUFallback` makes the fallback boundary explicit and testable
+- Collecting warnings in a thread-safe slice (`fallbackWarnings` + mutex) allows tests to inspect what was logged without capturing stderr
+- The `attemptGPUExecution` currently does validation-only (checks GPU availability and bytecode compatibility) — this is the right scope for "infrastructure" without overcommitting to #78's full implementation
+
+## What didn't
+- Nothing unexpected. This was a clean, well-scoped task.
+
+## What would I do differently
+- Could have used an interface for the GPU executor instead of a bool flag, but the bool is simpler and sufficient for the current scope. An interface would be warranted when #78 implements actual GPU dispatch.
+
+## Files changed
+
+- **[modified]** pkg/gpu/mitosis.go — added `ForceGPUError` field, `FallbackWarnings()`, `logFallbackWarning()`, `attemptGPUExecution()`, `executeCPUFallback()`; refactored `ExecuteWithMitosis` into GPU-attempt + CPU-fallback
+- **[added]** pkg/gpu/mitosis_fallback_test.go — 3 tests: fallback warning emitted, no warning without error, correct results on fallback

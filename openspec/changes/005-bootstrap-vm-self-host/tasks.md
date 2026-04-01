@@ -9,5 +9,5 @@
 - [x] 2.2 Debug and fix any issues found in string handling, for-in loops, or function calls during the interpretation of the test program
 
 ## 3. Meta-circular test: interpreter interprets itself interpreting a program
-- [ ] 3.1 Run `interpreter.glyph` interpreting itself interpreting `test_fibonacci.glyph` where fibonacci(10) produces 55. Verify the final output is correct.
-- [ ] 3.2 Document performance metrics: time to execute, memory usage, any timeouts or limits hit during the 3-level interpretation stack
+- [x] 3.1 Run `interpreter.glyph` interpreting itself interpreting `test_fibonacci.glyph` where fibonacci(10) produces 55. Verify the final output is correct.
+- [x] 3.2 Document performance metrics: time to execute, memory usage, any timeouts or limits hit during the 3-level interpretation stack

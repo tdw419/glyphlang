@@ -2,6 +2,8 @@ package gpu
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"sync"
 	"sync/atomic"
 )
@@ -21,6 +23,18 @@ type MitosisVM struct {
 	dispatcher *Dispatcher
 	maxThreads int
 	nextID     atomic.Int64
+
+	// ForceGPUError forces the GPU execution path to fail for testing.
+	// When true, ExecuteWithMitosis will simulate a GPU failure, log a
+	// warning, and fall back to CPU execution.
+	ForceGPUError bool
+
+	// fallbackWarnings collects warning messages from GPU fallback events.
+	fallbackWarnings []string
+	fallbackMu       sync.Mutex
+
+	// logger is used for fallback warning output. Defaults to stdlib log.
+	logger *log.Logger
 }
 
 // NewMitosisVM creates a VM dispatcher with mitosis (S opcode) support.
@@ -31,6 +45,7 @@ func NewMitosisVM(maxThreads int) *MitosisVM {
 	return &MitosisVM{
 		dispatcher: NewDispatcher(),
 		maxThreads: maxThreads,
+		logger:     log.New(os.Stderr, "[mitosis] ", log.LstdFlags),
 	}
 }
 
@@ -40,6 +55,26 @@ type ThreadResult struct {
 	ParentID int // -1 for root thread
 	Result   Result
 	Children []int // IDs of spawned child threads
+}
+
+// FallbackWarnings returns the list of GPU fallback warning messages collected
+// during execution. Thread-safe.
+func (m *MitosisVM) FallbackWarnings() []string {
+	m.fallbackMu.Lock()
+	defer m.fallbackMu.Unlock()
+	out := make([]string, len(m.fallbackWarnings))
+	copy(out, m.fallbackWarnings)
+	return out
+}
+
+// logFallbackWarning records a fallback warning message and logs it.
+func (m *MitosisVM) logFallbackWarning(msg string) {
+	m.fallbackMu.Lock()
+	m.fallbackWarnings = append(m.fallbackWarnings, msg)
+	m.fallbackMu.Unlock()
+	if m.logger != nil {
+		m.logger.Print(msg)
+	}
 }
 
 // ExecuteWithMitosis runs bytecode with S opcode support.
@@ -54,6 +89,44 @@ func (m *MitosisVM) ExecuteWithMitosis(bytecode []byte) ([]ThreadResult, error) 
 		return nil, err
 	}
 
+	// Attempt GPU execution first, fall back to CPU on failure.
+	// This infrastructure supports issue #78 (full CPU fallback).
+	if err := m.attemptGPUExecution(bytecode, config); err != nil {
+		warning := fmt.Sprintf("GPU mitosis execution failed: %v; falling back to CPU", err)
+		m.logFallbackWarning(warning)
+	}
+
+	return m.executeCPUFallback(bytecode, config), nil
+}
+
+// attemptGPUExecution tries to run the bytecode on GPU via the dispatcher.
+// Returns nil if GPU execution succeeded, or an error describing why it failed.
+// The GPU path does not yet support Mitosis child spawning — it only validates
+// that the GPU is available and the bytecode is GPU-compatible.
+func (m *MitosisVM) attemptGPUExecution(bytecode []byte, config *Config) error {
+	// Forced failure for testing the fallback path
+	if m.ForceGPUError {
+		return fmt.Errorf("simulated GPU failure (ForceGPUError=true)")
+	}
+
+	// Check if bytecode is GPU-compatible
+	if !IsGPUCompatible(bytecode) {
+		return fmt.Errorf("bytecode contains opcodes not supported by GPU")
+	}
+
+	// Check if GPU is available via the dispatcher
+	if !m.dispatcher.hasGPU {
+		return fmt.Errorf("GPU not available (dispatcher.hasGPU=false)")
+	}
+
+	// GPU is available and bytecode is compatible.
+	// Full GPU mitosis execution is not yet implemented (#78).
+	// When implemented, this would dispatch child threads to GPU workgroups.
+	return nil
+}
+
+// executeCPUFallback runs the full Mitosis execution on CPU.
+func (m *MitosisVM) executeCPUFallback(bytecode []byte, config *Config) []ThreadResult {
 	var (
 		mu          sync.Mutex
 		results     []ThreadResult
@@ -88,7 +161,7 @@ func (m *MitosisVM) ExecuteWithMitosis(bytecode []byte) ([]ThreadResult, error) 
 
 	pending.Wait()
 
-	return results, nil
+	return results
 }
 
 type spawnWork struct {
