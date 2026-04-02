@@ -115,6 +115,12 @@ func NewDispatcher() *Dispatcher {
 	}
 }
 
+// SetCPUFallback forces the dispatcher to use CPU execution regardless
+// of GPU availability. Useful for cross-verification and testing.
+func (d *Dispatcher) SetCPUFallback() {
+	d.hasGPU = false
+}
+
 // ShaderSource returns the embedded WGSL shader source.
 func (d *Dispatcher) ShaderSource() string {
 	return d.shader

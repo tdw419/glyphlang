@@ -11,6 +11,6 @@
 - [x] 2.3 Handle opcodes that cannot run on GPU gracefully: add a trap/error code for "unsupported on GPU" and ensure the Rust runner can detect and report this to the caller.
 
 ## 3. GPU verification tests
-- [ ] 3.1 Create a test harness that compiles a GlyphLang program to GLYP bytecode, executes it on the CPU VM, executes it on the GPU via the Rust runner, and compares the results (register state, output values).
-- [ ] 3.2 Write 5 verification programs: (1) arithmetic (add/mul/div), (2) comparisons and branches, (3) function calls, (4) constant loading (the encoding fix), (5) loops with ITER_NEXT. Each must produce identical results on CPU and GPU.
-- [ ] 3.3 Run the full existing test suite. Confirm all 57 test packages pass (the 3 GPU failures should now be green). No regressions in the 54 already-passing packages.
+- [x] 3.1 Create a test harness that compiles a GlyphLang program to GLYP bytecode, executes it on the CPU VM, executes it on the GPU via the Rust runner, and compares the results (register state, output values).
+- [x] 3.2 Write 5 verification programs: (1) arithmetic (add/mul/div), (2) comparisons and branches, (3) function calls, (4) constant loading (the encoding fix), (5) loops with ITER_NEXT. Each must produce identical results on CPU and GPU.
+- [x] 3.3 Run the full existing test suite. Confirm all 57 test packages pass (the 3 GPU failures should now be green). No regressions in the 54 already-passing packages.

@@ -6,14 +6,34 @@ import (
 	"time"
 )
 
-// Value represents a runtime value
+// Value tag constants for fast type dispatch without interface assertions.
+// Every Value implementation returns exactly one of these from its Tag() method.
+const (
+	NullTag    = 0 // NullValue
+	IntTag     = 1 // IntValue
+	FloatTag   = 2 // FloatValue
+	StringTag  = 3 // StringValue
+	BoolTag    = 4 // BoolValue
+	ArrayTag   = 5 // ArrayValue
+	ObjectTag  = 6 // ObjectValue
+	FuncTag    = 7 // FunctionValue
+	FutureTag  = 8 // FutureValue
+	ResultTag  = 9 // ResultValue
+	RefPtrTag  = 10 // heap pointer / external reference
+)
+
+// Value represents a runtime value.
+// Tag() returns a small integer tag for fast type dispatch.
+type Value interface {
+	Type() string
+	Tag() int
+}
 
 // Environment represents a scope for variables
 type Environment struct {
-        Values map[string]Value
-        Parent *Environment
+	Values map[string]Value
+	Parent *Environment
 }
-
 
 func (e *Environment) Clone() *Environment {
 	if e == nil {
@@ -30,20 +50,17 @@ func (e *Environment) Clone() *Environment {
 }
 
 func NewEnvironment(parent *Environment) *Environment {
-        return &Environment{
-                Values: make(map[string]Value),
-                Parent: parent,
-        }
-}
-
-type Value interface {
-	Type() string
+	return &Environment{
+		Values: make(map[string]Value),
+		Parent: parent,
+	}
 }
 
 // NullValue represents a null value
 type NullValue struct{}
 
 func (v NullValue) Type() string { return "null" }
+func (v NullValue) Tag() int     { return NullTag }
 
 func (v NullValue) MarshalJSON() ([]byte, error) {
 	return []byte("null"), nil
@@ -55,6 +72,7 @@ type IntValue struct {
 }
 
 func (v IntValue) Type() string { return "int" }
+func (v IntValue) Tag() int     { return IntTag }
 
 func (v IntValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Val)
@@ -66,6 +84,7 @@ type FloatValue struct {
 }
 
 func (v FloatValue) Type() string { return "float" }
+func (v FloatValue) Tag() int     { return FloatTag }
 
 func (v FloatValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Val)
@@ -77,6 +96,7 @@ type StringValue struct {
 }
 
 func (v StringValue) Type() string { return "str" }
+func (v StringValue) Tag() int     { return StringTag }
 
 func (v StringValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Val)
@@ -88,6 +108,7 @@ type BoolValue struct {
 }
 
 func (v BoolValue) Type() string { return "bool" }
+func (v BoolValue) Tag() int     { return BoolTag }
 
 func (v BoolValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Val)
@@ -99,6 +120,7 @@ type ArrayValue struct {
 }
 
 func (v ArrayValue) Type() string { return "array" }
+func (v ArrayValue) Tag() int     { return ArrayTag }
 
 func (v ArrayValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Val)
@@ -110,6 +132,7 @@ type ObjectValue struct {
 }
 
 func (v ObjectValue) Type() string { return "object" }
+func (v ObjectValue) Tag() int     { return ObjectTag }
 
 func (v ObjectValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Val)
@@ -127,6 +150,7 @@ type FunctionValue struct {
 }
 
 func (v FunctionValue) Type() string { return "function" }
+func (v FunctionValue) Tag() int     { return FuncTag }
 
 func (v FunctionValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]interface{}{
@@ -144,6 +168,7 @@ type FutureValue struct {
 }
 
 func (v *FutureValue) Type() string { return "future" }
+func (v *FutureValue) Tag() int     { return FutureTag }
 
 func (v *FutureValue) MarshalJSON() ([]byte, error) {
 	select {
@@ -183,6 +208,7 @@ type ResultValue struct {
 }
 
 func (v *ResultValue) Type() string { return "result" }
+func (v *ResultValue) Tag() int     { return ResultTag }
 
 func (v *ResultValue) MarshalJSON() ([]byte, error) {
 	if v.IsErr {

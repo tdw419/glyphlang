@@ -477,6 +477,18 @@ Runs one or more parallel VM instances via WebGPU compute shaders.`,
         gpuCmd.Flags().Bool("live", false, "Continuous execution mode")
 	gpuCmd.Flags().Bool("spatial", false, "Show Hilbert curve spatial grid visualization")
 	rootCmd.AddCommand(gpuCmd)
+
+	var verifyCmd = &cobra.Command{
+		Use:   "verify <file.glyph|file.glyphc>",
+		Short: "Cross-verify CPU and GPU execution of bytecode",
+		Long: `Compile (if needed) and run bytecode on both the CPU VM and GPU dispatcher,
+then compare results. Reports PASS if both agree, MISMATCH otherwise.`,
+		Args: cobra.ExactArgs(1),
+		RunE: runVerify,
+	}
+	verifyCmd.Flags().Bool("verbose", false, "Show detailed output for each VM")
+	rootCmd.AddCommand(verifyCmd)
+
 	rootCmd.AddCommand(profileCmd)
 
 	rootCmd.AddCommand(versionCmd)

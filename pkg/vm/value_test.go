@@ -200,3 +200,78 @@ func TestDefaultAsyncTimeout(t *testing.T) {
 		t.Errorf("DefaultAsyncTimeout = %v, want 30s", DefaultAsyncTimeout)
 	}
 }
+
+func TestValueTagConstants(t *testing.T) {
+	// Verify tag constants are distinct
+	tags := map[string]int{
+		"NullTag":   NullTag,
+		"IntTag":    IntTag,
+		"FloatTag":  FloatTag,
+		"StringTag": StringTag,
+		"BoolTag":   BoolTag,
+		"ArrayTag":  ArrayTag,
+		"ObjectTag": ObjectTag,
+		"FuncTag":   FuncTag,
+		"FutureTag": FutureTag,
+		"ResultTag": ResultTag,
+		"RefPtrTag": RefPtrTag,
+	}
+	seen := map[int]string{}
+	for name, tag := range tags {
+		if prev, dup := seen[tag]; dup {
+			t.Errorf("duplicate tag value: %s and %s both = %d", prev, name, tag)
+		}
+		seen[tag] = name
+	}
+}
+
+func TestValueTagMethod(t *testing.T) {
+	cases := []struct {
+		val  Value
+		want int
+	}{
+		{NullValue{}, NullTag},
+		{IntValue{Val: 42}, IntTag},
+		{FloatValue{Val: 3.14}, FloatTag},
+		{StringValue{Val: "hello"}, StringTag},
+		{BoolValue{Val: true}, BoolTag},
+		{ArrayValue{Val: []Value{}}, ArrayTag},
+		{ObjectValue{Val: map[string]Value{}}, ObjectTag},
+		{FunctionValue{Name: "f"}, FuncTag},
+		{&FutureValue{Done: make(chan struct{})}, FutureTag},
+		{&ResultValue{Val: IntValue{Val: 1}}, ResultTag},
+		{PointerValue{Address: 0x10000}, RefPtrTag},
+	}
+
+	for _, tc := range cases {
+		got := tc.val.Tag()
+		if got != tc.want {
+			t.Errorf("%T.Tag() = %d, want %d", tc.val, got, tc.want)
+		}
+	}
+}
+
+func TestValueTagConsistentWithType(t *testing.T) {
+	// Verify Tag() and Type() are consistent for every value type
+	cases := []struct {
+		val      Value
+		typeStr  string
+	}{
+		{NullValue{}, "null"},
+		{IntValue{Val: 0}, "int"},
+		{FloatValue{Val: 0}, "float"},
+		{StringValue{Val: ""}, "str"},
+		{BoolValue{Val: false}, "bool"},
+		{ArrayValue{Val: nil}, "array"},
+		{ObjectValue{Val: nil}, "object"},
+		{FunctionValue{}, "function"},
+		{&FutureValue{Done: make(chan struct{})}, "future"},
+		{&ResultValue{}, "result"},
+		{PointerValue{}, "ptr"},
+	}
+	for _, tc := range cases {
+		if tc.val.Type() != tc.typeStr {
+			t.Errorf("%T.Type() = %q, want %q", tc.val, tc.val.Type(), tc.typeStr)
+		}
+	}
+}

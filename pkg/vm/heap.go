@@ -55,6 +55,7 @@ type PointerValue struct {
 }
 
 func (v PointerValue) Type() string { return "ptr" }
+func (v PointerValue) Tag() int     { return RefPtrTag }
 
 func (v PointerValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]interface{}{
