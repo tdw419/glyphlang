@@ -113,11 +113,14 @@ func (m *MitosisVM) executeCPUFallback(bytecode []byte, config *Config) []Thread
 	res, spawns := m.dispatcher.runOneVM(bytecode, config, 0, 0, nil, nil)
 
 	mu.Lock()
-	results = append(results, ThreadResult{
-		ThreadID: 0,
-		ParentID: -1,
-		Result:   res,
-	})
+        childIDs := make([]int, len(spawns))
+        for i := range spawns { childIDs[i] = i + 1 }
+        results = append(results, ThreadResult{
+                ThreadID: 0,
+                ParentID: -1,
+                Result:   res,
+                Children: childIDs,
+        })
 	mu.Unlock()
 
 	// Execute all children in parallel using a WaitGroup.

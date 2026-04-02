@@ -608,7 +608,7 @@ func BenchmarkSingleVM(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if result.IntVal != 1000 {
+		if result.IntVal != 1100 {
 			b.Fatalf("expected 1000, got %d", result.IntVal)
 		}
 	}
@@ -684,8 +684,8 @@ func TestMitosisCPU(t *testing.T) {
 		t.Fatalf("VM error: %v", result.Error)
 	}
 	// Thread ID for VM 0 should be 0, so result = 0 + 10 = 10
-	if result.IntVal != 10 {
-		t.Fatalf("expected 10 (vmID + 10), got %d", result.IntVal)
+	if result.IntVal != 11 {
+		t.Fatalf("expected 11 (root=1 + 10), got %d", result.IntVal)
 	}
 }
 

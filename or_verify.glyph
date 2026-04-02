@@ -1,0 +1,6 @@
+@ GET /verify {
+  $ a = true
+  $ b = false
+  $ result = a || b
+  > result
+}

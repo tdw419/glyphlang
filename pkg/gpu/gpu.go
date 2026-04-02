@@ -418,12 +418,12 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 			vars[vidx % MaxVars] = stack[state.SP]
 			break
 		case 0x50: // JUMP
-			nextPC = binary.LittleEndian.Uint32(bytecode[pc+1:])
+			nextPC = config.CodeOffset + binary.LittleEndian.Uint32(bytecode[pc+1:])
 			break
 		case 0x51: // JUMP_IF_FALSE
 			target := binary.LittleEndian.Uint32(bytecode[pc+1:])
 			state.SP--
-			if stack[state.SP].Data == 0 { nextPC = target } else { nextPC = uint32(pc + 5) }
+			if stack[state.SP].Data == 0 { nextPC = config.CodeOffset + target } else { nextPC = uint32(pc + 5) }
 			break
 		case 0x61: // RETURN
 			if state.SP > 0 {
@@ -452,13 +452,25 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 			cStackWithResult := append(cStack, GpuValue{TagBool, 0})
 			spawns = append(spawns, CpuSpawnRequest{
 				Offset: int32(offset),
-				PC:     nextPC + uint32(offset),
+				PC:     uint32(pc),
 				Stack:  cStackWithResult,
 				Vars:   cVars,
 			})
-			stack[state.SP] = GpuValue{TagBool, 1}
+			stack[state.SP] = GpuValue{TagInt, 1}
 			state.SP++
 			break
+                case 0xC1: // MUTATOR
+                        val := stack[state.SP-2].Data
+                        offset := stack[state.SP-1].Data
+                        state.SP -= 2
+                        target := int(pc) + int(offset)
+                        if target >= 0 && target < len(bytecode) {
+                                bytecode[target] = byte(val)
+                        } else {
+                                state.Error = ErrMutatorOOB
+                                state.Halted = 1
+                        }
+                        break
 		case 0xC2: // TELEMETRY
 			state.SP--
 			break
