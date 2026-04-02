@@ -505,7 +505,7 @@ func TestCrossVerify_ConditionalJump(t *testing.T) {
 	// if (false) { x = 1 } else { x = 2 } → result should be 2
 	// STORE_VAR/LOAD_VAR take a string constant index as operand (CPU VM uses name lookup)
 	constants := []interface{}{false, 1, 2, "x"}
-	h := headerSize(constants)
+	_ = headerSize(constants)
 	tc := cpuGPUTestCase{
 		name:      "if-false-else",
 		constants: constants,
@@ -513,11 +513,11 @@ func TestCrossVerify_ConditionalJump(t *testing.T) {
 			var code []byte
 			code = append(code, 0x01, 0x00, 0x00, 0x00, 0x00) // 0: PUSH false
 			code = append(code, 0x51)                           // 5: JUMP_IF_FALSE
-			code = emitU32(code, h+25)                          // target: h+25
+			code = emitU32(code, 25)                          // target: 25
 			code = append(code, 0x01, 0x01, 0x00, 0x00, 0x00)  // 10: PUSH 1
 			code = append(code, 0x41, 0x03, 0x00, 0x00, 0x00)  // 15: STORE_VAR[3] ("x")
 			code = append(code, 0x50)                           // 20: JUMP
-			code = emitU32(code, h+35)                          // target: h+35
+			code = emitU32(code, 35)                          // target: h+35
 			code = append(code, 0x01, 0x02, 0x00, 0x00, 0x00)  // 25: PUSH 2
 			code = append(code, 0x41, 0x03, 0x00, 0x00, 0x00)  // 30: STORE_VAR[3] ("x")
 			code = append(code, 0x40, 0x03, 0x00, 0x00, 0x00)  // 35: LOAD_VAR[3] ("x")
@@ -534,7 +534,7 @@ func TestCrossVerify_Loop(t *testing.T) {
 	// x = 0; while (x < 10) { x = x + 1 } ; result = x
 	// STORE_VAR/LOAD_VAR take a string constant index as operand (CPU VM uses name lookup)
 	constants := []interface{}{0, 1, 10, "x"}
-	h := headerSize(constants)
+	_ = headerSize(constants)
 	tc := cpuGPUTestCase{
 		name:      "count to 10",
 		constants: constants,
@@ -547,13 +547,13 @@ func TestCrossVerify_Loop(t *testing.T) {
 			code = append(code, 0x01, 0x02, 0x00, 0x00, 0x00) // 15: PUSH 10
 			code = append(code, 0x22)                           // 20: LT
 			code = append(code, 0x51)                           // 21: JUMP_IF_FALSE
-			code = emitU32(code, h+47)                          // target: h+47
+			code = emitU32(code, 47)                          // target: h+47
 			code = append(code, 0x40, 0x03, 0x00, 0x00, 0x00) // 26: LOAD_VAR[3] ("x")
 			code = append(code, 0x01, 0x01, 0x00, 0x00, 0x00) // 31: PUSH 1
 			code = append(code, 0x10)                           // 36: ADD
 			code = append(code, 0x41, 0x03, 0x00, 0x00, 0x00) // 37: STORE_VAR[3] ("x")
 			code = append(code, 0x50)                           // 42: JUMP
-			code = emitU32(code, h+10)                          // target: h+10 (loop start)
+			code = emitU32(code, 10)                          // target: h+10 (loop start)
 			code = append(code, 0x40, 0x03, 0x00, 0x00, 0x00) // 47: LOAD_VAR[3] ("x")
 			code = append(code, 0xFF)                           // 52: HALT
 			return code

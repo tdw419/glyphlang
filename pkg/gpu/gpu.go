@@ -417,10 +417,10 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 			state.SP--
 			vars[vidx % MaxVars] = stack[state.SP]
 			break
-		case 0x50: // JUMP
+		case 0x50: // JUMP — operand is relative to code section start
 			nextPC = config.CodeOffset + binary.LittleEndian.Uint32(bytecode[pc+1:])
 			break
-		case 0x51: // JUMP_IF_FALSE
+		case 0x51: // JUMP_IF_FALSE — operand is relative to code section start
 			target := binary.LittleEndian.Uint32(bytecode[pc+1:])
 			state.SP--
 			if stack[state.SP].Data == 0 { nextPC = config.CodeOffset + target } else { nextPC = uint32(pc + 5) }
@@ -456,7 +456,7 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 				Stack:  cStackWithResult,
 				Vars:   cVars,
 			})
-			stack[state.SP] = GpuValue{TagInt, 1}
+			stack[state.SP] = GpuValue{TagBool, 1}
 			state.SP++
 			break
                 case 0xC1: // MUTATOR
