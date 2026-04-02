@@ -41,7 +41,7 @@ func TestCPUMitosis(t *testing.T) {
 	fmt.Printf("CPU results: %+v\n", results)
 
 	if results[0].IntVal != 1 {
-		t.Errorf("parent expected 1 (spawn slot), got %d", results[0].IntVal)
+		t.Errorf("parent expected true, got %v", results[0].IntVal)
 	}
 
 	if results[1].IntVal != 42 {

@@ -178,7 +178,7 @@ fn exec_step(vm_id: u32) {
         case 0x61u: { let val = pop(vm_id); vm_states[vm_id].result_tag = val.tag; vm_states[vm_id].result_data = val.data; vm_states[vm_id].halted = 1u; }
         case OP_MITOSIS: { 
             let offset_val = pop(vm_id); let slot = atomicAdd(&spawn_requests[0], 1u);
-            push(vm_id, TAG_INT, 0); 
+            push(vm_id, TAG_BOOL, 1); 
             if (slot < 4096u) {
                 atomicStore(&spawn_requests[1u + slot * 3u], vm_id);
                 atomicStore(&spawn_requests[2u + slot * 3u], next_pc);

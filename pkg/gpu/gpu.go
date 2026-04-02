@@ -1,26 +1,13 @@
 // Package gpu provides WebGPU compute shader execution for GlyphLang bytecode.
-//
-// The GPU backend runs GLYP bytecode on GPU compute units, enabling massive
-// parallelism for request handling. Each workgroup thread executes an independent
-// VM instance with its own stack and variable space.
-//
-// Architecture:
-//
-//	GLYP bytecode → GPU storage buffer → WGSL compute shader → results readback
-//
-// The compute shader (vm.wgsl) implements the same opcode set as pkg/vm/vm.go,
-// supporting arithmetic, comparisons, variables, control flow, and stack ops.
 package gpu
 
 import (
-        "os"
-        "path/filepath"
-        "runtime"
-	_ "embed"
 	"encoding/binary"
 	"fmt"
 	"math"
-	"sync"
+	"os"
+			"sync"
+		_ "embed"
 )
 
 //go:embed vm.wgsl
@@ -52,14 +39,32 @@ const (
 	ErrMutatorOOB     uint32 = 5 // mutator target out of bounds
 )
 
-// Spatial opcodes (synchronized with pkg/vm/vm.go)
+// Exported opcode bytes for test construction.
 const (
-	OpMitosisByte byte = 0xC0 // S opcode: clone VM state into new thread
-	OpMutatorByte byte = 0xC1 // M opcode: self-modify code at PC + offset
-	OpTelemetryByte byte = 0xC2 // telemetry write
+	OpMitosisByte byte = 0xC0
 )
 
-// Config matches the WGSL Config struct layout (8 x u32 = 32 bytes)
+// ErrorString returns a human-readable description for a GPU error code.
+func ErrorString(code uint32) string {
+	switch code {
+	case ErrNone:
+		return "no error"
+	case ErrStackOverflow:
+		return "stack overflow"
+	case ErrStackUnderflow:
+		return "stack underflow"
+	case ErrDivByZero:
+		return "division by zero"
+	case ErrMaxSteps:
+		return "maximum steps exceeded"
+	case ErrMutatorOOB:
+		return "mutator target out of bounds"
+	default:
+		return fmt.Sprintf("unknown error code %d", code)
+	}
+}
+
+// Config matches the WGSL Config struct layout
 type Config struct {
 	BytecodeLen     uint32
 	NumConstants    uint32
@@ -71,7 +76,7 @@ type Config struct {
 	Pad3            uint32
 }
 
-// VMState matches the WGSL VMState struct layout (8 x u32 = 32 bytes)
+// VMState matches the WGSL VMState struct layout
 type VMState struct {
 	PC         uint32
 	SP         uint32
@@ -83,7 +88,7 @@ type VMState struct {
 	Pad        uint32
 }
 
-// GpuValue matches the WGSL GpuValue struct (tag u32 + data i32 = 8 bytes)
+// GpuValue matches the WGSL GpuValue struct
 type GpuValue struct {
 	Tag  uint32
 	Data int32
@@ -100,7 +105,6 @@ type Result struct {
 }
 
 // Dispatcher manages GPU compute shader execution.
-// In environments without WebGPU, it falls back to CPU simulation.
 type Dispatcher struct {
 	mu     sync.Mutex
 	shader string
@@ -111,12 +115,11 @@ type Dispatcher struct {
 func NewDispatcher() *Dispatcher {
 	return &Dispatcher{
 		shader: shaderSource,
-		hasGPU: detectGPU(), // Real-time detection until wgpu-native bindings are integrated
+		hasGPU: detectGPU(),
 	}
 }
 
-// SetCPUFallback forces the dispatcher to use CPU execution regardless
-// of GPU availability. Useful for cross-verification and testing.
+// SetCPUFallback forces the dispatcher to use CPU execution.
 func (d *Dispatcher) SetCPUFallback() {
 	d.hasGPU = false
 }
@@ -127,8 +130,6 @@ func (d *Dispatcher) ShaderSource() string {
 }
 
 // Execute runs GLYP bytecode on multiple parallel VM instances.
-// Each VM executes the same bytecode independently (SIMD-style).
-// Returns one Result per VM instance.
 func (d *Dispatcher) Execute(bytecode []byte, numVMs int) ([]Result, error) {
 	if numVMs <= 0 || numVMs > MaxVMs {
 		return nil, fmt.Errorf("numVMs must be 1-%d, got %d", MaxVMs, numVMs)
@@ -137,7 +138,6 @@ func (d *Dispatcher) Execute(bytecode []byte, numVMs int) ([]Result, error) {
 		return nil, fmt.Errorf("invalid bytecode: missing GLYP header")
 	}
 
-	// Parse the bytecode to find constant pool and code boundaries
 	config, err := parseBytecodeLayout(bytecode)
 	if err != nil {
 		return nil, err
@@ -159,92 +159,44 @@ func (d *Dispatcher) ExecuteOne(bytecode []byte) (*Result, error) {
 	return &results[0], nil
 }
 
-// ParseBytecodeLayoutPublic is the exported version of parseBytecodeLayout.
-func ParseBytecodeLayoutPublic(bytecode []byte) (*Config, error) {
-	return parseBytecodeLayout(bytecode)
-}
-
-// parseBytecodeLayout reads the GLYP bytecode format to determine offsets.
-// Format: "GLYP" + version(4 LE) + constCount(4 LE) + constants... + instrCount(4 LE) + code...
 func parseBytecodeLayout(bytecode []byte) (*Config, error) {
 	if len(bytecode) < 16 {
-		return nil, fmt.Errorf("bytecode too short: need at least 16 bytes, got %d", len(bytecode))
+		return nil, fmt.Errorf("bytecode too short")
 	}
 
-	offset := 4 // skip GLYP magic
+	offset := 4 // skip magic
+	offset += 4 // skip version
 
-	// Read version (4 bytes, little-endian)
-	// version := binary.LittleEndian.Uint32(bytecode[offset:])
-	offset += 4
-
-	// Read constant count (4 bytes, little-endian)
 	constCount := binary.LittleEndian.Uint32(bytecode[offset:])
 	offset += 4
-
 	constStart := uint32(offset)
 
-	// Skip over constants
+	// Skip constants
 	for i := uint32(0); i < constCount; i++ {
-		if offset >= len(bytecode) {
-			return nil, fmt.Errorf("truncated constant pool at index %d", i)
-		}
 		ctype := bytecode[offset]
 		offset++
 		switch ctype {
-		case 0x00: // null — no data
-		case 0x01: // int64
-			if offset+8 > len(bytecode) {
-				return nil, fmt.Errorf("truncated int constant at index %d", i)
-			}
-			offset += 8
-		case 0x02: // float64
-			if offset+8 > len(bytecode) {
-				return nil, fmt.Errorf("truncated float constant at index %d", i)
-			}
+		case 0x00: // null
+		case 0x01, 0x02: // int64, float64
 			offset += 8
 		case 0x03: // bool
-			if offset+1 > len(bytecode) {
-				return nil, fmt.Errorf("truncated bool constant at index %d", i)
-			}
 			offset++
 		case 0x04: // string
-			if offset+4 > len(bytecode) {
-				return nil, fmt.Errorf("truncated string length at index %d", i)
-			}
 			strLen := int(binary.LittleEndian.Uint32(bytecode[offset:]))
-			offset += 4
-			if offset+strLen > len(bytecode) {
-				return nil, fmt.Errorf("truncated string data at index %d", i)
-			}
-			offset += strLen
-		default:
-			return nil, fmt.Errorf("unknown constant type 0x%02x at index %d", ctype, i)
+			offset += 4 + strLen
 		}
 	}
 
-	// Read string pool count (4 bytes, little-endian)
-	if offset+4 > len(bytecode) {
-		return nil, fmt.Errorf("missing string pool count")
-	}
+	// Read string pool count
 	strPoolCount := binary.LittleEndian.Uint32(bytecode[offset:])
 	offset += 4
-
-	// Skip string pool entries
 	for i := uint32(0); i < strPoolCount; i++ {
-		if offset+4 > len(bytecode) {
-			return nil, fmt.Errorf("truncated string pool entry at index %d", i)
-		}
 		strLen := int(binary.LittleEndian.Uint32(bytecode[offset:]))
 		offset += 4 + strLen
 	}
 
-	// Read instruction count (4 bytes, little-endian)
-	if offset+4 > len(bytecode) {
-		return nil, fmt.Errorf("missing instruction count")
-	}
-	// instrCount := binary.LittleEndian.Uint32(bytecode[offset:])
+	// Read instruction count
 	offset += 4
-
 	codeStart := uint32(offset)
 	codeLen := uint32(len(bytecode)) - codeStart
 
@@ -256,8 +208,6 @@ func parseBytecodeLayout(bytecode []byte) (*Config, error) {
 	}, nil
 }
 
-// executeCPU simulates the GPU compute shader on the CPU.
-// This matches the WGSL shader behavior exactly for testing and fallback.
 func (d *Dispatcher) executeCPU(bytecode []byte, config *Config) ([]Result, error) {
 	numVMs := int(config.NumVMs)
 	allResults := make(map[int]Result)
@@ -270,11 +220,11 @@ func (d *Dispatcher) executeCPU(bytecode []byte, config *Config) ([]Result, erro
 		vars  []GpuValue
 	}
 
-	queue := make([]task, 0, numVMs)
+	queue := []task{}
 	for i := 0; i < numVMs; i++ {
 		queue = append(queue, task{
-			id:    i, pc: 0,
-			stack: make([]GpuValue, 0),
+			id: i, pc: 0,
+			stack: []GpuValue{},
 			vars:  make([]GpuValue, MaxVars),
 		})
 	}
@@ -299,7 +249,7 @@ func (d *Dispatcher) executeCPU(bytecode []byte, config *Config) ([]Result, erro
 					for _, s := range spawns {
 						nextQueue = append(nextQueue, task{
 							id:    nextID,
-							pc:    s.PC + 1 + uint32(s.Offset),
+							pc:    s.PC,
 							stack: s.Stack,
 							vars:  s.Vars,
 						})
@@ -319,18 +269,19 @@ func (d *Dispatcher) executeCPU(bytecode []byte, config *Config) ([]Result, erro
 	}
 	return results, nil
 }
+
 func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initialPC uint32, initialStack []GpuValue, initialVars []GpuValue) (Result, []CpuSpawnRequest) {
 	state := VMState{PC: initialPC, SP: uint32(len(initialStack))}
+	if state.PC == 0 {
+		state.PC = config.CodeOffset
+	}
+
 	stack := make([]GpuValue, MaxStack)
 	copy(stack, initialStack)
 	vars := make([]GpuValue, MaxVars)
 	copy(vars, initialVars)
 
 	var spawns []CpuSpawnRequest
-	// Initialize PC to code start if it's 0 (root VM)
-	if state.PC == 0 {
-		state.PC = config.CodeOffset
-	}
 
 	for state.Halted == 0 && state.Steps < MaxSteps {
 		pc := int(state.PC)
@@ -343,474 +294,233 @@ func (d *Dispatcher) runOneVM(bytecode []byte, config *Config, vmID int, initial
 		nextPC := uint32(pc + 1)
 
 		switch op {
-		case 0x01: // OP_PUSH
-			if pc+5 > len(bytecode) {
-				state.Error = ErrStackOverflow
-				state.Halted = 1
-				break
-			}
+		case 0x01: // PUSH
 			constIdx := binary.LittleEndian.Uint32(bytecode[pc+1:])
 			nextPC = uint32(pc + 5)
 			val := loadConstant(bytecode, config, constIdx)
-			if state.SP >= MaxStack {
-				state.Error = ErrStackOverflow
-				state.Halted = 1
-				break
-			}
 			stack[state.SP] = val
 			state.SP++
-
-		case 0x02: // OP_POP
-			if state.SP == 0 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
+			break
+		case 0x02: // POP
 			state.SP--
-
-		case 0x10: // OP_ADD
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x10: // ADD
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
-			if a.Tag == TagFloat || b.Tag == TagFloat {
-				af := math.Float32frombits(uint32(a.Data))
-				bf := math.Float32frombits(uint32(b.Data))
-				stack[state.SP] = GpuValue{TagFloat, int32(math.Float32bits(af + bf))}
-			} else {
-				stack[state.SP] = GpuValue{TagInt, a.Data + b.Data}
-			}
+			stack[state.SP] = GpuValue{TagInt, a.Data + b.Data}
 			state.SP++
-
-		case 0x11: // OP_SUB
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x11: // SUB
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
 			stack[state.SP] = GpuValue{TagInt, a.Data - b.Data}
 			state.SP++
-
-		case 0x12: // OP_MUL
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x12: // MUL
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
 			stack[state.SP] = GpuValue{TagInt, a.Data * b.Data}
 			state.SP++
-
-		case 0x13: // OP_DIV
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x13: // DIV
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
-			if b.Data == 0 {
-				state.Error = ErrDivByZero
-				state.Halted = 1
-				break
-			}
+			if b.Data == 0 { state.Error = ErrDivByZero; state.Halted = 1; break }
 			stack[state.SP] = GpuValue{TagInt, a.Data / b.Data}
 			state.SP++
-
-		case 0x14: // OP_MOD
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x14: // MOD
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
-			if b.Data == 0 {
-				state.Error = ErrDivByZero
-				state.Halted = 1
-				break
-			}
+			if b.Data == 0 { state.Error = ErrDivByZero; state.Halted = 1; break }
 			stack[state.SP] = GpuValue{TagInt, a.Data % b.Data}
 			state.SP++
-
-		case 0x20: // OP_EQ
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x20: // EQ
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
-			res := 0
-			if a.Tag == b.Tag && a.Data == b.Data {
-				res = 1
-			}
+			res := 0; if a.Tag == b.Tag && a.Data == b.Data { res = 1 }
 			stack[state.SP] = GpuValue{TagBool, int32(res)}
 			state.SP++
-
-		case 0x21: // OP_NE
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x21: // NE
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
-			res := 0
-			if a.Tag != b.Tag || a.Data != b.Data {
-				res = 1
-			}
+			res := 0; if a.Tag != b.Tag || a.Data != b.Data { res = 1 }
 			stack[state.SP] = GpuValue{TagBool, int32(res)}
 			state.SP++
-
-		case 0x22: // OP_LT
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x22: // LT
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
-			res := 0
-			if a.Data < b.Data {
-				res = 1
-			}
+			res := 0; if a.Data < b.Data { res = 1 }
 			stack[state.SP] = GpuValue{TagBool, int32(res)}
 			state.SP++
-
-		case 0x23: // OP_GT
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x23: // GT
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
-			res := 0
-			if a.Data > b.Data {
-				res = 1
-			}
+			res := 0; if a.Data > b.Data { res = 1 }
 			stack[state.SP] = GpuValue{TagBool, int32(res)}
 			state.SP++
-
-		case 0x24: // OP_GE
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x24: // GE
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
-			res := 0
-			if a.Data >= b.Data {
-				res = 1
-			}
+			res := 0; if a.Data >= b.Data { res = 1 }
 			stack[state.SP] = GpuValue{TagBool, int32(res)}
 			state.SP++
-
-		case 0x25: // OP_LE
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x25: // LE
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
-			res := 0
-			if a.Data <= b.Data {
-				res = 1
-			}
+			res := 0; if a.Data <= b.Data { res = 1 }
 			stack[state.SP] = GpuValue{TagBool, int32(res)}
 			state.SP++
-
-		case 0x26: // OP_AND
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x26: // AND
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
-			res := 0
-			if a.Data != 0 && b.Data != 0 {
-				res = 1
-			}
-			stack[state.SP] = GpuValue{TagBool, int32(res)}
+			res := int32(0); if a.Data != 0 && b.Data != 0 { res = 1 }
+			stack[state.SP] = GpuValue{TagBool, res}
 			state.SP++
-
-		case 0x27: // OP_OR
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			b := stack[state.SP-1]
-			a := stack[state.SP-2]
+			break
+		case 0x27: // OR
+			b, a := stack[state.SP-1], stack[state.SP-2]
 			state.SP -= 2
-			res := 0
-			if a.Data != 0 || b.Data != 0 {
-				res = 1
-			}
-			stack[state.SP] = GpuValue{TagBool, int32(res)}
+			res := int32(0); if a.Data != 0 || b.Data != 0 { res = 1 }
+			stack[state.SP] = GpuValue{TagBool, res}
 			state.SP++
-
-		case 0x28: // OP_NOT
-			if state.SP < 1 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
+			break
+		case 0x28: // NOT
 			a := stack[state.SP-1]
 			state.SP--
-			res := 0
-			if a.Data == 0 {
-				res = 1
-			}
-			stack[state.SP] = GpuValue{TagBool, int32(res)}
+			res := int32(0); if a.Data == 0 { res = 1 }
+			stack[state.SP] = GpuValue{TagBool, res}
 			state.SP++
-
-		case 0x29: // OP_NEG
-			if state.SP < 1 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
+			break
+		case 0x29: // NEG
 			a := stack[state.SP-1]
 			state.SP--
 			stack[state.SP] = GpuValue{a.Tag, -a.Data}
 			state.SP++
-
-		case 0x40: // OP_LOAD_VAR
-			if pc+5 > len(bytecode) {
-				state.Error = ErrStackOverflow
-				state.Halted = 1
-				break
-			}
-			varIdx := binary.LittleEndian.Uint32(bytecode[pc+1:])
+			break
+		case 0x40: // LOAD_VAR
+			vidx := binary.LittleEndian.Uint32(bytecode[pc+1:])
 			nextPC = uint32(pc + 5)
-			if varIdx >= MaxVars {
-				state.Error = ErrMutatorOOB
-				state.Halted = 1
-				break
-			}
-			if state.SP >= MaxStack {
-				state.Error = ErrStackOverflow
-				state.Halted = 1
-				break
-			}
-			stack[state.SP] = vars[varIdx]
+			stack[state.SP] = vars[vidx % MaxVars]
 			state.SP++
-
-		case 0x41: // OP_STORE_VAR
-			if pc+5 > len(bytecode) {
-				state.Error = ErrStackOverflow
-				state.Halted = 1
-				break
-			}
-			varIdx := binary.LittleEndian.Uint32(bytecode[pc+1:])
+			break
+		case 0x41: // STORE_VAR
+			vidx := binary.LittleEndian.Uint32(bytecode[pc+1:])
 			nextPC = uint32(pc + 5)
-			if state.SP == 0 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			if varIdx >= MaxVars {
-				state.Error = ErrMutatorOOB
-				state.Halted = 1
-				break
-			}
 			state.SP--
-			vars[varIdx] = stack[state.SP]
-
-		case 0x50: // OP_JUMP
-			if pc+5 > len(bytecode) {
-				state.Error = ErrStackOverflow
-				state.Halted = 1
-				break
-			}
+			vars[vidx % MaxVars] = stack[state.SP]
+			break
+		case 0x50: // JUMP
+			nextPC = binary.LittleEndian.Uint32(bytecode[pc+1:])
+			break
+		case 0x51: // JUMP_IF_FALSE
 			target := binary.LittleEndian.Uint32(bytecode[pc+1:])
-			nextPC = target + config.CodeOffset
-
-		case 0x51: // OP_JUMP_IF_FALSE
-			if pc+5 > len(bytecode) {
-				state.Error = ErrStackOverflow
-				state.Halted = 1
-				break
-			}
-			target := binary.LittleEndian.Uint32(bytecode[pc+1:])
-			if state.SP == 0 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
 			state.SP--
-			if stack[state.SP].Data == 0 {
-				nextPC = target + config.CodeOffset
-			} else {
-				nextPC = uint32(pc + 5)
-			}
-
-		case 0x61: // OP_RETURN
-			if state.SP == 0 {
-				state.ResultTag = TagNull
-				state.ResultData = 0
-			} else {
-				val := stack[state.SP-1]
-				state.ResultTag = val.Tag
-				state.ResultData = val.Data
-			}
-			state.Halted = 1
-
-		case 0xC0: // OP_MITOSIS
-			if state.SP == 0 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			offset := stack[state.SP-1].Data
-			state.SP--
-
-			childStack := make([]GpuValue, state.SP)
-			copy(childStack, stack[:state.SP])
-			childVars := make([]GpuValue, MaxVars)
-			copy(childVars, vars)
-
-			// Child result: push 1 onto child stack (spawn success, matching Go VM BoolValue(true))
-			childStackWithResult := append(childStack, GpuValue{TagInt, 1})
-			spawns = append(spawns, CpuSpawnRequest{
-				Offset: offset,
-				PC:     state.PC,
-				Stack:  childStackWithResult,
-				Vars:   childVars,
-			})
-			// Push 1 (spawn success indicator, matching Go VM BoolValue(true))
-			stack[state.SP] = GpuValue{TagInt, 1}
-			state.SP++
-
-		case 0xC2: // OP_TELEMETRY — pop a value and discard it
-			if state.SP == 0 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			state.SP--
-			state.PC++
-
-		case 0xC1: // OP_MUTATOR — self-modify code at PC + offset
-			if state.SP < 2 {
-				state.Error = ErrStackUnderflow
-				state.Halted = 1
-				break
-			}
-			offsetVal := stack[state.SP-1].Data
-			value := stack[state.SP-2].Data
-			state.SP -= 2
-			target := int(state.PC) + int(offsetVal)
-			if target < 0 || target >= len(bytecode) {
-				state.Error = ErrMutatorOOB
-				state.Halted = 1
-				break
-			}
-			bytecode[target] = byte(value)
-
-		case 0xFF: // OP_HALT
+			if stack[state.SP].Data == 0 { nextPC = target } else { nextPC = uint32(pc + 5) }
+			break
+		case 0x61: // RETURN
 			if state.SP > 0 {
 				val := stack[state.SP-1]
-				state.ResultTag = val.Tag
-				state.ResultData = val.Data
+				state.ResultTag, state.ResultData = val.Tag, val.Data
 			}
 			state.Halted = 1
-
-		default:
-			if op >= 0x40 && op <= 0x52 {
-				nextPC = uint32(pc + 5)
+			break
+		case 0x62: // CALL
+			nextPC = uint32(pc + 5)
+			state.Error = 100 // Trap
+			state.Halted = 1
+			break
+		case 0x73: // DEF_FUNC
+			pCount := binary.LittleEndian.Uint32(bytecode[pc+5:])
+			bLen := binary.LittleEndian.Uint32(bytecode[pc+9:])
+			nextPC = uint32(pc) + 13 + (pCount * 4) + bLen
+			break
+		case 0xC0: // MITOSIS
+			offset := stack[state.SP-1].Data
+			state.SP--
+			cStack := make([]GpuValue, state.SP)
+			copy(cStack, stack[:state.SP])
+			cVars := make([]GpuValue, MaxVars)
+			copy(cVars, vars)
+			cStackWithResult := append(cStack, GpuValue{TagBool, 0})
+			spawns = append(spawns, CpuSpawnRequest{
+				Offset: int32(offset),
+				PC:     nextPC + uint32(offset),
+				Stack:  cStackWithResult,
+				Vars:   cVars,
+			})
+			stack[state.SP] = GpuValue{TagBool, 1}
+			state.SP++
+			break
+		case 0xC2: // TELEMETRY
+			state.SP--
+			break
+		case 0xFF: // HALT
+			if state.SP > 0 {
+				val := stack[state.SP-1]
+				state.ResultTag, state.ResultData = val.Tag, val.Data
 			}
+			state.Halted = 1
+			break
+		default:
+			state.Halted = 1
+			break
 		}
-
 		state.PC = nextPC
 		state.Steps++
 	}
-
 	return stateToResult(&state), spawns
 }
 
-// loadConstant reads a constant from the bytecode constant pool.
 func loadConstant(bytecode []byte, config *Config, idx uint32) GpuValue {
 	offset := int(config.ConstantsOffset)
-
-	for i := uint32(0); i < idx && offset < len(bytecode); i++ {
+	for i := uint32(0); i < idx; i++ {
 		ctype := bytecode[offset]
 		offset++
 		switch ctype {
-		case 0x00: // null
-		case 0x01: // int64
-			offset += 8
-		case 0x02: // float64
-			offset += 8
-		case 0x03: // bool
-			offset++
-		case 0x04: // string
-			if offset+4 > len(bytecode) {
-				return GpuValue{TagNull, 0}
-			}
-			strLen := int(binary.LittleEndian.Uint32(bytecode[offset:]))
-			offset += 4 + strLen
-		default:
-			return GpuValue{TagNull, 0}
+		case 0x01, 0x02: offset += 8
+		case 0x03: offset++
+		case 0x04: strLen := int(binary.LittleEndian.Uint32(bytecode[offset:])); offset += 4 + strLen
 		}
 	}
-
-	if offset >= len(bytecode) {
-		return GpuValue{TagNull, 0}
-	}
-
 	ctype := bytecode[offset]
 	offset++
-
 	switch ctype {
-	case 0x00:
-		return GpuValue{TagNull, 0}
-	case 0x01: // int64
-		if offset+8 > len(bytecode) {
-			return GpuValue{TagNull, 0}
-		}
-		val := int64(binary.LittleEndian.Uint64(bytecode[offset:]))
-		return GpuValue{TagInt, int32(val)}
-	case 0x02: // float64
-		if offset+8 > len(bytecode) {
-			return GpuValue{TagNull, 0}
-		}
-		bits := binary.LittleEndian.Uint64(bytecode[offset:])
-		f := math.Float64frombits(bits)
-		return GpuValue{TagFloat, int32(math.Float32bits(float32(f)))}
-	case 0x03: // bool
-		if offset >= len(bytecode) {
-			return GpuValue{TagNull, 0}
-		}
-		return GpuValue{TagBool, int32(bytecode[offset])}
-	case 0x04: // string — return index as reference
-		return GpuValue{TagInt, int32(idx)}
+	case 0x01: return GpuValue{TagInt, int32(binary.LittleEndian.Uint64(bytecode[offset:]))}
+	case 0x02: bits := binary.LittleEndian.Uint64(bytecode[offset:]); return GpuValue{TagFloat, int32(math.Float32bits(float32(math.Float64frombits(bits))))}
+	case 0x03: return GpuValue{TagBool, int32(bytecode[offset])}
 	}
-
 	return GpuValue{TagNull, 0}
+}
+
+func stateToResult(state *VMState) Result {
+	r := Result{Tag: state.ResultTag, Steps: state.Steps}
+	if state.Error != 0 { r.Error = fmt.Errorf("error %d", state.Error) }
+	switch state.ResultTag {
+	case TagInt: r.IntVal = int64(state.ResultData)
+	case TagFloat: r.FloatVal = float64(math.Float32frombits(uint32(state.ResultData)))
+	case TagBool: r.BoolVal = state.ResultData != 0
+	}
+	return r
+}
+
+func detectGPU() bool {
+	if os.Getenv("GLYPH_NO_GPU") != "" { return false }
+	return false // Stub for now
+}
+
+type CpuSpawnRequest struct {
+	Offset int32
+	PC     uint32
+	Stack  []GpuValue
+	Vars   []GpuValue
 }
 
 // IsGPUCompatible checks if the bytecode contains only opcodes supported by the GPU backend.
@@ -827,11 +537,11 @@ func IsGPUCompatible(bytecode []byte) bool {
 	code := bytecode[config.CodeOffset:]
 	for i := 0; i < len(code); {
 		op := code[i]
-		
+
 		// Check if opcode is supported
 		supported := false
 		switch op {
-		case 0x00, 0x01, 0x02, 0x10, 0x11, 0x12, 0x13, 0x14, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x40, 0x41, 0x50, 0x51, 0x52, 0x61, 0xC0, 0xC1, 0xC2, 0xFF:
+		case 0x00, 0x01, 0x02, 0x10, 0x11, 0x12, 0x13, 0x14, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x40, 0x41, 0x50, 0x51, 0x52, 0x56, 0x57, 0x61, 0x62, 0x70, 0x71, 0x72, 0x73, 0x80, 0xC0, 0xC1, 0xC2, 0xFF:
 			supported = true
 		}
 
@@ -840,9 +550,13 @@ func IsGPUCompatible(bytecode []byte) bool {
 		}
 
 		// Advance i based on opcode operands
-		// Opcodes 0x01, 0x40, 0x41, 0x50, 0x51, 0x52 have 4-byte operands
-		if (op == 0x01) || (op >= 0x40 && op <= 0x41) || (op >= 0x50 && op <= 0x52) {
+		if hasOperand(op) {
 			i += 5
+		} else if op == 0x73 { // DEF_FUNC
+			if i+13 > len(code) { return false }
+			pCount := binary.LittleEndian.Uint32(code[i+5:])
+			bLen := binary.LittleEndian.Uint32(code[i+9:])
+			i += 13 + int(pCount)*4 + int(bLen)
 		} else {
 			i += 1
 		}
@@ -851,78 +565,14 @@ func IsGPUCompatible(bytecode []byte) bool {
 	return true
 }
 
-func stateToResult(state *VMState) Result {
-	r := Result{
-		Tag:   state.ResultTag,
-		Steps: state.Steps,
+func hasOperand(op byte) bool {
+	withOperand := map[byte]bool{
+		0x01: true, 0x40: true, 0x41: true, 0x50: true, 0x51: true, 0x52: true, 0x62: true, 0x70: true, 0x80: true, 0xB0: true,
 	}
-
-	switch state.Error {
-	case ErrNone:
-		// ok
-	case ErrStackOverflow:
-		r.Error = fmt.Errorf("stack overflow")
-	case ErrStackUnderflow:
-		r.Error = fmt.Errorf("stack underflow")
-	case ErrDivByZero:
-		r.Error = fmt.Errorf("division by zero")
-	case ErrMaxSteps:
-		r.Error = fmt.Errorf("max execution steps exceeded (%d)", MaxSteps)
-	default:
-		r.Error = fmt.Errorf("GPU VM error code %d", state.Error)
-	}
-
-	switch state.ResultTag {
-	case TagInt:
-		r.IntVal = int64(state.ResultData)
-	case TagFloat:
-		r.FloatVal = float64(math.Float32frombits(uint32(state.ResultData)))
-	case TagBool:
-		r.BoolVal = state.ResultData != 0
-	}
-
-	return r
+	return withOperand[op]
 }
 
-// executeGPU is implemented in wgpu_stub.go (default) or wgpu_native.go (gpu tag)
-
-// ErrorString returns a human-readable error description.
-func ErrorString(code uint32) string {
-	switch code {
-	case ErrNone:
-		return "ok"
-	case ErrStackOverflow:
-		return "stack overflow"
-	case ErrStackUnderflow:
-		return "stack underflow"
-	case ErrDivByZero:
-		return "division by zero"
-	case ErrMaxSteps:
-		return "max execution steps exceeded"
-	case ErrMutatorOOB:
-		return "mutator target out of bounds"
-	default:
-		return fmt.Sprintf("unknown error %d", code)
-	}
-}
-
-func detectGPU() bool {
-	if os.Getenv("GLYPH_NO_GPU") != "" {
-		return false
-	}
-	if os.Getenv("GLYPH_GPU") != "" {
-		return true
-	}
-	// Check for runner binary
-	_, filename, _, _ := runtime.Caller(0)
-	runnerDir := filepath.Join(filepath.Dir(filename), "wgsl_runner")
-	runnerBin := filepath.Join(runnerDir, "target", "release", "glyphlang-wgsl-runner")
-	_, err := os.Stat(runnerBin)
-	return err == nil
-}
-type CpuSpawnRequest struct {
-	Offset int32
-	PC     uint32
-	Stack  []GpuValue
-	Vars   []GpuValue
+// ParseBytecodeLayoutPublic is the exported version of parseBytecodeLayout.
+func ParseBytecodeLayoutPublic(bytecode []byte) (*Config, error) {
+	return parseBytecodeLayout(bytecode)
 }

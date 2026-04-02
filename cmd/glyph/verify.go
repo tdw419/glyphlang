@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/glyphlang/glyph/pkg/ast"
 	"github.com/glyphlang/glyph/pkg/compiler"
 	"github.com/glyphlang/glyph/pkg/gpu"
 	"github.com/glyphlang/glyph/pkg/vm"
@@ -57,27 +56,14 @@ func runVerify(cmd *cobra.Command, args []string) error {
 		}
 
 		// Compile
-		c := compiler.NewSSACompiler()
-		var targetBytecode []byte
-		for _, item := range module.Items {
-			if fn, ok := item.(*ast.Function); ok {
-				targetBytecode, err = c.CompileFunction(fn)
-				if err != nil {
-					return fmt.Errorf("compilation failed: %w", err)
-				}
-				break
-			} else if route, ok := item.(*ast.Route); ok {
-				targetBytecode, err = c.CompileRoute(route)
-				if err != nil {
-					return fmt.Errorf("compilation failed: %w", err)
-				}
-				break
-			}
+		c := compiler.NewCompiler()
+		bytecode, err = c.Compile(module)
+		if err != nil {
+			return fmt.Errorf("compilation failed: %%w", err)
 		}
-		if targetBytecode == nil {
-			return fmt.Errorf("no runnable function or route found in %s", args[0])
+		if bytecode == nil {
+			return fmt.Errorf("no runnable item found in %%s", args[0])
 		}
-		bytecode = targetBytecode
 	}
 
 	if len(bytecode) < 4 || string(bytecode[:4]) != "GLYP" {

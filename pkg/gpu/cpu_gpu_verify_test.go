@@ -1,6 +1,7 @@
 package gpu
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -105,6 +106,36 @@ func valuesMatch(cpuVal vm.Value, gpuRes *Result) (bool, string) {
 }
 
 // runCrossVerify runs a single test case on both VMs and checks agreement.
+func bytesWriter(b *[]byte) *bytes.Buffer {
+	return bytes.NewBuffer(*b)
+}
+
+// emitU32 appends a little-endian uint32 to the code slice.
+func emitU32(code []byte, v uint32) []byte {
+	b := make([]byte, 4)
+	binary.LittleEndian.PutUint32(b, v)
+	return append(code, b...)
+}
+
+// headerSize computes the bytecode header size for a given set of constants.
+func headerSize(constants []interface{}) uint32 {
+	h := uint32(4 + 4 + 4) // GLYP + version + constCount
+	for _, c := range constants {
+		switch c.(type) {
+		case nil:
+			h += 1
+		case int, int64, float64:
+			h += 1 + 8
+		case bool:
+			h += 1 + 1
+		case string:
+			h += 1 + 4 + uint32(len(c.(string)))
+		}
+	}
+	h += 4 + 4 // stringPoolCount + instrCount
+	return h
+}
+
 func runCrossVerify(t *testing.T, tc cpuGPUTestCase) {
 	t.Helper()
 	bytecode := buildBytecode(tc.constants, tc.code)
@@ -452,14 +483,15 @@ func TestCrossVerify_LogicalOps(t *testing.T) {
 
 func TestCrossVerify_Variables(t *testing.T) {
 	// x = 42; load x; halt
+	// Constants: 42 (val), "x" (name)
 	tc := cpuGPUTestCase{
 		name:      "store and load variable",
-		constants: []interface{}{42},
+		constants: []interface{}{42, "x"},
 		code: func() []byte {
 			return []byte{
 				0x01, 0x00, 0x00, 0x00, 0x00, // PUSH 42
-				0x41, 0x00, 0x00, 0x00, 0x00, // STORE_VAR[0]
-				0x40, 0x00, 0x00, 0x00, 0x00, // LOAD_VAR[0]
+				0x41, 0x01, 0x00, 0x00, 0x00, // STORE_VAR[1] ("x")
+				0x40, 0x01, 0x00, 0x00, 0x00, // LOAD_VAR[1] ("x")
 				0xFF, // HALT
 			}
 		}(),
@@ -471,30 +503,25 @@ func TestCrossVerify_Variables(t *testing.T) {
 
 func TestCrossVerify_ConditionalJump(t *testing.T) {
 	// if (false) { x = 1 } else { x = 2 } → result should be 2
-	// Layout (code offsets):
-	//   0-4:  PUSH false (const 0)
-	//   5-9:  JUMP_IF_FALSE 25
-	//   10-14: PUSH 1 (const 1)
-	//   15-19: STORE_VAR[0]
-	//   20-24: JUMP 35
-	//   25-29: PUSH 2 (const 2)
-	//   30-34: STORE_VAR[0]
-	//   35-39: LOAD_VAR[0]
-	//   40:   HALT
+	// STORE_VAR/LOAD_VAR take a string constant index as operand (CPU VM uses name lookup)
+	constants := []interface{}{false, 1, 2, "x"}
+	h := headerSize(constants)
 	tc := cpuGPUTestCase{
 		name:      "if-false-else",
-		constants: []interface{}{false, 1, 2},
+		constants: constants,
 		code: func() []byte {
 			var code []byte
-			code = append(code, 0x01, 0x00, 0x00, 0x00, 0x00) // PUSH false
-			code = append(code, 0x51, 0x19, 0x00, 0x00, 0x00) // JUMP_IF_FALSE 25
-			code = append(code, 0x01, 0x01, 0x00, 0x00, 0x00) // PUSH 1
-			code = append(code, 0x41, 0x00, 0x00, 0x00, 0x00) // STORE_VAR[0]
-			code = append(code, 0x50, 0x23, 0x00, 0x00, 0x00) // JUMP 35
-			code = append(code, 0x01, 0x02, 0x00, 0x00, 0x00) // PUSH 2
-			code = append(code, 0x41, 0x00, 0x00, 0x00, 0x00) // STORE_VAR[0]
-			code = append(code, 0x40, 0x00, 0x00, 0x00, 0x00) // LOAD_VAR[0]
-			code = append(code, 0xFF)                           // HALT
+			code = append(code, 0x01, 0x00, 0x00, 0x00, 0x00) // 0: PUSH false
+			code = append(code, 0x51)                           // 5: JUMP_IF_FALSE
+			code = emitU32(code, h+25)                          // target: h+25
+			code = append(code, 0x01, 0x01, 0x00, 0x00, 0x00)  // 10: PUSH 1
+			code = append(code, 0x41, 0x03, 0x00, 0x00, 0x00)  // 15: STORE_VAR[3] ("x")
+			code = append(code, 0x50)                           // 20: JUMP
+			code = emitU32(code, h+35)                          // target: h+35
+			code = append(code, 0x01, 0x02, 0x00, 0x00, 0x00)  // 25: PUSH 2
+			code = append(code, 0x41, 0x03, 0x00, 0x00, 0x00)  // 30: STORE_VAR[3] ("x")
+			code = append(code, 0x40, 0x03, 0x00, 0x00, 0x00)  // 35: LOAD_VAR[3] ("x")
+			code = append(code, 0xFF)                           // 40: HALT
 			return code
 		}(),
 		wantTag: TagInt,
@@ -504,41 +531,30 @@ func TestCrossVerify_ConditionalJump(t *testing.T) {
 }
 
 func TestCrossVerify_Loop(t *testing.T) {
-	// Count from 0 to 10 using a while loop.
 	// x = 0; while (x < 10) { x = x + 1 } ; result = x
-	// Constants: 0 (init), 1 (increment), 10 (limit)
-	// Layout:
-	//   0-4:   PUSH 0 (const 0)
-	//   5-9:   STORE_VAR[0] (x)
-	//   10-14: LOAD_VAR[0]  ← loop start
-	//   15-19: PUSH 10 (const 2)
-	//   20:    LT
-	//   21-25: JUMP_IF_FALSE 47 (exit)
-	//   26-30: LOAD_VAR[0]
-	//   31-35: PUSH 1 (const 1)
-	//   36:    ADD
-	//   37-41: STORE_VAR[0]
-	//   42-46: JUMP 10
-	//   47-51: LOAD_VAR[0]  ← exit
-	//   52:    HALT
+	// STORE_VAR/LOAD_VAR take a string constant index as operand (CPU VM uses name lookup)
+	constants := []interface{}{0, 1, 10, "x"}
+	h := headerSize(constants)
 	tc := cpuGPUTestCase{
 		name:      "count to 10",
-		constants: []interface{}{0, 1, 10},
+		constants: constants,
 		code: func() []byte {
 			var code []byte
 			code = append(code, 0x01, 0x00, 0x00, 0x00, 0x00) // 0: PUSH 0
-			code = append(code, 0x41, 0x00, 0x00, 0x00, 0x00) // 5: STORE_VAR[0]
+			code = append(code, 0x41, 0x03, 0x00, 0x00, 0x00) // 5: STORE_VAR[3] ("x")
 			// loop start at 10:
-			code = append(code, 0x40, 0x00, 0x00, 0x00, 0x00) // 10: LOAD_VAR[0]
+			code = append(code, 0x40, 0x03, 0x00, 0x00, 0x00) // 10: LOAD_VAR[3] ("x")
 			code = append(code, 0x01, 0x02, 0x00, 0x00, 0x00) // 15: PUSH 10
 			code = append(code, 0x22)                           // 20: LT
-			code = append(code, 0x51, 0x2f, 0x00, 0x00, 0x00) // 21: JUMP_IF_FALSE 47
-			code = append(code, 0x40, 0x00, 0x00, 0x00, 0x00) // 26: LOAD_VAR[0]
+			code = append(code, 0x51)                           // 21: JUMP_IF_FALSE
+			code = emitU32(code, h+47)                          // target: h+47
+			code = append(code, 0x40, 0x03, 0x00, 0x00, 0x00) // 26: LOAD_VAR[3] ("x")
 			code = append(code, 0x01, 0x01, 0x00, 0x00, 0x00) // 31: PUSH 1
 			code = append(code, 0x10)                           // 36: ADD
-			code = append(code, 0x41, 0x00, 0x00, 0x00, 0x00) // 37: STORE_VAR[0]
-			code = append(code, 0x50, 0x0a, 0x00, 0x00, 0x00) // 42: JUMP 10
-			code = append(code, 0x40, 0x00, 0x00, 0x00, 0x00) // 47: LOAD_VAR[0]
+			code = append(code, 0x41, 0x03, 0x00, 0x00, 0x00) // 37: STORE_VAR[3] ("x")
+			code = append(code, 0x50)                           // 42: JUMP
+			code = emitU32(code, h+10)                          // target: h+10 (loop start)
+			code = append(code, 0x40, 0x03, 0x00, 0x00, 0x00) // 47: LOAD_VAR[3] ("x")
 			code = append(code, 0xFF)                           // 52: HALT
 			return code
 		}(),
@@ -731,23 +747,20 @@ func TestCrossVerify_ParallelVMs(t *testing.T) {
 }
 
 func TestCrossVerify_Mitosis(t *testing.T) {
-	// push offset 0, MITOSIS, push 100, ADD, HALT
-	// The S opcode pushes a spawn-success indicator.
-	// Both VMs should produce the same result.
+	// push offset 0, MITOSIS, halt
+	// The S opcode pushes a spawn-success indicator (true).
 	tc := cpuGPUTestCase{
 		name:      "mitosis basic",
-		constants: []interface{}{0, 100},
+		constants: []interface{}{0},
 		code: func() []byte {
 			return []byte{
 				0x01, 0x00, 0x00, 0x00, 0x00, // PUSH 0 (offset)
-				0xC0,                           // MITOSIS — pops offset, pushes 1 (success)
-				0x01, 0x01, 0x00, 0x00, 0x00, // PUSH 100
-				0x10, // ADD → 101
+				0xC0,                           // MITOSIS — pops offset, pushes true
 				0xFF,
 			}
 		}(),
-		wantTag: TagInt,
-		wantInt: 101,
+		wantTag: TagBool,
+		wantBool: true,
 	}
 	runCrossVerify(t, tc)
 }
@@ -815,7 +828,7 @@ func TestCrossVerify_UsingBuilder(t *testing.T) {
 	}{
 		{
 			name:      "builder: add",
-			constants: []interface{}{10, 20},
+			constants: []interface{}{10, 20, "x"},
 			buildCode: func() []byte {
 				return []byte{
 					0x01, 0x00, 0x00, 0x00, 0x00,
@@ -829,15 +842,15 @@ func TestCrossVerify_UsingBuilder(t *testing.T) {
 		},
 		{
 			name:      "builder: store-load-mul",
-			constants: []interface{}{7, 6},
+			constants: []interface{}{7, 6, "x", "y"},
 			buildCode: func() []byte {
 				var code []byte
 				code = append(code, emitPush(0)...)
-				code = append(code, emitStoreVar(0)...)
+				code = append(code, emitStoreVar(2)...)
 				code = append(code, emitPush(1)...)
-				code = append(code, emitStoreVar(1)...)
-				code = append(code, emitLoadVar(0)...)
-				code = append(code, emitLoadVar(1)...)
+				code = append(code, emitStoreVar(3)...)
+				code = append(code, emitLoadVar(2)...)
+				code = append(code, emitLoadVar(3)...)
 				code = append(code, 0x12) // MUL
 				code = append(code, 0xFF) // HALT
 				return code

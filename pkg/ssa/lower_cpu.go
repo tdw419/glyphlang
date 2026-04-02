@@ -102,7 +102,7 @@ func (l *CPULowering) LowerFunc(f *Func) ([]byte, error) {
 	}
 
 	// Second pass: patch jump targets
-	headerSize := 4 + 4 + 4 + len(l.consts) + 4 // magic + version + constCount + consts + instrCount
+	headerSize := 4 + 4 + 4 + len(l.consts) + 4 + 4 // magic + version + constCount + consts + strPoolCount + instrCount
 	for _, p := range l.patches {
 		target, ok := l.blockOffset[p.blockID]
 		if !ok {
@@ -428,8 +428,8 @@ func (l *CPULowering) addStringConst(s string) uint32 {
 
 // buildBytecode assembles the final GLYP binary.
 func (l *CPULowering) buildBytecode() []byte {
-	// Header: "GLYP" + version(4) + constCount(4) + constants + instrCount(4) + instructions
-	size := 4 + 4 + 4 + len(l.consts) + 4 + len(l.code)
+	// Header: "GLYP" + version(4) + constCount(4) + constants + strPoolCount(4) + instrCount(4) + instructions
+	size := 4 + 4 + 4 + len(l.consts) + 4 + 4 + len(l.code)
 	out := make([]byte, 0, size)
 
 	// Magic
@@ -446,6 +446,10 @@ func (l *CPULowering) buildBytecode() []byte {
 
 	// Constants
 	out = append(out, l.consts...)
+
+	// String pool count (empty)
+	binary.LittleEndian.PutUint32(buf[:], 0)
+	out = append(out, buf[:]...)
 
 	// Instruction count
 	binary.LittleEndian.PutUint32(buf[:], uint32(len(l.code)))

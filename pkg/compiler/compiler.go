@@ -1112,7 +1112,7 @@ var syscallBuiltinMap = map[string]byte{
 // compileFunctionCall compiles a function call
 func (c *Compiler) compileFunctionCall(expr *ast.FunctionCallExpr) error {
 	// Check for WebSocket functions first (ws.*)
-        if expr.Name == "spawn" && len(expr.Args) == 1 {
+        if (expr.Name == "spawn" || expr.Name == "__mitosis") && len(expr.Args) == 1 {
                 if err := c.compileExpression(expr.Args[0]); err != nil {
                         return err
                 }
@@ -1120,7 +1120,7 @@ func (c *Compiler) compileFunctionCall(expr *ast.FunctionCallExpr) error {
                 return nil
         }
 
-        if expr.Name == "mutate" && len(expr.Args) == 2 {
+        if (expr.Name == "mutate" || expr.Name == "__mutator") && len(expr.Args) == 2 {
                 if err := c.compileExpression(expr.Args[0]); err != nil {
                         return err
                 }
