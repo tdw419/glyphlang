@@ -1,0 +1,22 @@
+// colony_conditional.glyph
+// Conditional Mitosis pattern: spawn decisions depend on runtime values.
+// The number and behavior of children varies based on computation results.
+
+! main() {
+    $ threshold = 50
+    $ value = 75
+
+    if value > threshold {
+        spawn(0)
+        spawn(0)
+        spawn(0)
+    } else {
+        spawn(0)
+    }
+
+    return value - threshold
+}
+
+! worker(data: int) -> int {
+    > data * 2
+}

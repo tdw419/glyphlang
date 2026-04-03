@@ -1,0 +1,16 @@
+// colony_linear.glyph
+// Linear Mitosis pattern: spawns children sequentially.
+// Each child inherits the parent's state and computes independently.
+
+! main() {
+    $ base = 10
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    spawn(0)
+    return 100
+}
+
+! compute(id: int, base: int) -> int {
+    > (id + 1) * base
+}

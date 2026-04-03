@@ -237,33 +237,69 @@ func (r *REPL) detectInputType(input string) inputType {
 
 // evaluateExpression evaluates an expression and prints the result.
 func (r *REPL) evaluateExpression(input string) error {
-	if r.useGPU {
-		c := compiler.NewSSACompiler()
-		expr, err := r.parseExpression(input)
-		if err != nil { return err }
-		fn := &ast.Function{Name: "repl", Body: []ast.Statement{&ast.ReturnStatement{Value: expr}}}
-		bytecode, err := c.CompileFunction(fn)
-		if err != nil { return err }
-		results, err := r.dispatcher.Execute(bytecode, 1)
-		if err != nil { return err }
-		r.printResult(results[0].IntVal)
-		return nil
-	}
-	// Parse the expression
+	// Parse the expression (shared between GPU and CPU paths)
 	expr, err := r.parseExpression(input)
 	if err != nil {
 		return fmt.Errorf("parse error: %w", err)
 	}
 
-	// Evaluate the expression
+	// Try GPU path first if enabled
+	if r.useGPU && r.dispatcher != nil {
+		_, gpuErr := r.evaluateGPU(expr)
+		if gpuErr == nil {
+			return nil
+		}
+		// GPU failed -- fall back to CPU interpreter
+		r.printf("[GPU fallback: %v]\n", gpuErr)
+	}
+
+	// Evaluate on CPU interpreter
 	result, err := r.interp.EvaluateExpression(expr, r.env)
 	if err != nil {
 		return fmt.Errorf("evaluation error: %w", err)
 	}
 
-	// Print the result
 	r.printResult(result)
 	return nil
+}
+
+// evaluateGPU compiles and runs an expression on the GPU dispatcher.
+// Returns an error if GPU execution is unavailable or produces unusable results,
+// signaling the caller to fall back to the CPU interpreter.
+func (r *REPL) evaluateGPU(expr ast.Expr) (interface{}, error) {
+	c := compiler.NewSSACompiler()
+	fn := &ast.Function{Name: "repl", Body: []ast.Statement{&ast.ReturnStatement{Value: expr}}}
+	bytecode, err := c.CompileFunction(fn)
+	if err != nil {
+		return nil, fmt.Errorf("compile: %w", err)
+	}
+	results, err := r.dispatcher.Execute(bytecode, 1)
+	if err != nil {
+		return nil, fmt.Errorf("execute: %w", err)
+	}
+	res := results[0]
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	// TagNull (0) from the GPU VM usually means the SSA bytecode wasn't
+	// understood by the GPU VM (format mismatch). Signal fallback.
+	if res.Tag == 0 {
+		return nil, fmt.Errorf("GPU returned null result (bytecode format mismatch)")
+	}
+	// Convert GPU result to printable value
+	var val interface{}
+	switch res.Tag {
+	case 1: // TagInt
+		val = res.IntVal
+	case 2: // TagFloat
+		val = res.FloatVal
+	case 3: // TagBool
+		val = res.BoolVal
+	default:
+		val = res.IntVal
+	}
+	r.printResult(val)
+	return val, nil
 }
 
 // evaluateStatement evaluates a statement.

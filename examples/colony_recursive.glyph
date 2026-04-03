@@ -1,0 +1,17 @@
+// colony_recursive.glyph
+// Recursive Mitosis pattern: each child can itself spawn children.
+// Creates a tree structure of VMs -- exponential fan-out.
+
+! main() {
+    spawn(0)
+    spawn(0)
+    return 0
+}
+
+! branch(depth: int) -> int {
+    if depth > 0 {
+        spawn(depth - 1)
+        spawn(depth - 1)
+    }
+    > depth * depth
+}
