@@ -577,6 +577,8 @@ func (vm *VM) executeInstruction(opcode Opcode) error {
 	case OpHalt:
 		vm.halted = true
 		return nil
+	case 0x00: // NOP / padding -- skip
+		return nil
 	default:
 		return fmt.Errorf("unknown opcode: 0x%02x", opcode)
 	}

@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"math"
+	"os"
 	"testing"
 
 	"github.com/glyphlang/glyph/pkg/ast"
@@ -10,6 +11,9 @@ import (
 )
 
 func TestE2E_WGSL_Adaptive(t *testing.T) {
+	if os.Getenv("GLYPH_TEST_GPU") == "" {
+		t.Skip("requires GLYPH_TEST_GPU=1")
+	}
 	// 1. Define Module with Multiple Routes
 	module := &ast.Module{
 		Items: []ast.Item{

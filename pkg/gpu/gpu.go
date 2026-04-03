@@ -119,6 +119,11 @@ func NewDispatcher() *Dispatcher {
 	}
 }
 
+// HasGPU reports whether the dispatcher detected GPU availability.
+func (d *Dispatcher) HasGPU() bool {
+	return d.hasGPU
+}
+
 // SetCPUFallback forces the dispatcher to use CPU execution.
 func (d *Dispatcher) SetCPUFallback() {
 	d.hasGPU = false

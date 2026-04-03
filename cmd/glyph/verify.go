@@ -59,10 +59,10 @@ func runVerify(cmd *cobra.Command, args []string) error {
 		c := compiler.NewCompiler()
 		bytecode, err = c.Compile(module)
 		if err != nil {
-			return fmt.Errorf("compilation failed: %%w", err)
+			return fmt.Errorf("compilation failed: %w", err)
 		}
 		if bytecode == nil {
-			return fmt.Errorf("no runnable item found in %%s", args[0])
+			return fmt.Errorf("no runnable item found in %s", args[0])
 		}
 	}
 
