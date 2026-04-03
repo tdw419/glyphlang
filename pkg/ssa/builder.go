@@ -108,32 +108,61 @@ func (b *Builder) buildStatements(stmts []ast.Statement) error {
 
 func (b *Builder) buildStatement(stmt ast.Statement) error {
 	switch s := stmt.(type) {
-	case ast.AssignStatement:
-		return b.buildAssign(s.Target, s.Value)
-	case ast.ReassignStatement:
-		return b.buildAssign(s.Target, s.Value)
+	case ast.AssignStatement, *ast.AssignStatement:
+		t, v := unwrapAssign(s)
+		return b.buildAssign(t, v)
+	case ast.ReassignStatement, *ast.ReassignStatement:
+		t, v := unwrapAssign(s)
+		return b.buildAssign(t, v)
 	case ast.ReturnStatement:
 		return b.buildReturn(s)
+	case *ast.ReturnStatement:
+		return b.buildReturn(*s)
 	case ast.IfStatement:
 		return b.buildIf(s)
+	case *ast.IfStatement:
+		return b.buildIf(*s)
 	case ast.WhileStatement:
 		return b.buildWhile(s)
+	case *ast.WhileStatement:
+		return b.buildWhile(*s)
 	case ast.ForStatement:
 		return b.buildFor(s)
+	case *ast.ForStatement:
+		return b.buildFor(*s)
 	case ast.ExpressionStatement:
 		_, err := b.buildExpr(s.Expr)
 		return err
-	case ast.BreakStatement:
-		// Break is handled by buildWhile/buildFor
+	case *ast.ExpressionStatement:
+		_, err := b.buildExpr(s.Expr)
+		return err
+	case ast.BreakStatement, *ast.BreakStatement:
 		return nil
-	case ast.ContinueStatement:
+	case ast.ContinueStatement, *ast.ContinueStatement:
 		return nil
 	case ast.IndexAssignStatement:
 		return b.buildIndexAssign(s)
+	case *ast.IndexAssignStatement:
+		return b.buildIndexAssign(*s)
 	default:
 		// Unsupported statements become opaque calls
 		return nil
 	}
+}
+
+// unwrapAssign extracts (target, value) from either value or pointer form.
+func unwrapAssign(s ast.Statement) (string, ast.Expr) {
+	switch a := s.(type) {
+	case ast.AssignStatement:
+		return a.Target, a.Value
+	case *ast.AssignStatement:
+		return a.Target, a.Value
+	case ast.ReassignStatement:
+		return a.Target, a.Value
+	case *ast.ReassignStatement:
+		return a.Target, a.Value
+	}
+	return "", nil
 }
 
 func (b *Builder) buildAssign(name string, expr ast.Expr) error {
