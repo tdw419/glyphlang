@@ -129,6 +129,11 @@ func (d *Dispatcher) SetCPUFallback() {
 	d.hasGPU = false
 }
 
+// SetGPUAvailable forces the dispatcher to use GPU execution.
+func (d *Dispatcher) SetGPUAvailable() {
+	d.hasGPU = true
+}
+
 // ShaderSource returns the embedded WGSL shader source.
 func (d *Dispatcher) ShaderSource() string {
 	return d.shader
@@ -250,17 +255,17 @@ func (d *Dispatcher) executeCPU(bytecode []byte, config *Config) ([]Result, erro
 				resultsMu.Unlock()
 
 				if len(spawns) > 0 {
-					mu.Lock()
-					for _, s := range spawns {
-						nextQueue = append(nextQueue, task{
-							id:    nextID,
-							pc:    s.PC,
-							stack: s.Stack,
-							vars:  s.Vars,
-						})
-						nextID++
-					}
-					mu.Unlock()
+				mu.Lock()
+				for _, s := range spawns {
+					nextQueue = append(nextQueue, task{
+						id:    nextID,
+						pc:    s.PC + 1 + uint32(s.Offset),
+						stack: s.Stack,
+						vars:  s.Vars,
+					})
+					nextID++
+				}
+				mu.Unlock()
 				}
 			}(t)
 		}

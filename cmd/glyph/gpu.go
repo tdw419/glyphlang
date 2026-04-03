@@ -14,6 +14,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newGPUDispatcher is the factory used by runGPU to create a gpu.Dispatcher.
+// It can be overridden in tests to inject a mock.
+var newGPUDispatcher = gpu.NewDispatcher
+
 func runGPU(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: glyph gpu <file.glyph|file.glyphc> [--vms N]")
@@ -104,7 +108,7 @@ func runGPU(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Constants: %d\n", numConst)
 	fmt.Println()
 
-	dispatcher := gpu.NewDispatcher()
+	dispatcher := newGPUDispatcher()
 	useLive, _ := cmd.Flags().GetBool("live")
 	if useLive {
 		bold.Println("Live execution mode started. Press Ctrl+C to stop.")

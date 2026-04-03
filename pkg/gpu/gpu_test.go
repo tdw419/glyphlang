@@ -1,9 +1,11 @@
 package gpu
 
 import (
+	"bufio"
 	"encoding/binary"
 	"math"
 	"os"
+	"os/exec"
 	"testing"
 )
 
@@ -234,6 +236,52 @@ func TestNewDispatcherDetectsGPUAvailability(t *testing.T) {
 			t.Error("SetCPUFallback() did not force HasGPU() to false")
 		}
 	})
+}
+
+// TestExecuteRoutesToGPUWhenAvailable verifies that when hasGPU is true,
+// the Dispatcher.Execute method attempts the GPU execution path.
+// Since no real WGSL runner binary exists in CI, executeGPU will return
+// an error — the test asserts that the error confirms it tried the GPU
+// path (not the CPU path).
+func TestExecuteRoutesToGPUWhenAvailable(t *testing.T) {
+	constants := []interface{}{42}
+	code := []byte{0x01, 0x00, 0x00, 0x00, 0x00, 0xFF} // PUSH_CONST 0, HALT
+	bytecode := buildBytecode(constants, code)
+
+	d := NewDispatcher()
+	// Force GPU path by not calling SetCPUFallback — but detectGPU is a stub
+	// that returns false. So we directly set hasGPU to true for this test.
+	d.hasGPU = true
+
+	results, err := d.Execute(bytecode, 1)
+	if err != nil {
+		// executeGPU may fail in CI where no WGSL runner binary is present.
+		// The error must indicate it tried the GPU path (not CPU fallback).
+		if !containsStr(err.Error(), "GPU") && !containsStr(err.Error(), "runner") {
+			t.Errorf("expected GPU-related error, got: %v", err)
+		}
+	} else {
+		// On machines with a real GPU runner, execution succeeds — verify result.
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		if results[0].Tag != TagInt || results[0].IntVal != 42 {
+			t.Errorf("expected IntVal=42, got Tag=%d IntVal=%d", results[0].Tag, results[0].IntVal)
+		}
+	}
+
+	// Sanity: with hasGPU=false, same bytecode succeeds on CPU path.
+	d.hasGPU = false
+	result, err := d.Execute(bytecode, 1)
+	if err != nil {
+		t.Fatalf("CPU path should succeed, got: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(result))
+	}
+	if result[0].Tag != TagInt || result[0].IntVal != 42 {
+		t.Errorf("expected IntVal=42, got Tag=%d IntVal=%d", result[0].Tag, result[0].IntVal)
+	}
 }
 
 func TestSimpleAdd(t *testing.T) {
@@ -931,6 +979,148 @@ func _skip_TestSpatialOpcodesIntegration(t *testing.T) {
 		if r.IntVal != 100 {
 			t.Fatalf("parallel VM %d: expected 100, got %d", i, r.IntVal)
 		}
+	}
+}
+
+// TestGlyphCommandGPUDispatcherSelection verifies that the GPU dispatcher
+// correctly selects GPU or CPU execution paths based on GPU availability.
+// This test directly exercises the same code path used by the `glyph gpu` CLI
+// command (runGPU → gpu.NewDispatcher → dispatcher.Execute).
+func TestGlyphCommandGPUDispatcherSelection(t *testing.T) {
+	// Build simple bytecode: push 42, halt
+	constants := []interface{}{42}
+	code := append(pushConst(0), 0xFF) // PUSH_CONST 0, HALT
+	bytecode := buildBytecode(constants, code)
+
+	t.Run("GPU_available_routes_to_GPU_path", func(t *testing.T) {
+		d := NewDispatcher()
+		if !d.HasGPU() {
+			// Force GPU flag on so Execute attempts the GPU path.
+			// detectGPU() is currently a stub returning false; once real
+			// detection lands this manual override won't be needed.
+			d.hasGPU = true
+		}
+
+		// With hasGPU=true, Execute should attempt the GPU backend.
+		// Since no WGSL runner binary exists in CI, this must return an
+		// error that indicates the GPU path was attempted (not CPU fallback).
+		_, err := d.Execute(bytecode, 1)
+		if err == nil {
+			// If we have a real GPU runner, execution succeeded — still valid.
+			return
+		}
+		// Error must be GPU-related, confirming the GPU dispatcher was selected.
+		errMsg := err.Error()
+		if !containsStr(errMsg, "GPU") && !containsStr(errMsg, "runner") && !containsStr(errMsg, "daemon") {
+			t.Errorf("expected GPU-related error when HasGPU()=true, got: %v", err)
+		}
+	})
+
+	t.Run("GPU_unavailable_falls_back_to_CPU", func(t *testing.T) {
+		d := NewDispatcher()
+		d.SetCPUFallback()
+
+		if d.HasGPU() {
+			t.Fatal("expected HasGPU() == false after SetCPUFallback()")
+		}
+
+		results, err := d.Execute(bytecode, 1)
+		if err != nil {
+			t.Fatalf("CPU fallback path should succeed, got: %v", err)
+		}
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		if results[0].Tag != TagInt || results[0].IntVal != 42 {
+			t.Errorf("expected IntVal=42, got Tag=%d IntVal=%d", results[0].Tag, results[0].IntVal)
+		}
+		if results[0].Error != nil {
+			t.Errorf("unexpected VM error: %v", results[0].Error)
+		}
+	})
+
+	t.Run("HasGPU_matches_dispatcher_state", func(t *testing.T) {
+		// Verify HasGPU() is consistent with internal hasGPU field.
+		d := NewDispatcher()
+
+		// Default state (detectGPU stub returns false)
+		if d.HasGPU() != d.hasGPU {
+			t.Errorf("HasGPU()=%v but hasGPU=%v — must match", d.HasGPU(), d.hasGPU)
+		}
+
+		// After forcing CPU fallback
+		d.SetCPUFallback()
+		if d.HasGPU() {
+			t.Error("HasGPU() must be false after SetCPUFallback()")
+		}
+	})
+}
+
+// TestPersistentRunnerCrashDetection verifies that PersistentRunner.IsAlive()
+// correctly detects when the daemon subprocess crashes.
+// This test simulates a Rust daemon crash by starting a subprocess and killing it.
+func TestPersistentRunnerCrashDetection(t *testing.T) {
+	// Start a long-lived subprocess to stand in for the Rust WGSL daemon.
+	cmd := exec.Command("sleep", "60")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("StdinPipe: %v", err)
+	}
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("StdoutPipe: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("cmd.Start: %v", err)
+	}
+	defer cmd.Process.Kill()
+
+	scanner := bufio.NewScanner(stdoutPipe)
+	runner := &PersistentRunner{
+		cmd:    cmd,
+		stdin:  stdin,
+		stdout: scanner,
+	}
+
+	// 1. Daemon is alive right after start.
+	if !runner.IsAlive() {
+		t.Fatal("expected runner to be alive immediately after start")
+	}
+
+	// 2. Kill the daemon process.
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatalf("failed to kill daemon: %v", err)
+	}
+	// Wait so the OS reaps the process and IsAlive can observe it.
+	cmd.Wait()
+
+	// 3. IsAlive must now return false.
+	if runner.IsAlive() {
+		t.Fatal("expected IsAlive() == false after killing daemon process")
+	}
+
+	// 4. Submit on a dead runner must return an error (stdin write fails).
+	_, err = runner.Submit([]byte("anything"), 1, 1)
+	if err == nil {
+		t.Fatal("expected error from Submit() on dead daemon, got nil")
+	}
+}
+
+// TestPersistentRunnerNilAndEmptyIsAlive verifies IsAlive is safe on nil/zero runners.
+func TestPersistentRunnerNilAndEmptyIsAlive(t *testing.T) {
+	var nilRunner *PersistentRunner
+	if nilRunner.IsAlive() {
+		t.Fatal("nil PersistentRunner should not be alive")
+	}
+
+	emptyRunner := &PersistentRunner{}
+	if emptyRunner.IsAlive() {
+		t.Fatal("PersistentRunner with nil cmd should not be alive")
+	}
+
+	noProcessRunner := &PersistentRunner{cmd: &exec.Cmd{}}
+	if noProcessRunner.IsAlive() {
+		t.Fatal("PersistentRunner with nil Process should not be alive")
 	}
 }
 

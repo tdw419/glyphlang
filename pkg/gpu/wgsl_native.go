@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"syscall"
 )
 
 type WGSLExecutionResult struct {
@@ -140,6 +141,17 @@ func ExecuteMultiWGSL(bytecode []byte, numVMs int, workgroupCount int) ([]Result
 		return nil, err
 	}
 	return nil, fmt.Errorf("GPU daemon unavailable: %v", err)
+}
+
+// IsAlive checks whether the daemon subprocess is still running.
+// It returns false if the process has exited or was never started.
+func (r *PersistentRunner) IsAlive() bool {
+	if r == nil || r.cmd == nil || r.cmd.Process == nil {
+		return false
+	}
+	// Signal(0) does not send a signal but checks if the process exists.
+	err := r.cmd.Process.Signal(syscall.Signal(0))
+	return err == nil
 }
 
 func (r *PersistentRunner) Submit(bytecode []byte, numVMs, workgroupCount int) ([]Result, error) {
