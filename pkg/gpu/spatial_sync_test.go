@@ -99,6 +99,7 @@ func TestTelemetryCPU(t *testing.T) {
 	code = append(code, 0xFF)            // HALT → top of stack is 42
 
 	d := NewDispatcher()
+	d.SetCPUFallback() // Force CPU path for deterministic telemetry behavior
 	result, err := d.ExecuteOne(buildBytecode(constants, code))
 	if err != nil {
 		t.Fatalf("error: %v", err)

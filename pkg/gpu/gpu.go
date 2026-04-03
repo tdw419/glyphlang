@@ -2,12 +2,14 @@
 package gpu
 
 import (
+	_ "embed"
 	"encoding/binary"
 	"fmt"
 	"math"
 	"os"
-			"sync"
-		_ "embed"
+	"path/filepath"
+	"runtime"
+	"sync"
 )
 
 //go:embed vm.wgsl
@@ -534,8 +536,38 @@ func stateToResult(state *VMState) Result {
 }
 
 func detectGPU() bool {
-	if os.Getenv("GLYPH_NO_GPU") != "" { return false }
-	return false // Stub for now
+	if os.Getenv("GLYPH_NO_GPU") != "" {
+		return false
+	}
+	// Check if the WGSL runner binary exists
+	runnerBin := FindRunnerBinary()
+	if runnerBin != "" {
+		if _, err := os.Stat(runnerBin); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// FindRunnerBinary locates the WGSL runner binary.
+func FindRunnerBinary() string {
+	// Check GLYPH_RUNNER_PATH env first
+	if p := os.Getenv("GLYPH_RUNNER_PATH"); p != "" {
+		return p
+	}
+	// Check relative to this package's directory
+	_, filename, _, _ := runtime.Caller(0)
+	dir := filepath.Dir(filename)
+	candidates := []string{
+		filepath.Join(dir, "wgsl_runner", "target", "release", "glyphlang-wgsl-runner"),
+		filepath.Join(dir, "wgsl_runner", "target", "debug", "glyphlang-wgsl-runner"),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return ""
 }
 
 type CpuSpawnRequest struct {

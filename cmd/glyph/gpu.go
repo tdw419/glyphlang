@@ -109,6 +109,12 @@ func runGPU(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	dispatcher := newGPUDispatcher()
+	if dispatcher.HasGPU() {
+		runnerPath := gpu.FindRunnerBinary()
+		fmt.Printf("[GPU] Executing via WGSL runner: %s\n", runnerPath)
+	} else {
+		fmt.Println("[CPU] No WGSL runner found, using CPU fallback")
+	}
 	useLive, _ := cmd.Flags().GetBool("live")
 	if useLive {
 		bold.Println("Live execution mode started. Press Ctrl+C to stop.")
