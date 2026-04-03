@@ -28,3 +28,4 @@ playground/wasm_exec.js
 /glyph.exe
 coverage.out
 coverage.html
+results.tsv
