@@ -267,7 +267,10 @@ func (r *REPL) evaluateExpression(input string) error {
 // Returns an error if GPU execution is unavailable or produces unusable results,
 // signaling the caller to fall back to the CPU interpreter.
 func (r *REPL) evaluateGPU(expr ast.Expr) (interface{}, error) {
-	c := compiler.NewSSACompiler()
+	// Use the standard compiler (not SSA) -- it produces bytecode compatible
+	// with the GPU VM's CPU emulator. The SSA compiler has a known issue where
+	// it doesn't correctly lower standalone expressions wrapped in a function.
+	c := compiler.NewCompiler()
 	fn := &ast.Function{Name: "repl", Body: []ast.Statement{&ast.ReturnStatement{Value: expr}}}
 	bytecode, err := c.CompileFunction(fn)
 	if err != nil {
